@@ -2,10 +2,14 @@
 	"required": true,
 	"package": "net.tupenter.mixin.client",
 	"compatibilityLevel": "JAVA_21",
-	"client": [
-		"ExampleClientMixin"
+	"mixins": [
+		"ExampleClientMixin",
+		"MixinConnection"
 	],
 	"injectors": {
 		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
 	}
 }
