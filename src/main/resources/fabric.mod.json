@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 1,
+	"id": "tupenter",
+	"version": "${version}",
+	"name": "Tupenter",
+	"description": "A Fabric mod for Minecraft 1.21.10",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/tupenter/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"net.tupenter.TupenterMod"
+		],
+		"client": [
+			"net.tupenter.TupenterModClient"
+		]
+	},
+	"mixins": [
+		"tupenter.mixins.json",
+		{
+			"config": "tupenter.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.18.2",
+		"minecraft": "~1.21.10",
+		"java": ">=21",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}
