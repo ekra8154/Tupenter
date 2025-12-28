@@ -39,6 +39,20 @@ public class TupenterModClient implements ClientModInitializer {
     public static void updateLastMessage(String msg) {
         if (!TupenterConfig.INSTANCE.recordHistory) return;
         if (msg == null || msg.trim().isEmpty()) return;
+
+        // Apply Resend Filter at recording time
+        boolean isCommand = msg.startsWith("/");
+        switch (TupenterConfig.INSTANCE.resendFilter) {
+            case CHAT_ONLY:
+                if (isCommand) return;
+                break;
+            case COMMANDS_ONLY:
+                if (!isCommand) return;
+                break;
+            case BOTH:
+            default:
+                break;
+        }
         
         // Avoid duplicates at top of stack (optional, but good UX)
         if (!messageHistory.isEmpty() && messageHistory.get(messageHistory.size() - 1).equals(msg)) return;
@@ -185,7 +199,7 @@ public class TupenterModClient implements ClientModInitializer {
             
             // Check for Stop and optional Abort
             if (wasFiring && !isFiring) {
-                if (!TupenterConfig.INSTANCE.alwaysFinishBatch) {
+                if (TupenterConfig.INSTANCE.batchMode == TupenterConfig.BatchMode.INTERRUPT) {
                     pendingQueue.clear();
                     delayTimer = 0;
                 }
@@ -249,9 +263,14 @@ public class TupenterModClient implements ClientModInitializer {
                          List<String> batch = new ArrayList<>();
                         
                          if (TupenterConfig.INSTANCE.usePermanentMessage) {
+                             List<String> permBatch = new ArrayList<>();
                              for (String msg : TupenterConfig.INSTANCE.permanentMessages) {
-                                 if (msg != null && !msg.trim().isEmpty()) batch.add(msg);
+                                 if (msg != null && !msg.trim().isEmpty()) permBatch.add(msg);
                              }
+                             if (TupenterConfig.INSTANCE.resendOrder == TupenterConfig.ResendOrder.NEWEST_FIRST) {
+                                 Collections.reverse(permBatch);
+                             }
+                             batch.addAll(permBatch);
                         } else {
                              // Determine source
                              List<String> source = new ArrayList<>();
@@ -302,6 +321,12 @@ public class TupenterModClient implements ClientModInitializer {
             // =========================================================
             
             if (!pendingQueue.isEmpty()) {
+                // If we are not firing, we only continue if the mode is FINISH_BATCH
+                // (PAUSE does nothing here, effectively pausing naturally. INTERRUPT cleared queue above.)
+                if (!isFiring && TupenterConfig.INSTANCE.batchMode != TupenterConfig.BatchMode.FINISH_BATCH) {
+                     return;
+                }
+
                 while (!pendingQueue.isEmpty()) {
                     String msg = pendingQueue.poll();
                     if (msg.startsWith("/")) {

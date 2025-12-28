@@ -8,15 +8,30 @@ import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
 import net.minecraft.network.chat.Component;
 import net.tupenter.config.TupenterConfig;
 
+import java.util.List;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.GuiGraphics;
+import me.shedaniel.clothconfig2.api.AbstractConfigListEntry;
+import me.shedaniel.clothconfig2.gui.entries.StringListListEntry;
+import java.util.Optional;
+import java.util.Collections;
+import java.util.ArrayList;
+
+import net.minecraft.client.gui.screens.ConfirmScreen;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.Minecraft;
 
 public class ModMenuIntegration implements ModMenuApi {
+    private static Screen cachedParent;
+
     @Override
     public ConfigScreenFactory<?> getModConfigScreenFactory() {
         return ModMenuIntegration::createScreen;
     }
 
     public static Screen createScreen(Screen parent) {
+        cachedParent = parent;
         ConfigBuilder builder = ConfigBuilder.create()
                 .setParentScreen(parent)
                 .setTitle(Component.translatable("title.tupenter.config"));
@@ -42,10 +57,11 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.messageDelay = newValue)
                 .build());
 
-        general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.always_finish_batch"), TupenterConfig.INSTANCE.alwaysFinishBatch)
-                .setDefaultValue(true)
-                .setTooltip(Component.translatable("tooltip.tupenter.always_finish_batch"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.alwaysFinishBatch = newValue)
+        general.addEntry(entryBuilder.startEnumSelector(Component.translatable("option.tupenter.batch_mode"), TupenterConfig.BatchMode.class, TupenterConfig.INSTANCE.batchMode)
+                .setDefaultValue(TupenterConfig.BatchMode.PAUSE)
+                .setTooltip(Component.translatable("tooltip.tupenter.batch_mode"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.batchMode = newValue)
+                .setEnumNameProvider(mode -> Component.translatable("mode.tupenter.batch." + mode.name().toLowerCase()))
                 .build());
 
         general.addEntry(entryBuilder.startEnumSelector(Component.translatable("option.tupenter.resend_mode"), TupenterConfig.ResendMode.class, TupenterConfig.INSTANCE.resendMode)
@@ -119,14 +135,82 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.usePermanentMessage = newValue)
                 .build());
 
-        general.addEntry(entryBuilder.startStrList(Component.translatable("option.tupenter.permanent_messages"), TupenterConfig.INSTANCE.permanentMessages)
+        StringListListEntry permanentEntry = entryBuilder.startStrList(Component.translatable("option.tupenter.permanent_messages"), TupenterConfig.INSTANCE.permanentMessages)
                 .setDefaultValue(new java.util.ArrayList<>())
                 .setTooltip(Component.translatable("tooltip.tupenter.permanent_messages"))
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.permanentMessages = newValue)
-                .build());
+                .build();
+
+        general.addEntry(new ImportButtonEntry(Component.translatable("text.tupenter.import_history"), Component.translatable("tooltip.tupenter.import_history"), () -> {
+            Minecraft.getInstance().setScreen(new ConfirmScreen(
+                (confirmed) -> {
+                    if (confirmed) {
+                        TupenterConfig.INSTANCE.permanentMessages = new ArrayList<>(net.tupenter.TupenterModClient.messageHistory);
+                        Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                    } else {
+                        Minecraft.getInstance().setScreen(createScreen(cachedParent)); // Re-open config without saving/importing? Or just close confirm?
+                        // Actually, if we cancel, we want to go back to the *current* config screen state ideally, 
+                        // but since we can't easily restore the exact builder state without rebuilding, 
+                        // rebuilding is the safest option to ensure consistency, though it effectively "reloads" anyway.
+                        // Wait, if we use setScreen(cachedParent), we go back to the parent of the config menu (e.g. Pause Menu).
+                        // If we want to return to the config menu, we have to rebuild it.
+                        // Ideally checking `Minecraft.getInstance().setScreen(currentScreen)` would work if `currentScreen` was captured, 
+                        // but `createScreen` returns a new screen.
+                        // Let's stick to rebuilding for now as it's consistent.
+                        Minecraft.getInstance().setScreen(createScreen(cachedParent)); 
+                    }
+                },
+                Component.translatable("title.tupenter.import_confirm"),
+                Component.translatable("message.tupenter.import_confirm")
+            ));
+        }));
+
+        general.addEntry(permanentEntry);
 
         builder.setSavingRunnable(TupenterConfig::save);
 
         return builder.build();
+    }
+
+    private static class ImportButtonEntry extends AbstractConfigListEntry<Object> {
+        private final Button button;
+
+        public ImportButtonEntry(Component text, Component tooltip, Runnable onClick) {
+            super(Component.empty(), false);
+            this.button = Button.builder(text, b -> onClick.run())
+                    .bounds(0, 0, 150, 20)
+                    .tooltip(Tooltip.create(tooltip))
+                    .build();
+        }
+
+        @Override
+        public void render(GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
+            this.button.setX(x + (entryWidth / 2) - (this.button.getWidth() / 2));
+            this.button.setY(y);
+            this.button.render(graphics, mouseX, mouseY, partialTick);
+        }
+
+        @Override
+        public List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children() {
+            return Collections.singletonList(button);
+        }
+
+        @Override
+        public List<? extends net.minecraft.client.gui.narration.NarratableEntry> narratables() {
+            return Collections.singletonList(button);
+        }
+
+        @Override
+        public Object getValue() {
+            return null;
+        }
+
+        @Override
+        public Optional<Object> getDefaultValue() {
+            return Optional.empty();
+        }
+
+        @Override
+        public void save() {}
     }
 }

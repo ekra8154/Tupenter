@@ -21,7 +21,7 @@ public class TupenterConfig {
     public int rapidResendDelay = 5;
     public int resendDelay = 0;
     public int messageDelay = 0;
-    public boolean alwaysFinishBatch = true;
+    public BatchMode batchMode = BatchMode.PAUSE;
     public int historyDepth = 1;
     public ResendMode resendMode = ResendMode.PRESS_AND_HOLD;
     public ResendOrder resendOrder = ResendOrder.OLDEST_FIRST;
@@ -58,6 +58,12 @@ public class TupenterConfig {
         COMMANDS_ONLY
     }
 
+    public enum BatchMode {
+        PAUSE,
+        FINISH_BATCH,
+        INTERRUPT
+    }
+
     public static void load() {
         File configFile = new File(FabricLoader.getInstance().getConfigDir().toFile(), "tupenter.json");
         if (configFile.exists()) {
@@ -68,7 +74,7 @@ public class TupenterConfig {
                     INSTANCE.rapidResendDelay = loaded.rapidResendDelay;
                     INSTANCE.resendDelay = Math.max(0, loaded.resendDelay);
                     INSTANCE.messageDelay = Math.max(0, loaded.messageDelay);
-            INSTANCE.alwaysFinishBatch = loaded.alwaysFinishBatch;
+                    INSTANCE.batchMode = loaded.batchMode != null ? loaded.batchMode : BatchMode.PAUSE;
                     INSTANCE.historyDepth = Math.max(1, loaded.historyDepth);
                     INSTANCE.resendMode = loaded.resendMode != null ? loaded.resendMode : ResendMode.PRESS_AND_HOLD;
                     INSTANCE.resendOrder = loaded.resendOrder != null ? loaded.resendOrder : ResendOrder.OLDEST_FIRST;
