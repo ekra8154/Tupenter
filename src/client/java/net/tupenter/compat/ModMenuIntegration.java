@@ -38,10 +38,11 @@ public class ModMenuIntegration implements ModMenuApi {
                     .setEnumNameProvider(mode -> Component.translatable("mode.tupenter." + mode.name().toLowerCase()))
                     .build());
 
-            general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.suppress_feedback"), TupenterConfig.INSTANCE.suppressFeedback)
-                    .setDefaultValue(false)
+            general.addEntry(entryBuilder.startEnumSelector(Component.translatable("option.tupenter.suppress_feedback"), TupenterConfig.FeedbackSuppressionMode.class, TupenterConfig.INSTANCE.suppressFeedback)
+                    .setDefaultValue(TupenterConfig.FeedbackSuppressionMode.OFF)
                     .setTooltip(Component.translatable("tooltip.tupenter.suppress_feedback"))
                     .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.suppressFeedback = newValue)
+                    .setEnumNameProvider(mode -> Component.translatable("mode.tupenter.feedback." + mode.name().toLowerCase()))
                     .build());
 
             general.addEntry(entryBuilder.startEnumSelector(Component.translatable("option.tupenter.resend_filter"), TupenterConfig.ResendFilter.class, TupenterConfig.INSTANCE.resendFilter)
@@ -63,7 +64,7 @@ public class ModMenuIntegration implements ModMenuApi {
                     .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.updateInToggle = newValue)
                     .build());
 
-            general.addEntry(entryBuilder.startIntSlider(Component.translatable("option.tupenter.resend_amount"), TupenterConfig.INSTANCE.resendAmount, 1, 20)
+            general.addEntry(entryBuilder.startIntSlider(Component.translatable("option.tupenter.resend_amount"), TupenterConfig.INSTANCE.resendAmount, 1, 10)
                     .setDefaultValue(1)
                     .setTooltip(Component.translatable("tooltip.tupenter.resend_amount"))
                     .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.resendAmount = newValue)

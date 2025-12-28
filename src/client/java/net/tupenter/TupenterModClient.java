@@ -80,7 +80,7 @@ public class TupenterModClient implements ClientModInitializer {
                 }
             }
 
-            // Toggle Logic
+            // Toggle/Mode Logic
             if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE) {
                  if (isKeyDown && !wasKeyDown) {
                     // Toggle on/off on fresh press
@@ -106,10 +106,14 @@ public class TupenterModClient implements ClientModInitializer {
                  }
 
                  shouldSend = isToggledOn;
-            } else {
+            } else if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.PRESS_AND_HOLD) {
                 // Press and Hold mode
                 shouldSend = isKeyDown;
-                isToggledOn = false; // Ensure toggle state doesn't persist if mode switched
+                isToggledOn = false;
+            } else {
+                // OFF mode
+                shouldSend = false;
+                isToggledOn = false;
             }
 
             // Apply Grace Period (Ignore if Toggled On)

@@ -18,7 +18,7 @@ public class TupenterConfig {
     public int gracePeriod = 10;
     public int rapidResendDelay = 5;
     public ResendMode resendMode = ResendMode.PRESS_AND_HOLD;
-    public boolean suppressFeedback = false;
+    public FeedbackSuppressionMode suppressFeedback = FeedbackSuppressionMode.OFF;
     public ResendFilter resendFilter = ResendFilter.BOTH;
     public boolean rememberLastValid = true;
     public boolean updateInToggle = false;
@@ -26,7 +26,14 @@ public class TupenterConfig {
 
     public enum ResendMode {
         PRESS_AND_HOLD,
-        TOGGLE
+        TOGGLE,
+        OFF
+    }
+
+    public enum FeedbackSuppressionMode {
+        OFF,
+        ON,
+        DYNAMIC
     }
 
     public enum ResendFilter {
@@ -44,14 +51,15 @@ public class TupenterConfig {
                     INSTANCE.gracePeriod = loaded.gracePeriod;
                     INSTANCE.rapidResendDelay = loaded.rapidResendDelay;
                     INSTANCE.resendMode = loaded.resendMode != null ? loaded.resendMode : ResendMode.PRESS_AND_HOLD;
-                    INSTANCE.suppressFeedback = loaded.suppressFeedback;
+                    INSTANCE.suppressFeedback = loaded.suppressFeedback != null ? loaded.suppressFeedback : FeedbackSuppressionMode.OFF;
                     INSTANCE.resendFilter = loaded.resendFilter != null ? loaded.resendFilter : ResendFilter.BOTH;
                     INSTANCE.rememberLastValid = loaded.rememberLastValid;
                     INSTANCE.updateInToggle = loaded.updateInToggle;
                     INSTANCE.resendAmount = Math.max(1, loaded.resendAmount); // Ensure at least 1
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
+            } catch (Exception e) {
+                System.err.println("Failed to load config, resetting to defaults: " + e.getMessage());
+                save();
             }
         } else {
             save();

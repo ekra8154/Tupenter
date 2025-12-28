@@ -13,8 +13,23 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class MixinClientPacketListener {
     @Inject(method = "handleSystemChat", at = @At("HEAD"), cancellable = true)
     private void onHandleSystemChat(ClientboundSystemChatPacket packet, CallbackInfo ci) {
-        // If config enabled AND mod is currently auto-firing, suppress ALL system feedback
-        if (TupenterConfig.INSTANCE.suppressFeedback && TupenterModClient.isFiring) {
+        boolean shouldSuppress = false;
+        if (TupenterModClient.isFiring) {
+            switch (TupenterConfig.INSTANCE.suppressFeedback) {
+                case ON:
+                    shouldSuppress = true;
+                    break;
+                case DYNAMIC:
+                    shouldSuppress = TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE;
+                    break;
+                case OFF:
+                default:
+                    shouldSuppress = false;
+                    break;
+            }
+        }
+
+        if (shouldSuppress) {
             ci.cancel();
         }
     }
