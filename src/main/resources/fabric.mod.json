@@ -20,6 +20,9 @@
 		],
 		"client": [
 			"net.tupenter.TupenterModClient"
+		],
+		"modmenu": [
+			"net.tupenter.compat.ModMenuIntegration"
 		]
 	},
 	"mixins": [
@@ -36,6 +39,7 @@
 		"fabric-api": "*"
 	},
 	"suggests": {
-		"another-mod": "*"
+		"modmenu": "*",
+		"cloth-config": "*"
 	}
 }

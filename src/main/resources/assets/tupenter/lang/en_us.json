@@ -1,4 +1,10 @@
 {
   "key.tupenter.resend": "Resend",
-  "key.category.tupenter.general": "Tupenter"
+  "key.category.tupenter.general": "Tupenter",
+  "title.tupenter.config": "Tupenter Config",
+  "category.tupenter.general": "General",
+  "option.tupenter.grace_period": "Grace Period (ticks)",
+  "tooltip.tupenter.grace_period": "Delay after closing chat before keybind works (to prevent accidental resend)",
+  "option.tupenter.machine_gun_delay": "Machine Gun Delay (ticks)",
+  "tooltip.tupenter.machine_gun_delay": "Ticks to hold before rapid fire starts"
 }

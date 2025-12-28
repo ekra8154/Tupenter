@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.resources.ResourceLocation;
+import net.tupenter.config.TupenterConfig;
 import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.platform.InputConstants;
 
@@ -24,10 +25,13 @@ public class TupenterModClient implements ClientModInitializer {
 			new KeyMapping.Category(ResourceLocation.fromNamespaceAndPath(TupenterMod.MOD_ID, "general"))
 		));
 
+		// Load Config
+		TupenterConfig.load();
+
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			// Check for screen transition from ChatScreen to null (gameplay)
 			if (lastScreen instanceof net.minecraft.client.gui.screens.ChatScreen && client.screen == null) {
-				gracePeriod = 10; // 0.5 seconds grace period
+				gracePeriod = TupenterConfig.INSTANCE.gracePeriod;
 			}
 			lastScreen = client.screen;
 
@@ -42,7 +46,7 @@ public class TupenterModClient implements ClientModInitializer {
 
 			if (resendKey.isDown()) {
 				timeDown++;
-				if (timeDown == 1 || timeDown > 5) {
+				if (timeDown == 1 || timeDown > TupenterConfig.INSTANCE.machineGunDelay) {
 					if (!lastMessage.isEmpty() && client.player != null) {
 						if (lastMessage.startsWith("/")) {
 							client.player.connection.sendCommand(lastMessage.substring(1));
