@@ -8,6 +8,8 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class TupenterConfig {
     private static final File CONFIG_FILE = FabricLoader.getInstance().getConfigDir().resolve("tupenter.json").toFile();
@@ -17,12 +19,16 @@ public class TupenterConfig {
 
     public int gracePeriod = 10;
     public int rapidResendDelay = 5;
+    public int resendDelay = 0;
     public ResendMode resendMode = ResendMode.PRESS_AND_HOLD;
     public FeedbackSuppressionMode suppressFeedback = FeedbackSuppressionMode.OFF;
     public ResendFilter resendFilter = ResendFilter.BOTH;
     public boolean rememberLastValid = true;
     public boolean updateInToggle = false;
+
     public int resendAmount = 1;
+    public boolean usePermanentMessage = false;
+    public List<String> permanentMessages = new ArrayList<>();
 
     public enum ResendMode {
         PRESS_AND_HOLD,
@@ -50,12 +56,16 @@ public class TupenterConfig {
                 if (loaded != null) {
                     INSTANCE.gracePeriod = loaded.gracePeriod;
                     INSTANCE.rapidResendDelay = loaded.rapidResendDelay;
+                    INSTANCE.resendDelay = Math.max(0, loaded.resendDelay);
                     INSTANCE.resendMode = loaded.resendMode != null ? loaded.resendMode : ResendMode.PRESS_AND_HOLD;
                     INSTANCE.suppressFeedback = loaded.suppressFeedback != null ? loaded.suppressFeedback : FeedbackSuppressionMode.OFF;
                     INSTANCE.resendFilter = loaded.resendFilter != null ? loaded.resendFilter : ResendFilter.BOTH;
                     INSTANCE.rememberLastValid = loaded.rememberLastValid;
                     INSTANCE.updateInToggle = loaded.updateInToggle;
+                    INSTANCE.updateInToggle = loaded.updateInToggle;
                     INSTANCE.resendAmount = Math.max(1, loaded.resendAmount); // Ensure at least 1
+                    INSTANCE.usePermanentMessage = loaded.usePermanentMessage;
+                    INSTANCE.permanentMessages = loaded.permanentMessages != null ? loaded.permanentMessages : new ArrayList<>();
                 }
             } catch (Exception e) {
                 System.err.println("Failed to load config, resetting to defaults: " + e.getMessage());

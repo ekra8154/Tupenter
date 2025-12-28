@@ -9,12 +9,14 @@ import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.tupenter.config.TupenterConfig;
+import net.tupenter.compat.ModMenuIntegration;
 import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.platform.InputConstants;
 
 public class TupenterModClient implements ClientModInitializer {
 	public static String lastMessage = "";
 	private static KeyMapping resendKey;
+	private static KeyMapping configKey;
     public static boolean isFiring = false; // Public for Mixin access
     private static long lastChatCloseTime = 0;
     private static boolean isToggledOn = false;
@@ -37,11 +39,20 @@ public class TupenterModClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		KeyMapping.Category tupenterCategory = new KeyMapping.Category(ResourceLocation.fromNamespaceAndPath("tupenter", "general"));
+
 		resendKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 			"key.tupenter.resend",
 			InputConstants.Type.KEYSYM,
 			GLFW.GLFW_KEY_R,
-			new KeyMapping.Category(ResourceLocation.fromNamespaceAndPath("tupenter", "general"))
+			tupenterCategory
+		));
+
+		configKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+			"key.tupenter.config",
+			InputConstants.Type.KEYSYM,
+			InputConstants.UNKNOWN.getValue(),
+			tupenterCategory
 		));
 
 		// Load Config
@@ -141,15 +152,39 @@ public class TupenterModClient implements ClientModInitializer {
                 boolean shouldFireNow = false;
 
                 if (isToggleMode) {
-                    // Fire every tick
-                    shouldFireNow = true;
+                    // Toggle Mode logic: Fire every (resendDelay + 1) ticks
+                    // keyHoldTicks increments every tick while active
+                    shouldFireNow = (keyHoldTicks - 1) % (TupenterConfig.INSTANCE.resendDelay + 1) == 0;
                 } else {
-                    // Respect delay
-                    shouldFireNow = keyHoldTicks == 1 || keyHoldTicks > TupenterConfig.INSTANCE.rapidResendDelay;
+                    // Press and Hold:
+                    // 1. Fire on first tick
+                    // 2. Wait for rapidResendDelay (initial delay)
+                    // 3. Then fire every (resendDelay + 1) ticks
+                    if (keyHoldTicks == 1) {
+                        shouldFireNow = true;
+                    } else if (keyHoldTicks > TupenterConfig.INSTANCE.rapidResendDelay) {
+                        long activeTicks = keyHoldTicks - TupenterConfig.INSTANCE.rapidResendDelay;
+                        shouldFireNow = (activeTicks - 1) % (TupenterConfig.INSTANCE.resendDelay + 1) == 0;
+                    }
                 }
 
                 if (shouldFireNow) {
-                   if (!targetMessage.isEmpty()) {
+                   if (TupenterConfig.INSTANCE.usePermanentMessage) {
+                        // Permanent Message Mode
+                        int packets = Math.max(1, TupenterConfig.INSTANCE.resendAmount);
+                         for (int i = 0; i < packets; i++) {
+                            for (String msg : TupenterConfig.INSTANCE.permanentMessages) {
+                                if (msg == null || msg.trim().isEmpty()) continue;
+                                
+                                if (msg.startsWith("/")) {
+                                    client.player.connection.sendCommand(msg.substring(1));
+                                } else {
+                                    client.player.connection.sendChat(msg);
+                                }
+                            }
+                         }
+                   } else if (!targetMessage.isEmpty()) {
+                        // Standard History Mode
                         boolean isCommand = targetMessage.startsWith("/");
                         boolean allowed = true;
 
@@ -184,6 +219,10 @@ public class TupenterModClient implements ClientModInitializer {
             
             // Consume any buffered clicks
             while (resendKey.consumeClick()) { /* no-op */ }
+
+            while (configKey.consumeClick()) {
+                client.setScreen(ModMenuIntegration.createScreen(client.screen));
+            }
         });
 	}
 }
