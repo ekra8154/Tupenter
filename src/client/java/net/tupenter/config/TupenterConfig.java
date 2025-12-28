@@ -16,13 +16,40 @@ public class TupenterConfig {
     public static TupenterConfig INSTANCE = new TupenterConfig();
 
     public int gracePeriod = 10;
-    public int machineGunDelay = 5;
-    public int machineGunRate = 1;
+    public int rapidResendDelay = 5;
+    public ResendMode resendMode = ResendMode.PRESS_AND_HOLD;
+    public boolean suppressFeedback = false;
+    public ResendFilter resendFilter = ResendFilter.BOTH;
+    public boolean rememberLastValid = true;
+    public boolean updateInToggle = false;
+    public int resendAmount = 1;
+
+    public enum ResendMode {
+        PRESS_AND_HOLD,
+        TOGGLE
+    }
+
+    public enum ResendFilter {
+        BOTH,
+        CHAT_ONLY,
+        COMMANDS_ONLY
+    }
 
     public static void load() {
-        if (CONFIG_FILE.exists()) {
-            try (FileReader reader = new FileReader(CONFIG_FILE)) {
-                INSTANCE = GSON.fromJson(reader, TupenterConfig.class);
+        File configFile = new File(FabricLoader.getInstance().getConfigDir().toFile(), "tupenter.json");
+        if (configFile.exists()) {
+            try (FileReader reader = new FileReader(configFile)) {
+                TupenterConfig loaded = GSON.fromJson(reader, TupenterConfig.class);
+                if (loaded != null) {
+                    INSTANCE.gracePeriod = loaded.gracePeriod;
+                    INSTANCE.rapidResendDelay = loaded.rapidResendDelay;
+                    INSTANCE.resendMode = loaded.resendMode != null ? loaded.resendMode : ResendMode.PRESS_AND_HOLD;
+                    INSTANCE.suppressFeedback = loaded.suppressFeedback;
+                    INSTANCE.resendFilter = loaded.resendFilter != null ? loaded.resendFilter : ResendFilter.BOTH;
+                    INSTANCE.rememberLastValid = loaded.rememberLastValid;
+                    INSTANCE.updateInToggle = loaded.updateInToggle;
+                    INSTANCE.resendAmount = Math.max(1, loaded.resendAmount); // Ensure at least 1
+                }
             } catch (IOException e) {
                 e.printStackTrace();
             }

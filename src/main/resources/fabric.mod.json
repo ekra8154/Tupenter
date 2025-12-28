@@ -13,11 +13,8 @@
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/tupenter/icon.png",
-	"environment": "*",
+	"environment": "client",
 	"entrypoints": {
-		"main": [
-			"net.tupenter.TupenterMod"
-		],
 		"client": [
 			"net.tupenter.TupenterModClient"
 		],

@@ -14,10 +14,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class MixinConnection {
 	@Inject(method = "send(Lnet/minecraft/network/protocol/Packet;)V", at = @At("HEAD"))
 	private void onSend(Packet<?> packet, CallbackInfo ci) {
-		if (packet instanceof ServerboundChatPacket) {
-			TupenterModClient.lastMessage = ((ServerboundChatPacket) packet).message();
-		} else if (packet instanceof ServerboundChatCommandPacket) {
-			TupenterModClient.lastMessage = "/" + ((ServerboundChatCommandPacket) packet).command();
-		}
+        String content = null;
+        if (packet instanceof ServerboundChatPacket) {
+            content = ((ServerboundChatPacket) packet).message();
+        } else if (packet instanceof ServerboundChatCommandPacket) {
+            content = "/" + ((ServerboundChatCommandPacket) packet).command();
+        }
+
+        if (content != null) {
+            TupenterModClient.updateLastMessage(content);
+        }
 	}
 }
