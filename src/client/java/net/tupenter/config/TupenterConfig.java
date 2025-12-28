@@ -20,10 +20,13 @@ public class TupenterConfig {
     public int gracePeriod = 10;
     public int rapidResendDelay = 5;
     public int resendDelay = 0;
+    public int historyDepth = 1;
     public ResendMode resendMode = ResendMode.PRESS_AND_HOLD;
+    public ResendOrder resendOrder = ResendOrder.OLDEST_FIRST;
     public FeedbackSuppressionMode suppressFeedback = FeedbackSuppressionMode.OFF;
     public ResendFilter resendFilter = ResendFilter.BOTH;
     public boolean rememberLastValid = true;
+    public boolean recordHistory = true;
     public boolean updateInToggle = false;
 
     public int resendAmount = 1;
@@ -34,6 +37,11 @@ public class TupenterConfig {
         PRESS_AND_HOLD,
         TOGGLE,
         OFF
+    }
+    
+    public enum ResendOrder {
+        OLDEST_FIRST,
+        NEWEST_FIRST
     }
 
     public enum FeedbackSuppressionMode {
@@ -57,11 +65,13 @@ public class TupenterConfig {
                     INSTANCE.gracePeriod = loaded.gracePeriod;
                     INSTANCE.rapidResendDelay = loaded.rapidResendDelay;
                     INSTANCE.resendDelay = Math.max(0, loaded.resendDelay);
+                    INSTANCE.historyDepth = Math.max(1, loaded.historyDepth);
                     INSTANCE.resendMode = loaded.resendMode != null ? loaded.resendMode : ResendMode.PRESS_AND_HOLD;
+                    INSTANCE.resendOrder = loaded.resendOrder != null ? loaded.resendOrder : ResendOrder.OLDEST_FIRST;
                     INSTANCE.suppressFeedback = loaded.suppressFeedback != null ? loaded.suppressFeedback : FeedbackSuppressionMode.OFF;
                     INSTANCE.resendFilter = loaded.resendFilter != null ? loaded.resendFilter : ResendFilter.BOTH;
                     INSTANCE.rememberLastValid = loaded.rememberLastValid;
-                    INSTANCE.updateInToggle = loaded.updateInToggle;
+                    INSTANCE.recordHistory = loaded.recordHistory;
                     INSTANCE.updateInToggle = loaded.updateInToggle;
                     INSTANCE.resendAmount = Math.max(1, loaded.resendAmount); // Ensure at least 1
                     INSTANCE.usePermanentMessage = loaded.usePermanentMessage;

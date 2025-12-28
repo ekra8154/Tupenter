@@ -69,6 +69,12 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.rememberLastValid = newValue)
                 .build());
 
+        general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.record_history"), TupenterConfig.INSTANCE.recordHistory)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.record_history"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.recordHistory = newValue)
+                .build());
+
         general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.update_in_toggle"), TupenterConfig.INSTANCE.updateInToggle)
                 .setDefaultValue(false)
                 .setTooltip(Component.translatable("tooltip.tupenter.update_in_toggle"))
@@ -79,6 +85,19 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setDefaultValue(1)
                 .setTooltip(Component.translatable("tooltip.tupenter.resend_amount"))
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.resendAmount = newValue)
+                .build());
+
+        general.addEntry(entryBuilder.startIntSlider(Component.translatable("option.tupenter.history_depth"), TupenterConfig.INSTANCE.historyDepth, 1, 10)
+                .setDefaultValue(1)
+                .setTooltip(Component.translatable("tooltip.tupenter.history_depth"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.historyDepth = newValue)
+                .build());
+
+        general.addEntry(entryBuilder.startEnumSelector(Component.translatable("option.tupenter.resend_order"), TupenterConfig.ResendOrder.class, TupenterConfig.INSTANCE.resendOrder)
+                .setDefaultValue(TupenterConfig.ResendOrder.OLDEST_FIRST)
+                .setTooltip(Component.translatable("tooltip.tupenter.resend_order"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.resendOrder = newValue)
+                .setEnumNameProvider(mode -> Component.translatable("order.tupenter." + mode.name().toLowerCase()))
                 .build());
 
         general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.use_permanent_message"), TupenterConfig.INSTANCE.usePermanentMessage)

@@ -4,6 +4,9 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.ChatFormatting;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.network.chat.Component;
@@ -17,6 +20,7 @@ public class TupenterModClient implements ClientModInitializer {
 	public static String lastMessage = "";
 	private static KeyMapping resendKey;
 	private static KeyMapping configKey;
+    private static KeyMapping recordHistoryKey;
     public static boolean isFiring = false; // Public for Mixin access
     private static long lastChatCloseTime = 0;
     private static boolean isToggledOn = false;
@@ -24,16 +28,19 @@ public class TupenterModClient implements ClientModInitializer {
     private static int keyHoldTicks = 0;
 
     // History tracking
-    public static String lastChat = "";
-    public static String lastCommand = "";
-    public static String lockedMessage = ""; // For toggle mode locking
+    public static final List<String> messageHistory = new ArrayList<>();
+    public static List<String> lockedBatch = new ArrayList<>(); // For toggle mode locking
 
     public static void updateLastMessage(String msg) {
-        lastMessage = msg;
-        if (msg.startsWith("/")) {
-            lastCommand = msg;
-        } else {
-            lastChat = msg;
+        if (!TupenterConfig.INSTANCE.recordHistory) return;
+        if (msg == null || msg.trim().isEmpty()) return;
+        
+        // Avoid duplicates at top of stack (optional, but good UX)
+        if (!messageHistory.isEmpty() && messageHistory.get(messageHistory.size() - 1).equals(msg)) return;
+
+        messageHistory.add(msg);
+        if (messageHistory.size() > 50) {
+            messageHistory.remove(0);
         }
     }
 
@@ -50,6 +57,13 @@ public class TupenterModClient implements ClientModInitializer {
 
 		configKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 			"key.tupenter.config",
+			InputConstants.Type.KEYSYM,
+			InputConstants.UNKNOWN.getValue(),
+			tupenterCategory
+		));
+
+		recordHistoryKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+			"key.tupenter.toggle_recording",
 			InputConstants.Type.KEYSYM,
 			InputConstants.UNKNOWN.getValue(),
 			tupenterCategory
@@ -75,20 +89,35 @@ public class TupenterModClient implements ClientModInitializer {
             boolean shouldSend = false;
 
             // Determine the target message to use
-            String targetMessage = lastMessage;
+            // Determine the target batch to use
+            List<String> targetBatch = new ArrayList<>();
             if (TupenterConfig.INSTANCE.rememberLastValid) {
-                switch (TupenterConfig.INSTANCE.resendFilter) {
-                    case CHAT_ONLY:
-                        targetMessage = lastChat;
-                        break;
-                    case COMMANDS_ONLY:
-                        targetMessage = lastCommand;
-                        break;
-                    case BOTH:
-                    default:
-                        targetMessage = lastMessage;
-                        break;
+                int depth = Math.max(1, TupenterConfig.INSTANCE.historyDepth);
+                int collected = 0;
+                
+                // Iterate backwards
+                for (int i = messageHistory.size() - 1; i >= 0 && collected < depth; i--) {
+                     String candidate = messageHistory.get(i);
+                     boolean isCommand = candidate.startsWith("/");
+                     boolean allowed = true;
+
+                     switch (TupenterConfig.INSTANCE.resendFilter) {
+                        case CHAT_ONLY: if (isCommand) allowed = false; break;
+                        case COMMANDS_ONLY: if (!isCommand) allowed = false; break;
+                        case BOTH: default: allowed = true; break;
+                     }
+                     
+                     if (allowed) {
+                         targetBatch.add(candidate);
+                         collected++;
+                     }
                 }
+                // Determine order
+                if (TupenterConfig.INSTANCE.resendOrder == TupenterConfig.ResendOrder.OLDEST_FIRST) {
+                    // Reverse to restore chronological order (A, B, C)
+                    Collections.reverse(targetBatch);
+                }
+                // Else: Leave as is (C, B, A)
             }
 
             // Toggle/Mode Logic
@@ -99,7 +128,7 @@ public class TupenterModClient implements ClientModInitializer {
                     
                     // Lock message on start if configured
                     if (isToggledOn && !TupenterConfig.INSTANCE.updateInToggle) {
-                        lockedMessage = targetMessage;
+                        lockedBatch = new ArrayList<>(targetBatch);
                     }
                  }
                  
@@ -136,11 +165,11 @@ public class TupenterModClient implements ClientModInitializer {
 
             // Apply Lock overrides
             if (shouldSend && TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE && !TupenterConfig.INSTANCE.updateInToggle) {
-                // Late Latch: If matched empty, try to grab the first valid message sent
-                if (lockedMessage.isEmpty() && !targetMessage.isEmpty()) {
-                    lockedMessage = targetMessage;
+                // Late Latch: If matched empty, try to grab the first valid batch
+                if (lockedBatch.isEmpty() && !targetBatch.isEmpty()) {
+                    lockedBatch = new ArrayList<>(targetBatch);
                 }
-                targetMessage = lockedMessage;
+                targetBatch = lockedBatch;
             }
 
             wasKeyDown = isKeyDown; // Track previous state for edge detection
@@ -183,31 +212,15 @@ public class TupenterModClient implements ClientModInitializer {
                                 }
                             }
                          }
-                   } else if (!targetMessage.isEmpty()) {
-                        // Standard History Mode
-                        boolean isCommand = targetMessage.startsWith("/");
-                        boolean allowed = true;
-
-                        switch (TupenterConfig.INSTANCE.resendFilter) {
-                            case CHAT_ONLY:
-                                if (isCommand) allowed = false;
-                                break;
-                            case COMMANDS_ONLY:
-                                if (!isCommand) allowed = false;
-                                break;
-                            case BOTH:
-                            default:
-                                allowed = true;
-                                break;
-                        }
-
-                        if (allowed) {
-                            int packets = Math.max(1, TupenterConfig.INSTANCE.resendAmount);
-                            for (int i = 0; i < packets; i++) {
-                                if (isCommand) {
-                                    client.player.connection.sendCommand(targetMessage.substring(1));
+                   } else if (!targetBatch.isEmpty()) {
+                        // Standard History Mode (Batch)
+                        int packets = Math.max(1, TupenterConfig.INSTANCE.resendAmount);
+                        for (int i = 0; i < packets; i++) {
+                            for (String msg : targetBatch) {
+                                if (msg.startsWith("/")) {
+                                    client.player.connection.sendCommand(msg.substring(1));
                                 } else {
-                                    client.player.connection.sendChat(targetMessage);
+                                    client.player.connection.sendChat(msg);
                                 }
                             }
                         }
@@ -222,6 +235,21 @@ public class TupenterModClient implements ClientModInitializer {
 
             while (configKey.consumeClick()) {
                 client.setScreen(ModMenuIntegration.createScreen(client.screen));
+            }
+            
+            while (recordHistoryKey.consumeClick()) {
+                TupenterConfig.INSTANCE.recordHistory = !TupenterConfig.INSTANCE.recordHistory;
+                TupenterConfig.save();
+                
+                Component status = TupenterConfig.INSTANCE.recordHistory
+                    ? Component.translatable("tupenter.recording.on").withStyle(ChatFormatting.GREEN)
+                    : Component.translatable("tupenter.recording.off").withStyle(ChatFormatting.RED);
+                 
+                Component msg = Component.translatable("tupenter.recording.prefix")
+                    .withStyle(ChatFormatting.WHITE)
+                    .append(status);
+                    
+                client.player.displayClientMessage(msg, true);
             }
         });
 	}
