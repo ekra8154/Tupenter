@@ -5,8 +5,6 @@
   "key.category.tupenter.general": "Tupenter",
   "title.tupenter.config": "Tupenter Config",
   "category.tupenter.general": "General",
-  "option.tupenter.grace_period": "Grace Period (ticks)",
-  "tooltip.tupenter.grace_period": "Delay after closing chat before keybind works (to prevent accidental resend)",
   "option.tupenter.rapid_resend_delay": "Hold Initial Delay (Ticks)",
   "tooltip.tupenter.rapid_resend_delay": "How long to wait before rapid firing starts (Press & Hold only).",
   "option.tupenter.resend_delay": "Batch Delay (Ticks)",

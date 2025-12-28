@@ -26,7 +26,6 @@ public class TupenterModClient implements ClientModInitializer {
     public static boolean isFiring = false; // Public for Mixin access
     private static long lastChatCloseTime = 0;
     private static boolean isToggledOn = false;
-    private static boolean wasKeyDown = false; // For edge detection
     private static int keyHoldTicks = 0;
 
     // Queue System
@@ -202,7 +201,7 @@ public class TupenterModClient implements ClientModInitializer {
             } else if (lastChatCloseTime == 0 && client.screen == null) {
                 lastChatCloseTime = System.currentTimeMillis();
             }
-            boolean gracePeriodActive = (System.currentTimeMillis() - lastChatCloseTime) < (TupenterConfig.INSTANCE.gracePeriod * 50L);
+            boolean gracePeriodActive = (System.currentTimeMillis() - lastChatCloseTime) < 500L;
 
             if (gracePeriodActive && !isToggledOn && TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.PRESS_AND_HOLD) {
                  // Block firing during grace period

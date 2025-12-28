@@ -24,12 +24,6 @@ public class ModMenuIntegration implements ModMenuApi {
         ConfigCategory general = builder.getOrCreateCategory(Component.translatable("category.tupenter.general"));
         ConfigEntryBuilder entryBuilder = builder.entryBuilder();
 
-        general.addEntry(entryBuilder.startIntSlider(Component.translatable("option.tupenter.grace_period"), TupenterConfig.INSTANCE.gracePeriod, 0, 100)
-                .setDefaultValue(10)
-                .setTooltip(Component.translatable("tooltip.tupenter.grace_period"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.gracePeriod = newValue)
-                .build());
-
         general.addEntry(entryBuilder.startIntSlider(Component.translatable("option.tupenter.rapid_resend_delay"), TupenterConfig.INSTANCE.rapidResendDelay, 0, 100)
                 .setDefaultValue(5)
                 .setTooltip(Component.translatable("tooltip.tupenter.rapid_resend_delay"))
