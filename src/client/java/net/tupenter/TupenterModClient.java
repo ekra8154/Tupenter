@@ -7,6 +7,8 @@ import net.minecraft.ChatFormatting;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.LinkedList;
+import java.util.Queue;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.network.chat.Component;
@@ -24,8 +26,12 @@ public class TupenterModClient implements ClientModInitializer {
     public static boolean isFiring = false; // Public for Mixin access
     private static long lastChatCloseTime = 0;
     private static boolean isToggledOn = false;
-    private static boolean wasKeyDown = false; // For edge detectioncraft.client.gui.screens.Screen lastScreen = null;
+    private static boolean wasKeyDown = false; // For edge detection
     private static int keyHoldTicks = 0;
+
+    // Queue System
+    public static final Queue<String> pendingQueue = new LinkedList<>();
+    public static int delayTimer = 0;
 
     // History tracking
     public static final List<String> messageHistory = new ArrayList<>();
@@ -74,172 +80,24 @@ public class TupenterModClient implements ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
-
-            // Grace period check
-             if (client.screen instanceof ChatScreen) {
-                lastChatCloseTime = 0; // Reset while chat is open
-            } else if (lastChatCloseTime == 0 && client.screen == null) { // Corrected client.currentScreen to client.screen
-                // Chat just closed
-                lastChatCloseTime = System.currentTimeMillis();
-            }
-
-            boolean gracePeriodActive = (System.currentTimeMillis() - lastChatCloseTime) < (TupenterConfig.INSTANCE.gracePeriod * 50L); /* 50ms per tick approx */
-
-            boolean isKeyDown = resendKey.isDown();
-            boolean shouldSend = false;
-
-            // Determine the target message to use
-            // Determine the target batch to use
-            List<String> targetBatch = new ArrayList<>();
-            if (TupenterConfig.INSTANCE.rememberLastValid) {
-                int depth = Math.max(1, TupenterConfig.INSTANCE.historyDepth);
-                int collected = 0;
-                
-                // Iterate backwards
-                for (int i = messageHistory.size() - 1; i >= 0 && collected < depth; i--) {
-                     String candidate = messageHistory.get(i);
-                     boolean isCommand = candidate.startsWith("/");
-                     boolean allowed = true;
-
-                     switch (TupenterConfig.INSTANCE.resendFilter) {
-                        case CHAT_ONLY: if (isCommand) allowed = false; break;
-                        case COMMANDS_ONLY: if (!isCommand) allowed = false; break;
-                        case BOTH: default: allowed = true; break;
-                     }
-                     
-                     if (allowed) {
-                         targetBatch.add(candidate);
-                         collected++;
-                     }
-                }
-                // Determine order
-                if (TupenterConfig.INSTANCE.resendOrder == TupenterConfig.ResendOrder.OLDEST_FIRST) {
-                    // Reverse to restore chronological order (A, B, C)
-                    Collections.reverse(targetBatch);
-                }
-                // Else: Leave as is (C, B, A)
-            }
-
-            // Toggle/Mode Logic
-            if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE) {
-                 if (isKeyDown && !wasKeyDown) {
-                    // Toggle on/off on fresh press
-                    isToggledOn = !isToggledOn;
-                    
-                    // Lock message on start if configured
-                    if (isToggledOn && !TupenterConfig.INSTANCE.updateInToggle) {
-                        lockedBatch = new ArrayList<>(targetBatch);
-                    }
-                 }
-                 
-                 // HUD Notification on state change (edge detection for visual only)
-                 if (isKeyDown && !wasKeyDown && client.player != null) {
-                     Component status = isToggledOn 
-                        ? Component.translatable("tupenter.toggle.on").withStyle(ChatFormatting.GREEN)
-                        : Component.translatable("tupenter.toggle.off").withStyle(ChatFormatting.RED);
-                     
-                     Component msg = Component.translatable("tupenter.toggle.prefix")
-                        .withStyle(ChatFormatting.WHITE)
-                        .append(status);
-
-                     client.player.displayClientMessage(msg, true);
-                 }
-
-                 shouldSend = isToggledOn;
-            } else if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.PRESS_AND_HOLD) {
-                // Press and Hold mode
-                shouldSend = isKeyDown;
-                isToggledOn = false;
-            } else {
-                // OFF mode
-                shouldSend = false;
-                isToggledOn = false;
-            }
-
-            // Apply Grace Period (Ignore if Toggled On)
-            if (gracePeriodActive && !isToggledOn) {
-                 keyHoldTicks = 0;
-                 while (resendKey.consumeClick()) { /* no-op */ }
-                 return;
-            }
-
-            // Apply Lock overrides
-            if (shouldSend && TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE && !TupenterConfig.INSTANCE.updateInToggle) {
-                // Late Latch: If matched empty, try to grab the first valid batch
-                if (lockedBatch.isEmpty() && !targetBatch.isEmpty()) {
-                    lockedBatch = new ArrayList<>(targetBatch);
-                }
-                targetBatch = lockedBatch;
-            }
-
-            wasKeyDown = isKeyDown; // Track previous state for edge detection
-            isFiring = shouldSend; // Update public state for Mixin
-
-            if (shouldSend) {
-                keyHoldTicks++;
-                boolean isToggleMode = TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE;
-                boolean shouldFireNow = false;
-
-                if (isToggleMode) {
-                    // Toggle Mode logic: Fire every (resendDelay + 1) ticks
-                    // keyHoldTicks increments every tick while active
-                    shouldFireNow = (keyHoldTicks - 1) % (TupenterConfig.INSTANCE.resendDelay + 1) == 0;
-                } else {
-                    // Press and Hold:
-                    // 1. Fire on first tick
-                    // 2. Wait for rapidResendDelay (initial delay)
-                    // 3. Then fire every (resendDelay + 1) ticks
-                    if (keyHoldTicks == 1) {
-                        shouldFireNow = true;
-                    } else if (keyHoldTicks > TupenterConfig.INSTANCE.rapidResendDelay) {
-                        long activeTicks = keyHoldTicks - TupenterConfig.INSTANCE.rapidResendDelay;
-                        shouldFireNow = (activeTicks - 1) % (TupenterConfig.INSTANCE.resendDelay + 1) == 0;
-                    }
-                }
-
-                if (shouldFireNow) {
-                   if (TupenterConfig.INSTANCE.usePermanentMessage) {
-                        // Permanent Message Mode
-                        int packets = Math.max(1, TupenterConfig.INSTANCE.resendAmount);
-                         for (int i = 0; i < packets; i++) {
-                            for (String msg : TupenterConfig.INSTANCE.permanentMessages) {
-                                if (msg == null || msg.trim().isEmpty()) continue;
-                                
-                                if (msg.startsWith("/")) {
-                                    client.player.connection.sendCommand(msg.substring(1));
-                                } else {
-                                    client.player.connection.sendChat(msg);
-                                }
-                            }
-                         }
-                   } else if (!targetBatch.isEmpty()) {
-                        // Standard History Mode (Batch)
-                        int packets = Math.max(1, TupenterConfig.INSTANCE.resendAmount);
-                        for (int i = 0; i < packets; i++) {
-                            for (String msg : targetBatch) {
-                                if (msg.startsWith("/")) {
-                                    client.player.connection.sendCommand(msg.substring(1));
-                                } else {
-                                    client.player.connection.sendChat(msg);
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                keyHoldTicks = 0;
-            }
             
-            // Consume any buffered clicks
-            while (resendKey.consumeClick()) { /* no-op */ }
-
+            // =========================================================
+            // 0. GLOBAL INPUT HANDLING (Always runs)
+            // =========================================================
+            
+            // Handle Config
             while (configKey.consumeClick()) {
                 client.setScreen(ModMenuIntegration.createScreen(client.screen));
             }
             
+            // Handle History Recording Toggle
             while (recordHistoryKey.consumeClick()) {
                 TupenterConfig.INSTANCE.recordHistory = !TupenterConfig.INSTANCE.recordHistory;
                 TupenterConfig.save();
+                
+                if (TupenterConfig.INSTANCE.recordHistory) {
+                    messageHistory.clear();
+                }
                 
                 Component status = TupenterConfig.INSTANCE.recordHistory
                     ? Component.translatable("tupenter.recording.on").withStyle(ChatFormatting.GREEN)
@@ -250,6 +108,223 @@ public class TupenterModClient implements ClientModInitializer {
                     .append(status);
                     
                 client.player.displayClientMessage(msg, true);
+            }
+
+            // =========================================================
+            // 1. STATE MANAGEMENT (Toggling)
+            // =========================================================
+            
+            // Logic to calculate batch (needed for locking on toggle)
+            // We lazily calculate this only if we trigger a toggle ON event to save perf?
+            // Actually, we need it if we are engaging.
+            // Let's keep logic cleaner: Toggle State Logic first.
+
+            if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE) {
+                 while (resendKey.consumeClick()) {
+                    isToggledOn = !isToggledOn;
+                    
+                    if (isToggledOn) {
+                         // Toggled ON: Lock current potential batch if needed
+                         if (!TupenterConfig.INSTANCE.updateInToggle) {
+                             // --- REPLICATED SEARCH LOGIC START ---
+                             List<String> currentCandidates = new ArrayList<>();
+                             if (TupenterConfig.INSTANCE.rememberLastValid) {
+                                int depth = Math.max(1, TupenterConfig.INSTANCE.historyDepth);
+                                int collected = 0;
+                                for (int i = messageHistory.size() - 1; i >= 0 && collected < depth; i--) {
+                                     String candidate = messageHistory.get(i);
+                                     boolean isCommand = candidate.startsWith("/");
+                                     boolean allowed = true;
+                                     switch (TupenterConfig.INSTANCE.resendFilter) {
+                                        case CHAT_ONLY: if (isCommand) allowed = false; break;
+                                        case COMMANDS_ONLY: if (!isCommand) allowed = false; break;
+                                        case BOTH: default: allowed = true; break;
+                                     }
+                                     if (allowed) {
+                                         currentCandidates.add(candidate);
+                                         collected++;
+                                     }
+                                }
+                                if (TupenterConfig.INSTANCE.resendOrder == TupenterConfig.ResendOrder.OLDEST_FIRST) {
+                                    Collections.reverse(currentCandidates);
+                                }
+                             }
+                             lockedBatch = new ArrayList<>(currentCandidates);
+                             // --- REPLICATED SEARCH LOGIC END ---
+                        }
+                    }
+
+                    // Notification
+                    Component status = isToggledOn 
+                        ? Component.translatable("tupenter.toggle.on").withStyle(ChatFormatting.GREEN)
+                        : Component.translatable("tupenter.toggle.off").withStyle(ChatFormatting.RED);
+                    
+                    Component msg = Component.translatable("tupenter.toggle.prefix")
+                        .withStyle(ChatFormatting.WHITE)
+                        .append(status);
+                    client.player.displayClientMessage(msg, true);
+                 }
+            } else if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.PRESS_AND_HOLD) {
+                 // For Hold mode, we rely on isDown() later, but we ensure ToggledOn is false
+                 isToggledOn = false;
+                 // Consume stray clicks to prevent buffer buildup
+                 while (resendKey.consumeClick()) { } 
+            } else {
+                 isToggledOn = false;
+                 while (resendKey.consumeClick()) { }
+            }
+
+            // Update Mixin State
+            // Note: For toggle, isFiring is roughly isToggledOn (or isDown for hold)
+            boolean wasFiring = isFiring;
+
+            if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.PRESS_AND_HOLD) {
+                isFiring = resendKey.isDown();
+            } else {
+                isFiring = isToggledOn;
+            }
+            
+            // Check for Stop and optional Abort
+            if (wasFiring && !isFiring) {
+                if (!TupenterConfig.INSTANCE.alwaysFinishBatch) {
+                    pendingQueue.clear();
+                    delayTimer = 0;
+                }
+            }
+
+
+            // =========================================================
+            // 2. DELAY MANAGEMENT
+            // =========================================================
+            // Grace Period
+            if (client.screen instanceof ChatScreen) {
+                lastChatCloseTime = 0;
+            } else if (lastChatCloseTime == 0 && client.screen == null) {
+                lastChatCloseTime = System.currentTimeMillis();
+            }
+            boolean gracePeriodActive = (System.currentTimeMillis() - lastChatCloseTime) < (TupenterConfig.INSTANCE.gracePeriod * 50L);
+
+            if (gracePeriodActive && !isToggledOn && TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.PRESS_AND_HOLD) {
+                 // Block firing during grace period
+                 keyHoldTicks = 0;
+                 return;
+            }
+            
+            // Active Delay Timer
+            if (delayTimer > 0) {
+                delayTimer--;
+                return; // Busy waiting, but Input was handled above!
+            }
+
+
+            // =========================================================
+            // 3. TRIGGER / BATCH POPULATION
+            // =========================================================
+            // Only populate if queue is empty
+            
+            if (pendingQueue.isEmpty()) {
+                boolean shouldTrigger = false;
+                
+                if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE) {
+                    shouldTrigger = isToggledOn;
+                } else if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.PRESS_AND_HOLD) {
+                    shouldTrigger = resendKey.isDown();
+                }
+
+                if (shouldTrigger) {
+                    keyHoldTicks++;
+                    
+                    boolean fireNow = false;
+                    if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE) {
+                        fireNow = true; // Queue pacing handles the rest
+                    } else {
+                        // Hold Mode Pacing
+                        if (keyHoldTicks == 1) {
+                            fireNow = true;
+                        } else if (keyHoldTicks > TupenterConfig.INSTANCE.rapidResendDelay) {
+                            fireNow = true;
+                        }
+                    }
+
+                    if (fireNow) {
+                         List<String> batch = new ArrayList<>();
+                        
+                         if (TupenterConfig.INSTANCE.usePermanentMessage) {
+                             for (String msg : TupenterConfig.INSTANCE.permanentMessages) {
+                                 if (msg != null && !msg.trim().isEmpty()) batch.add(msg);
+                             }
+                        } else {
+                             // Determine source
+                             List<String> source = new ArrayList<>();
+                             if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE && !TupenterConfig.INSTANCE.updateInToggle && !lockedBatch.isEmpty()) {
+                                 source = lockedBatch;
+                             } else {
+                                  // Fresh calculation (copied logic from above for consistency/fallback)
+                                  // --- REPLICATED SEARCH LOGIC START ---
+                                     int depth = Math.max(1, TupenterConfig.INSTANCE.historyDepth);
+                                     int collected = 0;
+                                     for (int i = messageHistory.size() - 1; i >= 0 && collected < depth; i--) {
+                                          String candidate = messageHistory.get(i);
+                                          boolean isCommand = candidate.startsWith("/");
+                                          boolean allowed = true;
+                                          switch (TupenterConfig.INSTANCE.resendFilter) {
+                                             case CHAT_ONLY: if (isCommand) allowed = false; break;
+                                             case COMMANDS_ONLY: if (!isCommand) allowed = false; break;
+                                             case BOTH: default: allowed = true; break;
+                                          }
+                                          if (allowed) {
+                                              source.add(candidate);
+                                              collected++;
+                                          }
+                                     }
+                                     if (TupenterConfig.INSTANCE.resendOrder == TupenterConfig.ResendOrder.OLDEST_FIRST) {
+                                         Collections.reverse(source);
+                                     }
+                                  // --- REPLICATED SEARCH LOGIC END ---
+                             }
+                             batch.addAll(source);
+                        }
+
+                        if (!batch.isEmpty()) {
+                            int count = Math.max(1, TupenterConfig.INSTANCE.resendAmount);
+                            for (int i=0; i<count; i++) {
+                                pendingQueue.addAll(batch);
+                            }
+                        }
+                    }
+                } else {
+                    keyHoldTicks = 0;
+                }
+            }
+
+
+            // =========================================================
+            // 4. PROCESS QUEUE
+            // =========================================================
+            
+            if (!pendingQueue.isEmpty()) {
+                while (!pendingQueue.isEmpty()) {
+                    String msg = pendingQueue.poll();
+                    if (msg.startsWith("/")) {
+                        client.player.connection.sendCommand(msg.substring(1));
+                    } else {
+                         client.player.connection.sendChat(msg);
+                    }
+
+                    if (!pendingQueue.isEmpty()) {
+                        if (TupenterConfig.INSTANCE.messageDelay > 0) {
+                            delayTimer = TupenterConfig.INSTANCE.messageDelay;
+                            return; 
+                        }
+                    } else {
+                        // Batch Finished
+                        delayTimer = TupenterConfig.INSTANCE.resendDelay;
+                        if (TupenterConfig.INSTANCE.messageDelay > 0) {
+                             delayTimer = Math.max(TupenterConfig.INSTANCE.messageDelay, TupenterConfig.INSTANCE.resendDelay);
+                        }
+                        return;
+                    }
+                }
             }
         });
 	}

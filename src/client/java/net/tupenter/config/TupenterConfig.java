@@ -20,6 +20,8 @@ public class TupenterConfig {
     public int gracePeriod = 10;
     public int rapidResendDelay = 5;
     public int resendDelay = 0;
+    public int messageDelay = 0;
+    public boolean alwaysFinishBatch = true;
     public int historyDepth = 1;
     public ResendMode resendMode = ResendMode.PRESS_AND_HOLD;
     public ResendOrder resendOrder = ResendOrder.OLDEST_FIRST;
@@ -65,6 +67,8 @@ public class TupenterConfig {
                     INSTANCE.gracePeriod = loaded.gracePeriod;
                     INSTANCE.rapidResendDelay = loaded.rapidResendDelay;
                     INSTANCE.resendDelay = Math.max(0, loaded.resendDelay);
+                    INSTANCE.messageDelay = Math.max(0, loaded.messageDelay);
+            INSTANCE.alwaysFinishBatch = loaded.alwaysFinishBatch;
                     INSTANCE.historyDepth = Math.max(1, loaded.historyDepth);
                     INSTANCE.resendMode = loaded.resendMode != null ? loaded.resendMode : ResendMode.PRESS_AND_HOLD;
                     INSTANCE.resendOrder = loaded.resendOrder != null ? loaded.resendOrder : ResendOrder.OLDEST_FIRST;

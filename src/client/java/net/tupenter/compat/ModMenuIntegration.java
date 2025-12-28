@@ -36,10 +36,22 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.rapidResendDelay = newValue)
                 .build());
 
-        general.addEntry(entryBuilder.startIntSlider(Component.translatable("option.tupenter.resend_delay"), TupenterConfig.INSTANCE.resendDelay, 0, 200)
+        general.addEntry(entryBuilder.startIntField(Component.translatable("option.tupenter.resend_delay"), TupenterConfig.INSTANCE.resendDelay)
                 .setDefaultValue(0)
                 .setTooltip(Component.translatable("tooltip.tupenter.resend_delay"))
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.resendDelay = newValue)
+                .build());
+
+        general.addEntry(entryBuilder.startIntField(Component.translatable("option.tupenter.message_delay"), TupenterConfig.INSTANCE.messageDelay)
+                .setDefaultValue(0)
+                .setTooltip(Component.translatable("tooltip.tupenter.message_delay"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.messageDelay = newValue)
+                .build());
+
+        general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.always_finish_batch"), TupenterConfig.INSTANCE.alwaysFinishBatch)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.always_finish_batch"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.alwaysFinishBatch = newValue)
                 .build());
 
         general.addEntry(entryBuilder.startEnumSelector(Component.translatable("option.tupenter.resend_mode"), TupenterConfig.ResendMode.class, TupenterConfig.INSTANCE.resendMode)
@@ -72,7 +84,14 @@ public class ModMenuIntegration implements ModMenuApi {
         general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.record_history"), TupenterConfig.INSTANCE.recordHistory)
                 .setDefaultValue(true)
                 .setTooltip(Component.translatable("tooltip.tupenter.record_history"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.recordHistory = newValue)
+                .setSaveConsumer(newValue -> {
+                    boolean wasEnabled = TupenterConfig.INSTANCE.recordHistory;
+                    TupenterConfig.INSTANCE.recordHistory = newValue;
+                    // If switching ON (from OFF), clear the history
+                    if (!wasEnabled && newValue) {
+                        net.tupenter.TupenterModClient.messageHistory.clear();
+                    }
+                })
                 .build());
 
         general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.update_in_toggle"), TupenterConfig.INSTANCE.updateInToggle)
@@ -87,7 +106,7 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.resendAmount = newValue)
                 .build());
 
-        general.addEntry(entryBuilder.startIntSlider(Component.translatable("option.tupenter.history_depth"), TupenterConfig.INSTANCE.historyDepth, 1, 10)
+        general.addEntry(entryBuilder.startIntSlider(Component.translatable("option.tupenter.history_depth"), TupenterConfig.INSTANCE.historyDepth, 1, 32)
                 .setDefaultValue(1)
                 .setTooltip(Component.translatable("tooltip.tupenter.history_depth"))
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.historyDepth = newValue)
