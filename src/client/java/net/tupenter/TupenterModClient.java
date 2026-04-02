@@ -3,6 +3,7 @@ package net.tupenter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.ChatFormatting;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -88,6 +89,15 @@ public class TupenterModClient implements ClientModInitializer {
 			tupenterCategory
 		));
 
+        // Register Session Reset
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            if (TupenterConfig.INSTANCE.resetOnNewSession) {
+                messageHistory.clear();
+                pendingQueue.clear();
+                delayTimer = 0;
+            }
+        });
+
 		// Load Config
 		TupenterConfig.load();
 
@@ -137,33 +147,28 @@ public class TupenterModClient implements ClientModInitializer {
                     isToggledOn = !isToggledOn;
                     
                     if (isToggledOn) {
-                         // Toggled ON: Lock current potential batch if needed
-                         if (!TupenterConfig.INSTANCE.updateInToggle) {
-                             // --- REPLICATED SEARCH LOGIC START ---
-                             List<String> currentCandidates = new ArrayList<>();
-                             if (TupenterConfig.INSTANCE.rememberLastValid) {
-                                int depth = Math.max(1, TupenterConfig.INSTANCE.historyDepth);
-                                int collected = 0;
-                                for (int i = messageHistory.size() - 1; i >= 0 && collected < depth; i--) {
-                                     String candidate = messageHistory.get(i);
-                                     boolean isCommand = candidate.startsWith("/");
-                                     boolean allowed = true;
-                                     switch (TupenterConfig.INSTANCE.resendFilter) {
-                                        case CHAT_ONLY: if (isCommand) allowed = false; break;
-                                        case COMMANDS_ONLY: if (!isCommand) allowed = false; break;
-                                        case BOTH: default: allowed = true; break;
-                                     }
-                                     if (allowed) {
-                                         currentCandidates.add(candidate);
-                                         collected++;
-                                     }
+                        // Toggled ON: Lock current batch snapshot if pauseTracking is enabled
+                        if (!TupenterConfig.INSTANCE.updateInToggle) {
+                            List<String> currentCandidates = new ArrayList<>();
+                            int depth = Math.max(1, TupenterConfig.INSTANCE.historyDepth);
+                            int collected = 0;
+                            for (int i = messageHistory.size() - 1; i >= 0 && collected < depth; i--) {
+                                String candidate = messageHistory.get(i);
+                                boolean isCmd = candidate.startsWith("/");
+                                boolean allowed = switch (TupenterConfig.INSTANCE.resendFilter) {
+                                    case CHAT_ONLY -> !isCmd;
+                                    case COMMANDS_ONLY -> isCmd;
+                                    default -> true;
+                                };
+                                if (allowed) {
+                                    currentCandidates.add(candidate);
+                                    collected++;
                                 }
-                                if (TupenterConfig.INSTANCE.resendOrder == TupenterConfig.ResendOrder.OLDEST_FIRST) {
-                                    Collections.reverse(currentCandidates);
-                                }
-                             }
-                             lockedBatch = new ArrayList<>(currentCandidates);
-                             // --- REPLICATED SEARCH LOGIC END ---
+                            }
+                            if (TupenterConfig.INSTANCE.resendOrder == TupenterConfig.ResendOrder.OLDEST_FIRST) {
+                                Collections.reverse(currentCandidates);
+                            }
+                            lockedBatch = new ArrayList<>(currentCandidates);
                         }
                     }
 
@@ -178,10 +183,10 @@ public class TupenterModClient implements ClientModInitializer {
                     client.player.displayClientMessage(msg, true);
                  }
             } else if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.PRESS_AND_HOLD) {
-                 // For Hold mode, we rely on isDown() later, but we ensure ToggledOn is false
+                 // For Hold mode, we rely on isDown() later
                  isToggledOn = false;
                  // Consume stray clicks to prevent buffer buildup
-                 while (resendKey.consumeClick()) { } 
+                 while (resendKey.consumeClick()) { }
             } else {
                  isToggledOn = false;
                  while (resendKey.consumeClick()) { }
@@ -246,12 +251,12 @@ public class TupenterModClient implements ClientModInitializer {
 
                 if (shouldTrigger) {
                     keyHoldTicks++;
-                    
+
                     boolean fireNow = false;
                     if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE) {
-                        fireNow = true; // Queue pacing handles the rest
+                        fireNow = true;
                     } else {
-                        // Hold Mode Pacing
+                        // Hold/Permanent Mode Pacing
                         if (keyHoldTicks == 1) {
                             fireNow = true;
                         } else if (keyHoldTicks > TupenterConfig.INSTANCE.rapidResendDelay) {
@@ -260,17 +265,17 @@ public class TupenterModClient implements ClientModInitializer {
                     }
 
                     if (fireNow) {
-                         List<String> batch = new ArrayList<>();
-                        
-                         if (TupenterConfig.INSTANCE.usePermanentMessage) {
-                             List<String> permBatch = new ArrayList<>();
-                             for (String msg : TupenterConfig.INSTANCE.permanentMessages) {
-                                 if (msg != null && !msg.trim().isEmpty()) permBatch.add(msg);
-                             }
-                             if (TupenterConfig.INSTANCE.resendOrder == TupenterConfig.ResendOrder.NEWEST_FIRST) {
-                                 Collections.reverse(permBatch);
-                             }
-                             batch.addAll(permBatch);
+                        List<String> batch = new ArrayList<>();
+
+                        if (TupenterConfig.INSTANCE.resendFilter == TupenterConfig.ResendFilter.PERMANENT_MESSAGES) {
+                            List<String> permBatch = new ArrayList<>();
+                            for (String msg : TupenterConfig.INSTANCE.permanentMessages) {
+                                if (msg != null && !msg.trim().isEmpty()) permBatch.add(msg);
+                            }
+                            if (TupenterConfig.INSTANCE.resendOrder == TupenterConfig.ResendOrder.NEWEST_FIRST) {
+                                Collections.reverse(permBatch);
+                            }
+                            batch.addAll(permBatch);
                         } else {
                              // Determine source
                              List<String> source = new ArrayList<>();

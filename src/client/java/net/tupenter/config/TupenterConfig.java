@@ -18,6 +18,7 @@ public class TupenterConfig {
     public static TupenterConfig INSTANCE = new TupenterConfig();
 
     public int gracePeriod = 10;
+    public boolean resetOnNewSession = true;
     public int rapidResendDelay = 5;
     public int resendDelay = 0;
     public int messageDelay = 0;
@@ -55,7 +56,8 @@ public class TupenterConfig {
     public enum ResendFilter {
         BOTH,
         CHAT_ONLY,
-        COMMANDS_ONLY
+        COMMANDS_ONLY,
+        PERMANENT_MESSAGES
     }
 
     public enum BatchMode {
@@ -70,6 +72,7 @@ public class TupenterConfig {
             try (FileReader reader = new FileReader(configFile)) {
                 TupenterConfig loaded = GSON.fromJson(reader, TupenterConfig.class);
                 if (loaded != null) {
+                    INSTANCE.resetOnNewSession = loaded.resetOnNewSession;
                     INSTANCE.gracePeriod = loaded.gracePeriod;
                     INSTANCE.rapidResendDelay = loaded.rapidResendDelay;
                     INSTANCE.resendDelay = Math.max(0, loaded.resendDelay);
@@ -80,6 +83,10 @@ public class TupenterConfig {
                     INSTANCE.resendOrder = loaded.resendOrder != null ? loaded.resendOrder : ResendOrder.OLDEST_FIRST;
                     INSTANCE.suppressFeedback = loaded.suppressFeedback != null ? loaded.suppressFeedback : FeedbackSuppressionMode.OFF;
                     INSTANCE.resendFilter = loaded.resendFilter != null ? loaded.resendFilter : ResendFilter.BOTH;
+                    // Migrate old usePermanentMessage boolean to the dedicated filter option
+                    if (loaded.usePermanentMessage && INSTANCE.resendFilter != ResendFilter.PERMANENT_MESSAGES) {
+                        INSTANCE.resendFilter = ResendFilter.PERMANENT_MESSAGES;
+                    }
                     INSTANCE.rememberLastValid = loaded.rememberLastValid;
                     INSTANCE.recordHistory = loaded.recordHistory;
                     INSTANCE.updateInToggle = loaded.updateInToggle;
