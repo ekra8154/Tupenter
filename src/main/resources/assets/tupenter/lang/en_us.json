@@ -71,6 +71,8 @@
   "tooltip.tupenter.permanent_messages": "The list of messages or commands Tupenter will send when 'What to Resend' is set to Preset Messages.",
   "option.tupenter.enhanced_command_parsing": "Enhanced Command Parsing",
   "tooltip.tupenter.enhanced_command_parsing": "Enables Tupenter-only parsing features inside commands. When disabled, Tupenter sends commands exactly as written.",
+  "option.tupenter.command_chaining": "Command Chaining",
+  "tooltip.tupenter.command_chaining": "Lets Tupenter split commands joined with && and send them in order. Tupenter still remembers and replays the original combined command as one history entry. Example: /weather clear && /time set day.",
   "option.tupenter.number_math": "Number Math",
   "tooltip.tupenter.number_math": "Lets Tupenter evaluate arithmetic inside $ ... $ markers before sending a command. Supports whole numbers, whitespace, parentheses, and +, -, *, /. If the marked text contains anything else, Tupenter leaves it alone. Example: /give @s stick $ 5 * 64 $ becomes /give @s stick 320.",
 

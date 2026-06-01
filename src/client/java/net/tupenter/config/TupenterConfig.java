@@ -32,6 +32,7 @@ public class TupenterConfig {
     public boolean recordHistory = true;
     public boolean updateInToggle = false;
     public boolean enhancedCommandParsingEnabled = true;
+    public boolean commandChainingEnabled = true;
     public boolean numberMathEnabled = true;
 
     public int resendAmount = 1;
@@ -93,6 +94,7 @@ public class TupenterConfig {
                     INSTANCE.recordHistory = loaded.recordHistory;
                     INSTANCE.updateInToggle = loaded.updateInToggle;
                     INSTANCE.enhancedCommandParsingEnabled = loaded.enhancedCommandParsingEnabled;
+                    INSTANCE.commandChainingEnabled = loaded.commandChainingEnabled;
                     INSTANCE.numberMathEnabled = loaded.numberMathEnabled;
                     INSTANCE.resendAmount = Math.max(1, loaded.resendAmount); // Ensure at least 1
                     INSTANCE.usePermanentMessage = loaded.usePermanentMessage;

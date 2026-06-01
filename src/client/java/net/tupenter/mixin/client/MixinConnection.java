@@ -5,7 +5,7 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.minecraft.network.protocol.game.ServerboundChatPacket;
 import net.tupenter.TupenterModClient;
-import net.tupenter.command.CommandMathParser;
+import net.tupenter.command.CommandParsingProcessor;
 import net.tupenter.config.TupenterConfig;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -14,24 +14,36 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Connection.class)
 public class MixinConnection {
-    private static boolean forwardingModifiedCommand;
+    private static boolean forwardingEnhancedCommand;
 
 	@Inject(method = "send(Lnet/minecraft/network/protocol/Packet;)V", at = @At("HEAD"), cancellable = true)
 	private void onSend(Packet<?> packet, CallbackInfo ci) {
-        if (!forwardingModifiedCommand
-                && TupenterConfig.INSTANCE.enhancedCommandParsingEnabled
-                && TupenterConfig.INSTANCE.numberMathEnabled
-                && packet instanceof ServerboundChatCommandPacket commandPacket) {
+        if (!forwardingEnhancedCommand && packet instanceof ServerboundChatCommandPacket commandPacket) {
             String originalCommand = commandPacket.command();
-            String rewrittenCommand = CommandMathParser.applyNumberMath(originalCommand);
+            if (TupenterModClient.handleLocalCalcAlias(originalCommand)) {
+                ci.cancel();
+                return;
+            }
 
-            if (!rewrittenCommand.equals(originalCommand)) {
+            if (!TupenterConfig.INSTANCE.enhancedCommandParsingEnabled) {
+                return;
+            }
+
+            CommandParsingProcessor.Result result = CommandParsingProcessor.process(
+                    originalCommand,
+                    TupenterConfig.INSTANCE.commandChainingEnabled,
+                    TupenterConfig.INSTANCE.numberMathEnabled
+            );
+
+            if (result.changed()) {
                 TupenterModClient.updateLastMessage("/" + originalCommand);
-                forwardingModifiedCommand = true;
+                forwardingEnhancedCommand = true;
                 try {
-                    ((Connection) (Object) this).send(new ServerboundChatCommandPacket(rewrittenCommand));
+                    for (String rewrittenCommand : result.commands()) {
+                        ((Connection) (Object) this).send(new ServerboundChatCommandPacket(rewrittenCommand));
+                    }
                 } finally {
-                    forwardingModifiedCommand = false;
+                    forwardingEnhancedCommand = false;
                 }
                 ci.cancel();
                 return;
@@ -41,7 +53,7 @@ public class MixinConnection {
         String content = null;
         if (packet instanceof ServerboundChatPacket) {
             content = ((ServerboundChatPacket) packet).message();
-        } else if (packet instanceof ServerboundChatCommandPacket && !forwardingModifiedCommand) {
+        } else if (packet instanceof ServerboundChatCommandPacket && !forwardingEnhancedCommand) {
             content = "/" + ((ServerboundChatCommandPacket) packet).command();
         }
 

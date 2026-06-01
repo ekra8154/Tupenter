@@ -1,8 +1,10 @@
 package net.tupenter.command;
 
+import java.math.BigDecimal;
 import net.tupenter.TupenterMod;
 
 import java.math.BigInteger;
+import java.math.RoundingMode;
 
 public final class CommandMathParser {
     private static final char MARKER = '$';
@@ -39,13 +41,17 @@ public final class CommandMathParser {
         return result.toString();
     }
 
-    private static String evaluateMarkedSegment(String originalSegment, String expression) {
-        if (!containsOnlyAllowedMathCharacters(expression)) {
-            return originalSegment;
-        }
+    public static int evaluateExpression(String expression) {
+        return parseExpression(expression).toIntExact();
+    }
 
+    public static String evaluateExpressionAsDecimal(String expression) {
+        return parseExpression(expression).toDecimalString();
+    }
+
+    private static String evaluateMarkedSegment(String originalSegment, String expression) {
         try {
-            int value = new Parser(expression).parse().toIntExact();
+            int value = evaluateExpression(expression);
             return Integer.toString(value);
         } catch (IllegalArgumentException ex) {
             TupenterMod.LOGGER.debug("Skipping number math for segment '{}': {}", originalSegment, ex.getMessage());
@@ -68,6 +74,14 @@ public final class CommandMathParser {
         }
 
         return true;
+    }
+
+    private static Rational parseExpression(String expression) {
+        if (!containsOnlyAllowedMathCharacters(expression)) {
+            throw new IllegalArgumentException("Expression contains unsupported characters");
+        }
+
+        return new Parser(expression).parse();
     }
 
     private static final class Parser {
@@ -234,6 +248,19 @@ public final class CommandMathParser {
                 throw new IllegalArgumentException("Result out of int range");
             }
             return truncated.intValue();
+        }
+
+        private String toDecimalString() {
+            BigDecimal numeratorDecimal = new BigDecimal(numerator);
+            BigDecimal denominatorDecimal = new BigDecimal(denominator);
+            BigDecimal decimal = numeratorDecimal.divide(denominatorDecimal, 16, RoundingMode.HALF_UP)
+                    .stripTrailingZeros();
+
+            if (decimal.scale() < 0) {
+                decimal = decimal.setScale(0);
+            }
+
+            return decimal.toPlainString();
         }
     }
 }

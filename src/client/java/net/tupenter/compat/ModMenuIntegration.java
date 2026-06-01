@@ -171,6 +171,12 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.enhancedCommandParsingEnabled = newValue)
                 .build();
 
+        AbstractConfigListEntry<?> commandChainingEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.command_chaining"), TupenterConfig.INSTANCE.commandChainingEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.command_chaining"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.commandChainingEnabled = newValue)
+                .build();
+
         AbstractConfigListEntry<?> numberMathEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.number_math"), TupenterConfig.INSTANCE.numberMathEnabled)
                 .setDefaultValue(true)
                 .setTooltip(Component.translatable("tooltip.tupenter.number_math"))
@@ -184,6 +190,7 @@ public class ModMenuIntegration implements ModMenuApi {
                 .build());
 
         commandParsing.addEntry(enhancedCommandParsingEntry);
+        commandParsing.addEntry(commandChainingEntry);
         commandParsing.addEntry(numberMathEntry);
 
         general.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.advanced"),

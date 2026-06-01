@@ -1,6 +1,10 @@
 package net.tupenter;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -10,14 +14,19 @@ import java.util.Collections;
 import java.util.List;
 import java.util.LinkedList;
 import java.util.Queue;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.tupenter.command.CommandMathParser;
 import net.tupenter.config.TupenterConfig;
 import net.tupenter.compat.ModMenuIntegration;
 import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.platform.InputConstants;
+
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
 public class TupenterModClient implements ClientModInitializer {
 	public static String lastMessage = "";
@@ -88,6 +97,17 @@ public class TupenterModClient implements ClientModInitializer {
 			InputConstants.UNKNOWN.getValue(),
 			tupenterCategory
 		));
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
+                dispatcher.register(literal("calc")
+                        .then(argument("expression", StringArgumentType.greedyString())
+                                .executes(context -> runCalcCommand(context, false)))
+                        .then(literal("int")
+                                .then(argument("expression", StringArgumentType.greedyString())
+                                        .executes(context -> runCalcCommand(context, false))))
+                        .then(literal("float")
+                                .then(argument("expression", StringArgumentType.greedyString())
+                                        .executes(context -> runCalcCommand(context, true))))));
 
         // Register Session Reset
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
@@ -357,4 +377,69 @@ public class TupenterModClient implements ClientModInitializer {
             }
         });
 	}
+
+    private static int runCalcCommand(CommandContext<FabricClientCommandSource> context, boolean decimalMode) {
+        if (!TupenterConfig.INSTANCE.enhancedCommandParsingEnabled) {
+            context.getSource().sendError(Component.literal("Enhanced command parsing is disabled."));
+            return 0;
+        }
+
+        String input = StringArgumentType.getString(context, "expression").trim();
+        return evaluateLocalCalcExpression(unwrapOptionalMarkers(input), decimalMode, context.getSource()::sendFeedback, context.getSource()::sendError);
+    }
+
+    public static boolean handleLocalCalcAlias(String command) {
+        if (!command.startsWith("$")) {
+            return false;
+        }
+
+        if (!TupenterConfig.INSTANCE.enhancedCommandParsingEnabled) {
+            sendLocalCalcError(Component.literal("Enhanced command parsing is disabled."));
+            return true;
+        }
+
+        String input = command.substring(1).trim();
+        if (!input.endsWith("$")) {
+            sendLocalCalcError(Component.literal("Invalid local calc syntax. Use /$ ... $"));
+            return true;
+        }
+
+        String expression = input.substring(0, input.length() - 1).trim();
+        evaluateLocalCalcExpression(expression, false, TupenterModClient::sendLocalCalcFeedback, TupenterModClient::sendLocalCalcError);
+        return true;
+    }
+
+    private static int evaluateLocalCalcExpression(String expression, boolean decimalMode, java.util.function.Consumer<Component> feedback, java.util.function.Consumer<Component> error) {
+        try {
+            String result = decimalMode
+                    ? CommandMathParser.evaluateExpressionAsDecimal(expression)
+                    : Integer.toString(CommandMathParser.evaluateExpression(expression));
+            feedback.accept(Component.literal(result).withStyle(ChatFormatting.AQUA));
+            return 1;
+        } catch (IllegalArgumentException ex) {
+            error.accept(Component.literal("Invalid math expression: " + ex.getMessage()));
+            return 0;
+        }
+    }
+
+    private static void sendLocalCalcFeedback(Component component) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player != null) {
+            client.player.displayClientMessage(component, false);
+        }
+    }
+
+    private static void sendLocalCalcError(Component component) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player != null) {
+            client.player.displayClientMessage(component.copy().withStyle(ChatFormatting.RED), false);
+        }
+    }
+
+    private static String unwrapOptionalMarkers(String input) {
+        if (input.length() >= 2 && input.startsWith("$") && input.endsWith("$")) {
+            return input.substring(1, input.length() - 1);
+        }
+        return input;
+    }
 }
