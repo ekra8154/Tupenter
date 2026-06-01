@@ -104,13 +104,13 @@ public class TupenterModClient implements ClientModInitializer {
                 {
                     dispatcher.register(literal("calc")
                             .then(argument("expression", StringArgumentType.greedyString())
-                                    .executes(context -> runCalcCommand(context, false)))
+                                    .executes(TupenterModClient::runCalcCommand))
                             .then(literal("int")
                                     .then(argument("expression", StringArgumentType.greedyString())
-                                            .executes(context -> runCalcCommand(context, false))))
+                                            .executes(context -> runCalcCommand(context, "int(" + StringArgumentType.getString(context, "expression") + ")"))))
                             .then(literal("float")
                                     .then(argument("expression", StringArgumentType.greedyString())
-                                            .executes(context -> runCalcCommand(context, true)))));
+                                            .executes(context -> runCalcCommand(context, "float(" + StringArgumentType.getString(context, "expression") + ")")))));
 
                     dispatcher.register(literal("customcommand")
                             .then(literal("add")
@@ -402,14 +402,18 @@ public class TupenterModClient implements ClientModInitializer {
         });
 	}
 
-    private static int runCalcCommand(CommandContext<FabricClientCommandSource> context, boolean decimalMode) {
+    private static int runCalcCommand(CommandContext<FabricClientCommandSource> context) {
+        String input = StringArgumentType.getString(context, "expression").trim();
+        return runCalcCommand(context, input);
+    }
+
+    private static int runCalcCommand(CommandContext<FabricClientCommandSource> context, String expression) {
         if (!TupenterConfig.INSTANCE.enhancedCommandParsingEnabled) {
             context.getSource().sendError(Component.literal("Enhanced command parsing is disabled."));
             return 0;
         }
 
-        String input = StringArgumentType.getString(context, "expression").trim();
-        return evaluateLocalCalcExpression(unwrapOptionalMarkers(input), decimalMode, context.getSource()::sendFeedback, context.getSource()::sendError);
+        return evaluateLocalCalcExpression(unwrapOptionalMarkers(expression.trim()), context.getSource()::sendFeedback, context.getSource()::sendError);
     }
 
     private static int runAliasAddCommand(CommandContext<FabricClientCommandSource> context) {
@@ -492,15 +496,13 @@ public class TupenterModClient implements ClientModInitializer {
         }
 
         String expression = input.substring(0, input.length() - 1).trim();
-        evaluateLocalCalcExpression(expression, false, TupenterModClient::sendLocalCalcFeedback, TupenterModClient::sendLocalCalcError);
+        evaluateLocalCalcExpression(expression, TupenterModClient::sendLocalCalcFeedback, TupenterModClient::sendLocalCalcError);
         return true;
     }
 
-    private static int evaluateLocalCalcExpression(String expression, boolean decimalMode, java.util.function.Consumer<Component> feedback, java.util.function.Consumer<Component> error) {
+    private static int evaluateLocalCalcExpression(String expression, java.util.function.Consumer<Component> feedback, java.util.function.Consumer<Component> error) {
         try {
-            String result = decimalMode
-                    ? CommandMathParser.evaluateExpressionAsDecimal(expression)
-                    : Integer.toString(CommandMathParser.evaluateExpression(expression));
+            String result = CommandMathParser.evaluateExpressionAsCommandValue(expression);
             feedback.accept(Component.literal(result).withStyle(ChatFormatting.AQUA));
             return 1;
         } catch (IllegalArgumentException ex) {

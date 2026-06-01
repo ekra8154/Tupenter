@@ -75,7 +75,7 @@
   "option.tupenter.command_chaining": "Command Chaining",
   "tooltip.tupenter.command_chaining": "Lets Tupenter split commands joined with && and send them in order. Tupenter still remembers and replays the original combined command as one history entry. Example: /weather clear && /time set day.",
   "option.tupenter.number_math": "Number Math",
-  "tooltip.tupenter.number_math": "Controls how Tupenter evaluates arithmetic before sending command segments. In both enabled modes, $ ... $ always works. Auto-detect can also solve plain tokens like 32+4 or 3s outside NBT braces. Supports whole numbers, whitespace, parentheses, +, -, *, /, and s for stacks (x64).",
+  "tooltip.tupenter.number_math": "Controls how Tupenter evaluates arithmetic before sending command segments. In both enabled modes, $ ... $ always works. Auto-detect can also solve plain expressions like 32+4, 3s, or 1.5 / 2 outside NBT braces. Supports decimals, whitespace, parentheses, +, -, *, /, s for stacks (x64), and int(...) or float(...) casts.",
   "mode.tupenter.number_math.disabled": "Disabled",
   "mode.tupenter.number_math.explicit_only": "Only With $...$",
   "mode.tupenter.number_math.auto_detect": "Auto-detect Expressions",

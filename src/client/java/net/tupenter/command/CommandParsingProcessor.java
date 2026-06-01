@@ -14,7 +14,8 @@ public final class CommandParsingProcessor {
     public static Result process(String command, boolean commandChainingEnabled, TupenterConfig.NumberMathMode numberMathMode, Map<String, String> aliases) {
         List<OutgoingSegment> expandedCommands = new ArrayList<>();
         ExpansionState expansionState = new ExpansionState();
-        boolean changed = expandCommand("/" + command, commandChainingEnabled, aliases, expansionState, expandedCommands, false);
+        boolean allowChatSegments = containsAlias(command, aliases);
+        boolean changed = expandCommand("/" + command, commandChainingEnabled, aliases, expansionState, expandedCommands, allowChatSegments);
 
         if (expansionState.limitExceeded()) {
             return Result.aliasExpansionLimitExceeded(MAX_ALIAS_EXPANSIONS);

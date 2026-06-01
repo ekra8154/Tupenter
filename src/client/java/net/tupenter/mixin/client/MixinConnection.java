@@ -50,7 +50,11 @@ public class MixinConnection {
                 try {
                     for (CommandParsingProcessor.OutgoingSegment rewrittenCommand : result.commands()) {
                         if (rewrittenCommand.isCommand()) {
-                            ((Connection) (Object) this).send(new ServerboundChatCommandPacket(rewrittenCommand.content()));
+                            if (Minecraft.getInstance().player != null) {
+                                Minecraft.getInstance().player.connection.sendCommand(rewrittenCommand.content());
+                            } else {
+                                ((Connection) (Object) this).send(new ServerboundChatCommandPacket(rewrittenCommand.content()));
+                            }
                         } else if (Minecraft.getInstance().player != null) {
                             Minecraft.getInstance().player.connection.sendChat(rewrittenCommand.content());
                         }

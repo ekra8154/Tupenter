@@ -58,14 +58,13 @@ public final class CommandMathParser {
         return parseExpression(expression).toIntExact();
     }
 
-    public static String evaluateExpressionAsDecimal(String expression) {
-        return parseExpression(expression).toDecimalString();
+    public static String evaluateExpressionAsCommandValue(String expression) {
+        return parseExpression(expression).toCommandString();
     }
 
     private static String evaluateMarkedSegment(String originalSegment, String expression) {
         try {
-            int value = evaluateExpression(expression);
-            return Integer.toString(value);
+            return evaluateExpressionAsCommandValue(expression);
         } catch (IllegalArgumentException ex) {
             TupenterMod.LOGGER.debug("Skipping number math for segment '{}': {}", originalSegment, ex.getMessage());
             return originalSegment;
@@ -79,7 +78,11 @@ public final class CommandMathParser {
                 continue;
             }
 
-            if (current == '+' || current == '-' || current == '*' || current == '/' || current == '(' || current == ')' || current == 's' || current == 'S') {
+            if (current == '+' || current == '-' || current == '*' || current == '/' || current == '(' || current == ')' || current == '.' || current == ',' || current == 's' || current == 'S') {
+                continue;
+            }
+
+            if (Character.isLetter(current)) {
                 continue;
             }
 
@@ -92,48 +95,119 @@ public final class CommandMathParser {
     private static String applyAutoDetectMath(String input) {
         StringBuilder result = new StringBuilder(input.length());
         int braceDepth = 0;
-        int candidateStart = -1;
+        int index = 0;
 
-        for (int i = 0; i < input.length(); i++) {
-            char current = input.charAt(i);
-
-            if (braceDepth == 0 && isAllowedAutoDetectCharacter(current)) {
-                if (candidateStart < 0) {
-                    candidateStart = i;
-                }
-            } else {
-                if (candidateStart >= 0) {
-                    result.append(evaluateAutoDetectedSpan(input.substring(candidateStart, i)));
-                    candidateStart = -1;
-                }
-                result.append(current);
-            }
-
+        while (index < input.length()) {
+            char current = input.charAt(index);
             if (current == '{') {
                 braceDepth++;
-            } else if (current == '}') {
-                braceDepth = Math.max(0, braceDepth - 1);
+                result.append(current);
+                index++;
+                continue;
             }
-        }
 
-        if (candidateStart >= 0) {
-            result.append(evaluateAutoDetectedSpan(input.substring(candidateStart)));
+            if (current == '}') {
+                braceDepth = Math.max(0, braceDepth - 1);
+                result.append(current);
+                index++;
+                continue;
+            }
+
+            if (braceDepth == 0 && isAutoDetectSpanStart(input, index)) {
+                int end = findAutoDetectSpanEnd(input, index);
+                result.append(evaluateAutoDetectedSpan(input.substring(index, end)));
+                index = end;
+                continue;
+            }
+
+            result.append(current);
+            index++;
         }
 
         return result.toString();
     }
 
-    private static boolean isAllowedAutoDetectCharacter(char current) {
-        return Character.isWhitespace(current)
-                || Character.isDigit(current)
-                || current == '+'
-                || current == '-'
-                || current == '*'
-                || current == '/'
+    private static boolean isAutoDetectSpanStart(String input, int index) {
+        char current = input.charAt(index);
+        if (Character.isWhitespace(current)) {
+            return false;
+        }
+
+        if (Character.isDigit(current) || current == '.' || current == '(') {
+            return true;
+        }
+
+        if ((current == '+' || current == '-') && hasAutoDetectValueAhead(input, index + 1)) {
+            return true;
+        }
+
+        return matchesFunctionStart(input, index, "int") || matchesFunctionStart(input, index, "float");
+    }
+
+    private static int findAutoDetectSpanEnd(String input, int start) {
+        int index = start;
+        while (index < input.length()) {
+            char current = input.charAt(index);
+            if (Character.isWhitespace(current)
+                    || Character.isDigit(current)
+                    || current == '+'
+                    || current == '-'
+                    || current == '*'
+                    || current == '/'
+                    || current == '('
+                    || current == ')'
+                    || current == '.'
+                    || current == ','
+                    || current == 's'
+                    || current == 'S') {
+                index++;
+                continue;
+            }
+
+            if (matchesFunctionStart(input, index, "int")) {
+                index += 3;
+                continue;
+            }
+
+            if (matchesFunctionStart(input, index, "float")) {
+                index += 5;
+                continue;
+            }
+
+            break;
+        }
+
+        return index;
+    }
+
+    private static boolean hasAutoDetectValueAhead(String input, int index) {
+        while (index < input.length() && Character.isWhitespace(input.charAt(index))) {
+            index++;
+        }
+
+        if (index >= input.length()) {
+            return false;
+        }
+
+        char current = input.charAt(index);
+        return Character.isDigit(current)
+                || current == '.'
                 || current == '('
-                || current == ')'
-                || current == 's'
-                || current == 'S';
+                || matchesFunctionStart(input, index, "int")
+                || matchesFunctionStart(input, index, "float");
+    }
+
+    private static boolean matchesFunctionStart(String input, int index, String functionName) {
+        if (!input.regionMatches(true, index, functionName, 0, functionName.length())) {
+            return false;
+        }
+
+        int next = index + functionName.length();
+        while (next < input.length() && Character.isWhitespace(input.charAt(next))) {
+            next++;
+        }
+
+        return next < input.length() && input.charAt(next) == '(';
     }
 
     private static String evaluateAutoDetectedSpan(String span) {
@@ -154,7 +228,7 @@ public final class CommandMathParser {
 
         try {
             return span.substring(0, leadingWhitespace)
-                    + evaluateExpression(expression)
+                    + evaluateExpressionAsCommandValue(expression)
                     + span.substring(trailingWhitespace);
         } catch (IllegalArgumentException ex) {
             TupenterMod.LOGGER.debug("Skipping auto-detected number math for span '{}': {}", span, ex.getMessage());
@@ -177,12 +251,22 @@ public final class CommandMathParser {
                 continue;
             }
 
-            if (current == '+' || current == '-' || current == '*' || current == '/' || current == '(' || current == ')') {
+            if (current == '+' || current == '-' || current == '*' || current == '/' || current == '(' || current == ')' || current == '.') {
                 hasOperator = true;
                 continue;
             }
 
             if (current == 's' || current == 'S') {
+                hasOperator = true;
+                continue;
+            }
+
+            if (current == ',') {
+                hasOperator = true;
+                continue;
+            }
+
+            if (Character.isLetter(current)) {
                 hasOperator = true;
                 continue;
             }
@@ -248,13 +332,19 @@ public final class CommandMathParser {
                 }
 
                 char operator = input.charAt(index);
-                if (operator != '*' && operator != '/') {
+                if (operator == '*' || operator == '/') {
+                    index++;
+                    Rational right = parseFactor();
+                    value = operator == '*' ? value.multiply(right) : value.divide(right);
+                    continue;
+                }
+
+                if (!startsImplicitMultiplication()) {
                     return value;
                 }
 
-                index++;
                 Rational right = parseFactor();
-                value = operator == '*' ? value.multiply(right) : value.divide(right);
+                value = value.multiply(right);
             }
         }
 
@@ -295,11 +385,62 @@ public final class CommandMathParser {
                 return value;
             }
 
+            if (Character.isLetter(current)) {
+                return parseFunctionCall();
+            }
+
             return parseNumber();
+        }
+
+        private Rational parseFunctionCall() {
+            String identifier = parseIdentifier();
+            skipWhitespace();
+            if (index >= input.length() || input.charAt(index) != '(') {
+                throw new IllegalArgumentException("Expected '(' after function name");
+            }
+
+            index++;
+            Rational value = parseExpression();
+            skipWhitespace();
+            if (index >= input.length() || input.charAt(index) != ')') {
+                throw new IllegalArgumentException("Missing closing parenthesis");
+            }
+            index++;
+
+            return switch (identifier.toLowerCase()) {
+                case "int" -> value.truncate();
+                case "float" -> value;
+                default -> throw new IllegalArgumentException("Unsupported function: " + identifier);
+            };
+        }
+
+        private String parseIdentifier() {
+            int start = index;
+            while (index < input.length() && Character.isLetter(input.charAt(index))) {
+                index++;
+            }
+
+            if (start == index) {
+                throw new IllegalArgumentException("Expected a function name");
+            }
+
+            return input.substring(start, index);
         }
 
         private boolean isStackSuffix(char current) {
             return current == 's' || current == 'S';
+        }
+
+        private boolean startsImplicitMultiplication() {
+            if (index >= input.length()) {
+                return false;
+            }
+
+            char current = input.charAt(index);
+            return Character.isDigit(current)
+                    || current == '.'
+                    || current == '('
+                    || Character.isLetter(current);
         }
 
         private Rational parseNumber() {
@@ -310,11 +451,25 @@ public final class CommandMathParser {
                 index++;
             }
 
-            if (start == index) {
+            boolean hasDigitsBeforeDecimal = index > start;
+            boolean hasDecimalPoint = index < input.length() && input.charAt(index) == '.';
+
+            if (hasDecimalPoint) {
+                index++;
+                int decimalStart = index;
+                while (index < input.length() && Character.isDigit(input.charAt(index))) {
+                    index++;
+                }
+
+                if (!hasDigitsBeforeDecimal && decimalStart == index) {
+                    throw new IllegalArgumentException("Expected a number");
+                }
+            } else if (!hasDigitsBeforeDecimal) {
                 throw new IllegalArgumentException("Expected a number");
             }
 
-            return Rational.of(new BigInteger(input.substring(start, index)));
+            String token = input.substring(start, index);
+            return Rational.parse(token);
         }
 
         private void skipWhitespace() {
@@ -376,6 +531,10 @@ public final class CommandMathParser {
             return new Rational(numerator.negate(), denominator);
         }
 
+        private Rational truncate() {
+            return Rational.of(numerator.divide(denominator));
+        }
+
         private int toIntExact() {
             BigInteger truncated = numerator.divide(denominator);
             if (truncated.compareTo(BigInteger.valueOf(Integer.MIN_VALUE)) < 0
@@ -385,7 +544,7 @@ public final class CommandMathParser {
             return truncated.intValue();
         }
 
-        private String toDecimalString() {
+        private String toCommandString() {
             BigDecimal numeratorDecimal = new BigDecimal(numerator);
             BigDecimal denominatorDecimal = new BigDecimal(denominator);
             BigDecimal decimal = numeratorDecimal.divide(denominatorDecimal, 16, RoundingMode.HALF_UP)
@@ -396,6 +555,24 @@ public final class CommandMathParser {
             }
 
             return decimal.toPlainString();
+        }
+
+        private static Rational parse(String token) {
+            int decimalIndex = token.indexOf('.');
+            if (decimalIndex < 0) {
+                return Rational.of(new BigInteger(token));
+            }
+
+            String wholePart = token.substring(0, decimalIndex);
+            String fractionalPart = token.substring(decimalIndex + 1);
+            String digits = wholePart + fractionalPart;
+            if (digits.isEmpty()) {
+                throw new IllegalArgumentException("Expected a number");
+            }
+
+            BigInteger numerator = new BigInteger(digits);
+            BigInteger denominator = BigInteger.TEN.pow(fractionalPart.length());
+            return new Rational(numerator, denominator);
         }
     }
 }
