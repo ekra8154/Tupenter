@@ -31,6 +31,8 @@ public class TupenterConfig {
     public boolean rememberLastValid = true;
     public boolean recordHistory = true;
     public boolean updateInToggle = false;
+    public boolean enhancedCommandParsingEnabled = true;
+    public boolean numberMathEnabled = true;
 
     public int resendAmount = 1;
     public boolean usePermanentMessage = false;
@@ -90,6 +92,8 @@ public class TupenterConfig {
                     INSTANCE.rememberLastValid = loaded.rememberLastValid;
                     INSTANCE.recordHistory = loaded.recordHistory;
                     INSTANCE.updateInToggle = loaded.updateInToggle;
+                    INSTANCE.enhancedCommandParsingEnabled = loaded.enhancedCommandParsingEnabled;
+                    INSTANCE.numberMathEnabled = loaded.numberMathEnabled;
                     INSTANCE.resendAmount = Math.max(1, loaded.resendAmount); // Ensure at least 1
                     INSTANCE.usePermanentMessage = loaded.usePermanentMessage;
                     INSTANCE.permanentMessages = loaded.permanentMessages != null ? loaded.permanentMessages : new ArrayList<>();

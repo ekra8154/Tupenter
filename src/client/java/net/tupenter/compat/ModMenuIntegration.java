@@ -37,22 +37,18 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setTitle(Component.translatable("title.tupenter.config"));
 
         ConfigCategory general = builder.getOrCreateCategory(Component.translatable("category.tupenter.general"));
+        ConfigCategory commandParsing = builder.getOrCreateCategory(Component.translatable("category.tupenter.command_parsing"));
         ConfigEntryBuilder entryBuilder = builder.entryBuilder();
 
         // =====================================================================
         // TOP-LEVEL SETTINGS
         // =====================================================================
 
-        general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.reset_on_new_session"), TupenterConfig.INSTANCE.resetOnNewSession)
-                .setDefaultValue(true)
-                .setTooltip(Component.translatable("tooltip.tupenter.reset_on_new_session"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.resetOnNewSession = newValue)
-                .build());
-
-        general.addEntry(entryBuilder.startIntSlider(Component.translatable("option.tupenter.rapid_resend_delay"), TupenterConfig.INSTANCE.rapidResendDelay, 0, 100)
-                .setDefaultValue(5)
-                .setTooltip(Component.translatable("tooltip.tupenter.rapid_resend_delay"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.rapidResendDelay = newValue)
+        general.addEntry(entryBuilder.startEnumSelector(Component.translatable("option.tupenter.resend_mode"), TupenterConfig.ResendMode.class, TupenterConfig.INSTANCE.resendMode)
+                .setDefaultValue(TupenterConfig.ResendMode.PRESS_AND_HOLD)
+                .setTooltip(Component.translatable("tooltip.tupenter.resend_mode"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.resendMode = newValue)
+                .setEnumNameProvider(mode -> Component.translatable("mode.tupenter." + mode.name().toLowerCase()))
                 .build());
 
         general.addEntry(entryBuilder.startEnumSelector(Component.translatable("option.tupenter.resend_filter"), TupenterConfig.ResendFilter.class, TupenterConfig.INSTANCE.resendFilter)
@@ -70,16 +66,21 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setEnumNameProvider(mode -> Component.translatable("filter.tupenter." + mode.name().toLowerCase()))
                 .build());
 
-        general.addEntry(entryBuilder.startEnumSelector(Component.translatable("option.tupenter.resend_mode"), TupenterConfig.ResendMode.class, TupenterConfig.INSTANCE.resendMode)
-                .setDefaultValue(TupenterConfig.ResendMode.PRESS_AND_HOLD)
-                .setTooltip(Component.translatable("tooltip.tupenter.resend_mode"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.resendMode = newValue)
-                .setEnumNameProvider(mode -> Component.translatable("mode.tupenter." + mode.name().toLowerCase()))
-                .build());
-
         // =====================================================================
         // SUB-CATEGORY: Tupenter Behavior
         // =====================================================================
+
+        AbstractConfigListEntry<?> resetOnNewSessionEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.reset_on_new_session"), TupenterConfig.INSTANCE.resetOnNewSession)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.reset_on_new_session"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.resetOnNewSession = newValue)
+                .build();
+
+        AbstractConfigListEntry<?> rapidResendDelayEntry = entryBuilder.startIntSlider(Component.translatable("option.tupenter.rapid_resend_delay"), TupenterConfig.INSTANCE.rapidResendDelay, 0, 100)
+                .setDefaultValue(5)
+                .setTooltip(Component.translatable("tooltip.tupenter.rapid_resend_delay"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.rapidResendDelay = newValue)
+                .build();
 
         AbstractConfigListEntry<?> messageDelayEntry = entryBuilder.startIntField(Component.translatable("option.tupenter.message_delay"), TupenterConfig.INSTANCE.messageDelay)
                 .setDefaultValue(0)
@@ -102,7 +103,7 @@ public class ModMenuIntegration implements ModMenuApi {
                 .build();
 
         general.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.behavior"),
-                List.of(messageDelayEntry, suppressFeedbackEntry, pauseTrackingEntry))
+                List.of(resetOnNewSessionEntry, rapidResendDelayEntry, messageDelayEntry, suppressFeedbackEntry, pauseTrackingEntry))
                 .setExpanded(false)
                 .build());
 
@@ -164,11 +165,26 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.permanentMessages = newValue)
                 .build();
 
+        AbstractConfigListEntry<?> enhancedCommandParsingEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.enhanced_command_parsing"), TupenterConfig.INSTANCE.enhancedCommandParsingEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.enhanced_command_parsing"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.enhancedCommandParsingEnabled = newValue)
+                .build();
+
+        AbstractConfigListEntry<?> numberMathEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.number_math"), TupenterConfig.INSTANCE.numberMathEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.number_math"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.numberMathEnabled = newValue)
+                .build();
+
         general.addEntry(entryBuilder.startSubCategory(
                 Component.translatable("subcategory.tupenter.preset_commands"),
                 List.of(importButtonEntry, permanentMessagesEntry))
                 .setExpanded(false)
                 .build());
+
+        commandParsing.addEntry(enhancedCommandParsingEntry);
+        commandParsing.addEntry(numberMathEntry);
 
         general.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.advanced"),
                 List.of(historyDepthEntry, resendDelayEntry, batchModeEntry, resendAmountEntry, resendOrderEntry))

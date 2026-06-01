@@ -1,11 +1,12 @@
 {
   "key.tupenter.resend": "Resend Last Message",
   "key.tupenter.config": "Open Config",
-  "key.tupenter.toggle_recording": "Toggle Recording",
+  "key.tupenter.toggle_recording": "Toggle Message Tracking",
   "key.category.tupenter.general": "Tupenter",
 
   "title.tupenter.config": "Tupenter Config",
   "category.tupenter.general": "General",
+  "category.tupenter.command_parsing": "Command Parsing",
 
   "option.tupenter.reset_on_new_session": "Clear Resend History on New Session",
   "tooltip.tupenter.reset_on_new_session": "If enabled, your resend history is automatically cleared when you join a world or server.",
@@ -20,11 +21,11 @@
   "filter.tupenter.commands_only": "Commands Only",
   "filter.tupenter.permanent_messages": "Preset Messages",
 
-  "option.tupenter.resend_mode": "Tupenter Mode",
+  "option.tupenter.resend_mode": "Tupenter Activation",
   "tooltip.tupenter.resend_mode": "Press & Hold: Resend fires while the key is held down. Toggle: Resend fires continuously until the key is pressed again. Off: Disables the resend key.",
-  "mode.tupenter.press_and_hold": "Press and Hold",
-  "mode.tupenter.toggle": "Toggle",
-  "mode.tupenter.off": "Off",
+  "mode.tupenter.press_and_hold": "Press or Hold",
+  "mode.tupenter.toggle": "Toggle On/Off",
+  "mode.tupenter.off": "Disabled",
 
   "subcategory.tupenter.behavior": "Tupenter Behavior",
 
@@ -63,12 +64,15 @@
   "order.tupenter.newest_first": "Most recent first",
 
   "subcategory.tupenter.preset_commands": "Preset Commands (Macros)",
-
   "text.tupenter.import_history": "Import from History",
   "tooltip.tupenter.import_history": "Copies your current session history into the preset messages list. WARNING: This will reload the screen and discard other unsaved changes!",
 
   "option.tupenter.permanent_messages": "Preset Messages List",
   "tooltip.tupenter.permanent_messages": "The list of messages or commands Tupenter will send when 'What to Resend' is set to Preset Messages.",
+  "option.tupenter.enhanced_command_parsing": "Enhanced Command Parsing",
+  "tooltip.tupenter.enhanced_command_parsing": "Enables Tupenter-only parsing features inside commands. When disabled, Tupenter sends commands exactly as written.",
+  "option.tupenter.number_math": "Number Math",
+  "tooltip.tupenter.number_math": "Lets Tupenter evaluate arithmetic inside $ ... $ markers before sending a command. Supports whole numbers, whitespace, parentheses, and +, -, *, /. If the marked text contains anything else, Tupenter leaves it alone. Example: /give @s stick $ 5 * 64 $ becomes /give @s stick 320.",
 
   "title.tupenter.import_confirm": "Import History?",
   "message.tupenter.import_confirm": "This will reload the screen and discard any other unsaved changes. Are you sure?",
@@ -76,7 +80,7 @@
   "tupenter.toggle.prefix": "Tupenter: ",
   "tupenter.toggle.on": "On",
   "tupenter.toggle.off": "Off",
-  "tupenter.recording.prefix": "Tupenter Recording: ",
+  "tupenter.recording.prefix": "Message Tracking: ",
   "tupenter.recording.on": "On",
   "tupenter.recording.off": "Off"
 }
