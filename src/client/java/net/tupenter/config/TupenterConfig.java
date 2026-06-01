@@ -33,7 +33,9 @@ public class TupenterConfig {
     public boolean updateInToggle = false;
     public boolean enhancedCommandParsingEnabled = true;
     public boolean commandChainingEnabled = true;
-    public boolean numberMathEnabled = true;
+    public boolean numberMathEnabled = true; // Legacy migration field
+    public NumberMathMode numberMathMode = NumberMathMode.AUTO_DETECT;
+    public List<String> aliases = new ArrayList<>();
 
     public int resendAmount = 1;
     public boolean usePermanentMessage = false;
@@ -69,6 +71,12 @@ public class TupenterConfig {
         INTERRUPT
     }
 
+    public enum NumberMathMode {
+        DISABLED,
+        EXPLICIT_ONLY,
+        AUTO_DETECT
+    }
+
     public static void load() {
         File configFile = new File(FabricLoader.getInstance().getConfigDir().toFile(), "tupenter.json");
         if (configFile.exists()) {
@@ -96,6 +104,10 @@ public class TupenterConfig {
                     INSTANCE.enhancedCommandParsingEnabled = loaded.enhancedCommandParsingEnabled;
                     INSTANCE.commandChainingEnabled = loaded.commandChainingEnabled;
                     INSTANCE.numberMathEnabled = loaded.numberMathEnabled;
+                    INSTANCE.numberMathMode = loaded.numberMathMode != null
+                            ? loaded.numberMathMode
+                            : (loaded.numberMathEnabled ? NumberMathMode.EXPLICIT_ONLY : NumberMathMode.DISABLED);
+                    INSTANCE.aliases = loaded.aliases != null ? loaded.aliases : new ArrayList<>();
                     INSTANCE.resendAmount = Math.max(1, loaded.resendAmount); // Ensure at least 1
                     INSTANCE.usePermanentMessage = loaded.usePermanentMessage;
                     INSTANCE.permanentMessages = loaded.permanentMessages != null ? loaded.permanentMessages : new ArrayList<>();

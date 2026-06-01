@@ -18,7 +18,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.minecraft.resources.ResourceLocation;
+import net.tupenter.command.CommandAliasManager;
 import net.tupenter.command.CommandMathParser;
 import net.tupenter.config.TupenterConfig;
 import net.tupenter.compat.ModMenuIntegration;
@@ -99,15 +101,37 @@ public class TupenterModClient implements ClientModInitializer {
 		));
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(literal("calc")
-                        .then(argument("expression", StringArgumentType.greedyString())
-                                .executes(context -> runCalcCommand(context, false)))
-                        .then(literal("int")
-                                .then(argument("expression", StringArgumentType.greedyString())
-                                        .executes(context -> runCalcCommand(context, false))))
-                        .then(literal("float")
-                                .then(argument("expression", StringArgumentType.greedyString())
-                                        .executes(context -> runCalcCommand(context, true))))));
+                {
+                    dispatcher.register(literal("calc")
+                            .then(argument("expression", StringArgumentType.greedyString())
+                                    .executes(context -> runCalcCommand(context, false)))
+                            .then(literal("int")
+                                    .then(argument("expression", StringArgumentType.greedyString())
+                                            .executes(context -> runCalcCommand(context, false))))
+                            .then(literal("float")
+                                    .then(argument("expression", StringArgumentType.greedyString())
+                                            .executes(context -> runCalcCommand(context, true)))));
+
+                    dispatcher.register(literal("customcommand")
+                            .then(literal("add")
+                                    .then(argument("name", StringArgumentType.word())
+                                            .then(argument("command", StringArgumentType.greedyString())
+                                                    .executes(TupenterModClient::runAliasAddCommand))))
+                            .then(literal("remove")
+                                    .then(argument("name", StringArgumentType.word())
+                                            .executes(TupenterModClient::runAliasRemoveCommand)))
+                            .then(literal("list")
+                                    .executes(TupenterModClient::runAliasListCommand)));
+
+                    for (CommandAliasManager.ParsedAlias alias : CommandAliasManager.getAliasMap().entrySet().stream()
+                            .map(entry -> new CommandAliasManager.ParsedAlias(entry.getKey(), entry.getValue()))
+                            .toList()) {
+                        dispatcher.register(literal(alias.name())
+                                .executes(context -> runRegisteredAliasCommand(context, alias.name()))
+                                .then(argument("args", StringArgumentType.greedyString())
+                                        .executes(context -> runRegisteredAliasCommand(context, alias.name()))));
+                    }
+                });
 
         // Register Session Reset
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
@@ -388,6 +412,69 @@ public class TupenterModClient implements ClientModInitializer {
         return evaluateLocalCalcExpression(unwrapOptionalMarkers(input), decimalMode, context.getSource()::sendFeedback, context.getSource()::sendError);
     }
 
+    private static int runAliasAddCommand(CommandContext<FabricClientCommandSource> context) {
+        String name = StringArgumentType.getString(context, "name");
+        String command = StringArgumentType.getString(context, "command");
+
+        try {
+            String savedName = CommandAliasManager.addAlias(name, command);
+            context.getSource().sendFeedback(Component.literal("Saved custom command /" + savedName).withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IllegalArgumentException ex) {
+            context.getSource().sendError(Component.literal(ex.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int runAliasRemoveCommand(CommandContext<FabricClientCommandSource> context) {
+        String name = StringArgumentType.getString(context, "name");
+        if (CommandAliasManager.removeAlias(name)) {
+            context.getSource().sendFeedback(Component.literal("Removed custom command /" + CommandAliasManager.normalizeName(name)).withStyle(ChatFormatting.GREEN));
+            return 1;
+        }
+
+        context.getSource().sendError(Component.literal("Custom command not found: /" + CommandAliasManager.normalizeName(name)));
+        return 0;
+    }
+
+    private static int runAliasListCommand(CommandContext<FabricClientCommandSource> context) {
+        List<String> definitions = CommandAliasManager.getAliasDefinitions();
+        if (definitions.isEmpty()) {
+            context.getSource().sendFeedback(Component.literal("No custom commands saved.").withStyle(ChatFormatting.YELLOW));
+            return 1;
+        }
+
+        context.getSource().sendFeedback(Component.literal("Saved custom commands:").withStyle(ChatFormatting.AQUA));
+        for (String definition : definitions) {
+            context.getSource().sendFeedback(Component.literal(" - " + definition));
+        }
+        return 1;
+    }
+
+    private static int runRegisteredAliasCommand(CommandContext<FabricClientCommandSource> context, String aliasName) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null) {
+            return 0;
+        }
+
+        if (!CommandAliasManager.getAliasMap().containsKey(aliasName)) {
+            context.getSource().sendError(Component.literal("Custom command not found. It may have been removed and will disappear after you relaunch."));
+            return 0;
+        }
+
+        String command = aliasName;
+        try {
+            String extraArgs = StringArgumentType.getString(context, "args");
+            if (extraArgs != null && !extraArgs.isBlank()) {
+                command = command + " " + extraArgs;
+            }
+        } catch (IllegalArgumentException ignored) {
+        }
+
+        client.player.connection.getConnection().send(new ServerboundChatCommandPacket(command));
+        return 1;
+    }
+
     public static boolean handleLocalCalcAlias(String command) {
         if (!command.startsWith("$")) {
             return false;
@@ -434,6 +521,10 @@ public class TupenterModClient implements ClientModInitializer {
         if (client.player != null) {
             client.player.displayClientMessage(component.copy().withStyle(ChatFormatting.RED), false);
         }
+    }
+
+    public static void sendEnhancedParsingError(String message) {
+        sendLocalCalcError(Component.literal(message));
     }
 
     private static String unwrapOptionalMarkers(String input) {

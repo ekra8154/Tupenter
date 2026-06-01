@@ -1,10 +1,12 @@
 package net.tupenter.mixin.client;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.minecraft.network.protocol.game.ServerboundChatPacket;
 import net.tupenter.TupenterModClient;
+import net.tupenter.command.CommandAliasManager;
 import net.tupenter.command.CommandParsingProcessor;
 import net.tupenter.config.TupenterConfig;
 import org.spongepowered.asm.mixin.Mixin;
@@ -32,15 +34,26 @@ public class MixinConnection {
             CommandParsingProcessor.Result result = CommandParsingProcessor.process(
                     originalCommand,
                     TupenterConfig.INSTANCE.commandChainingEnabled,
-                    TupenterConfig.INSTANCE.numberMathEnabled
+                    TupenterConfig.INSTANCE.numberMathMode,
+                    CommandAliasManager.getAliasMap()
             );
+
+            if (result.aliasExpansionLimitExceeded()) {
+                TupenterModClient.sendEnhancedParsingError("Alias expansion limit reached (" + result.aliasExpansionLimit() + "). Possible recursive alias loop.");
+                ci.cancel();
+                return;
+            }
 
             if (result.changed()) {
                 TupenterModClient.updateLastMessage("/" + originalCommand);
                 forwardingEnhancedCommand = true;
                 try {
-                    for (String rewrittenCommand : result.commands()) {
-                        ((Connection) (Object) this).send(new ServerboundChatCommandPacket(rewrittenCommand));
+                    for (CommandParsingProcessor.OutgoingSegment rewrittenCommand : result.commands()) {
+                        if (rewrittenCommand.isCommand()) {
+                            ((Connection) (Object) this).send(new ServerboundChatCommandPacket(rewrittenCommand.content()));
+                        } else if (Minecraft.getInstance().player != null) {
+                            Minecraft.getInstance().player.connection.sendChat(rewrittenCommand.content());
+                        }
                     }
                 } finally {
                     forwardingEnhancedCommand = false;
@@ -51,7 +64,7 @@ public class MixinConnection {
         }
 
         String content = null;
-        if (packet instanceof ServerboundChatPacket) {
+        if (packet instanceof ServerboundChatPacket && !forwardingEnhancedCommand) {
             content = ((ServerboundChatPacket) packet).message();
         } else if (packet instanceof ServerboundChatCommandPacket && !forwardingEnhancedCommand) {
             content = "/" + ((ServerboundChatCommandPacket) packet).command();

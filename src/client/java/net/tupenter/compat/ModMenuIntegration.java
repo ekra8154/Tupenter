@@ -15,6 +15,7 @@ import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.tupenter.TupenterModClient;
+import net.tupenter.command.CommandAliasManager;
 import net.tupenter.config.TupenterConfig;
 
 import java.util.ArrayList;
@@ -38,6 +39,7 @@ public class ModMenuIntegration implements ModMenuApi {
 
         ConfigCategory general = builder.getOrCreateCategory(Component.translatable("category.tupenter.general"));
         ConfigCategory commandParsing = builder.getOrCreateCategory(Component.translatable("category.tupenter.command_parsing"));
+        ConfigCategory aliases = builder.getOrCreateCategory(Component.translatable("category.tupenter.aliases"));
         ConfigEntryBuilder entryBuilder = builder.entryBuilder();
 
         // =====================================================================
@@ -165,6 +167,12 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.permanentMessages = newValue)
                 .build();
 
+        StringListListEntry aliasesEntry = entryBuilder.startStrList(Component.translatable("option.tupenter.aliases"), CommandAliasManager.getAliasDefinitions())
+                .setDefaultValue(new ArrayList<>())
+                .setTooltip(Component.translatable("tooltip.tupenter.aliases"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.aliases = newValue)
+                .build();
+
         AbstractConfigListEntry<?> enhancedCommandParsingEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.enhanced_command_parsing"), TupenterConfig.INSTANCE.enhancedCommandParsingEnabled)
                 .setDefaultValue(true)
                 .setTooltip(Component.translatable("tooltip.tupenter.enhanced_command_parsing"))
@@ -177,10 +185,11 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.commandChainingEnabled = newValue)
                 .build();
 
-        AbstractConfigListEntry<?> numberMathEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.number_math"), TupenterConfig.INSTANCE.numberMathEnabled)
-                .setDefaultValue(true)
+        AbstractConfigListEntry<?> numberMathEntry = entryBuilder.startEnumSelector(Component.translatable("option.tupenter.number_math"), TupenterConfig.NumberMathMode.class, TupenterConfig.INSTANCE.numberMathMode)
+                .setDefaultValue(TupenterConfig.NumberMathMode.AUTO_DETECT)
                 .setTooltip(Component.translatable("tooltip.tupenter.number_math"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.numberMathEnabled = newValue)
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.numberMathMode = newValue)
+                .setEnumNameProvider(mode -> Component.translatable("mode.tupenter.number_math." + mode.name().toLowerCase()))
                 .build();
 
         general.addEntry(entryBuilder.startSubCategory(
@@ -192,6 +201,7 @@ public class ModMenuIntegration implements ModMenuApi {
         commandParsing.addEntry(enhancedCommandParsingEntry);
         commandParsing.addEntry(commandChainingEntry);
         commandParsing.addEntry(numberMathEntry);
+        aliases.addEntry(aliasesEntry);
 
         general.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.advanced"),
                 List.of(historyDepthEntry, resendDelayEntry, batchModeEntry, resendAmountEntry, resendOrderEntry))

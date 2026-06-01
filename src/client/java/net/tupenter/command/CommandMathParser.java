@@ -5,6 +5,7 @@ import net.tupenter.TupenterMod;
 
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import net.tupenter.config.TupenterConfig;
 
 public final class CommandMathParser {
     private static final char MARKER = '$';
@@ -12,24 +13,28 @@ public final class CommandMathParser {
     private CommandMathParser() {
     }
 
-    public static String applyNumberMath(String command) {
+    public static String applyNumberMath(String command, TupenterConfig.NumberMathMode mode) {
+        if (mode == TupenterConfig.NumberMathMode.DISABLED) {
+            return command;
+        }
+
         StringBuilder result = new StringBuilder(command.length());
         int index = 0;
 
         while (index < command.length()) {
             int start = command.indexOf(MARKER, index);
             if (start < 0) {
-                result.append(command, index, command.length());
+                appendUnmarkedSegment(result, command.substring(index), mode);
                 break;
             }
 
             int end = command.indexOf(MARKER, start + 1);
             if (end < 0) {
-                result.append(command, index, command.length());
+                appendUnmarkedSegment(result, command.substring(index), mode);
                 break;
             }
 
-            result.append(command, index, start);
+            appendUnmarkedSegment(result, command.substring(index, start), mode);
 
             String markedSegment = command.substring(start, end + 1);
             String expression = command.substring(start + 1, end);
@@ -39,6 +44,14 @@ public final class CommandMathParser {
         }
 
         return result.toString();
+    }
+
+    private static void appendUnmarkedSegment(StringBuilder result, String segment, TupenterConfig.NumberMathMode mode) {
+        if (mode == TupenterConfig.NumberMathMode.AUTO_DETECT) {
+            result.append(applyAutoDetectMath(segment));
+        } else {
+            result.append(segment);
+        }
     }
 
     public static int evaluateExpression(String expression) {
@@ -66,7 +79,7 @@ public final class CommandMathParser {
                 continue;
             }
 
-            if (current == '+' || current == '-' || current == '*' || current == '/' || current == '(' || current == ')') {
+            if (current == '+' || current == '-' || current == '*' || current == '/' || current == '(' || current == ')' || current == 's' || current == 'S') {
                 continue;
             }
 
@@ -74,6 +87,110 @@ public final class CommandMathParser {
         }
 
         return true;
+    }
+
+    private static String applyAutoDetectMath(String input) {
+        StringBuilder result = new StringBuilder(input.length());
+        int braceDepth = 0;
+        int candidateStart = -1;
+
+        for (int i = 0; i < input.length(); i++) {
+            char current = input.charAt(i);
+
+            if (braceDepth == 0 && isAllowedAutoDetectCharacter(current)) {
+                if (candidateStart < 0) {
+                    candidateStart = i;
+                }
+            } else {
+                if (candidateStart >= 0) {
+                    result.append(evaluateAutoDetectedSpan(input.substring(candidateStart, i)));
+                    candidateStart = -1;
+                }
+                result.append(current);
+            }
+
+            if (current == '{') {
+                braceDepth++;
+            } else if (current == '}') {
+                braceDepth = Math.max(0, braceDepth - 1);
+            }
+        }
+
+        if (candidateStart >= 0) {
+            result.append(evaluateAutoDetectedSpan(input.substring(candidateStart)));
+        }
+
+        return result.toString();
+    }
+
+    private static boolean isAllowedAutoDetectCharacter(char current) {
+        return Character.isWhitespace(current)
+                || Character.isDigit(current)
+                || current == '+'
+                || current == '-'
+                || current == '*'
+                || current == '/'
+                || current == '('
+                || current == ')'
+                || current == 's'
+                || current == 'S';
+    }
+
+    private static String evaluateAutoDetectedSpan(String span) {
+        int leadingWhitespace = 0;
+        while (leadingWhitespace < span.length() && Character.isWhitespace(span.charAt(leadingWhitespace))) {
+            leadingWhitespace++;
+        }
+
+        int trailingWhitespace = span.length();
+        while (trailingWhitespace > leadingWhitespace && Character.isWhitespace(span.charAt(trailingWhitespace - 1))) {
+            trailingWhitespace--;
+        }
+
+        String expression = span.substring(leadingWhitespace, trailingWhitespace);
+        if (!looksLikeAutoDetectExpression(expression)) {
+            return span;
+        }
+
+        try {
+            return span.substring(0, leadingWhitespace)
+                    + evaluateExpression(expression)
+                    + span.substring(trailingWhitespace);
+        } catch (IllegalArgumentException ex) {
+            TupenterMod.LOGGER.debug("Skipping auto-detected number math for span '{}': {}", span, ex.getMessage());
+            return span;
+        }
+    }
+
+    private static boolean looksLikeAutoDetectExpression(String token) {
+        boolean hasDigit = false;
+        boolean hasOperator = false;
+
+        for (int i = 0; i < token.length(); i++) {
+            char current = token.charAt(i);
+            if (Character.isWhitespace(current)) {
+                continue;
+            }
+
+            if (Character.isDigit(current)) {
+                hasDigit = true;
+                continue;
+            }
+
+            if (current == '+' || current == '-' || current == '*' || current == '/' || current == '(' || current == ')') {
+                hasOperator = true;
+                continue;
+            }
+
+            if (current == 's' || current == 'S') {
+                hasOperator = true;
+                continue;
+            }
+
+            return false;
+        }
+
+        return hasDigit && hasOperator;
     }
 
     private static Rational parseExpression(String expression) {
@@ -142,6 +259,20 @@ public final class CommandMathParser {
         }
 
         private Rational parseFactor() {
+            Rational value = parsePrimary();
+
+            while (true) {
+                skipWhitespace();
+                if (index < input.length() && isStackSuffix(input.charAt(index))) {
+                    index++;
+                    value = value.multiply(Rational.of(BigInteger.valueOf(64)));
+                    continue;
+                }
+                return value;
+            }
+        }
+
+        private Rational parsePrimary() {
             skipWhitespace();
             if (index >= input.length()) {
                 throw new IllegalArgumentException("Unexpected end of expression");
@@ -165,6 +296,10 @@ public final class CommandMathParser {
             }
 
             return parseNumber();
+        }
+
+        private boolean isStackSuffix(char current) {
+            return current == 's' || current == 'S';
         }
 
         private Rational parseNumber() {

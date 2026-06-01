@@ -7,6 +7,7 @@
   "title.tupenter.config": "Tupenter Config",
   "category.tupenter.general": "General",
   "category.tupenter.command_parsing": "Command Parsing",
+  "category.tupenter.aliases": "Custom Commands",
 
   "option.tupenter.reset_on_new_session": "Clear Resend History on New Session",
   "tooltip.tupenter.reset_on_new_session": "If enabled, your resend history is automatically cleared when you join a world or server.",
@@ -74,7 +75,12 @@
   "option.tupenter.command_chaining": "Command Chaining",
   "tooltip.tupenter.command_chaining": "Lets Tupenter split commands joined with && and send them in order. Tupenter still remembers and replays the original combined command as one history entry. Example: /weather clear && /time set day.",
   "option.tupenter.number_math": "Number Math",
-  "tooltip.tupenter.number_math": "Lets Tupenter evaluate arithmetic inside $ ... $ markers before sending a command. Supports whole numbers, whitespace, parentheses, and +, -, *, /. If the marked text contains anything else, Tupenter leaves it alone. Example: /give @s stick $ 5 * 64 $ becomes /give @s stick 320.",
+  "tooltip.tupenter.number_math": "Controls how Tupenter evaluates arithmetic before sending command segments. In both enabled modes, $ ... $ always works. Auto-detect can also solve plain tokens like 32+4 or 3s outside NBT braces. Supports whole numbers, whitespace, parentheses, +, -, *, /, and s for stacks (x64).",
+  "mode.tupenter.number_math.disabled": "Disabled",
+  "mode.tupenter.number_math.explicit_only": "Only With $...$",
+  "mode.tupenter.number_math.auto_detect": "Auto-detect Expressions",
+  "option.tupenter.aliases": "Saved Custom Commands",
+  "tooltip.tupenter.aliases": "Add custom commands in the format name = body. Bodies can include commands, chat messages, && chains, $ ... $ math, or even other custom commands. They work immediately after saving, but newly added custom commands will not appear in autocomplete or the command list until you relaunch the game. Example: sunny = /weather clear && Have fun!",
 
   "title.tupenter.import_confirm": "Import History?",
   "message.tupenter.import_confirm": "This will reload the screen and discard any other unsaved changes. Are you sure?",
