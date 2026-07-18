@@ -403,6 +403,46 @@ class ScriptParserTest {
     }
 
     @Test
+    void optionalParamsUseDefaultsAndCanBeSkipped() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.bx", Value.ofNumber(100));
+        store.set("client.by", Value.ofNumber(64));
+        store.set("client.bz", Value.ofNumber(-8));
+        store.set("client.dimension", Value.of("minecraft:overworld"));
+        Map<String, String> aliases = Map.of("portal",
+                "<p:pos=~ ~ ~> <dim:to_overworld,to_nether=$client.dimension == \"minecraft:the_nether\" ? \"to_overworld\" : \"to_nether\"$> /say $dim$ $p$");
+
+        // everything omitted: pos = where you stand, dim = the opposite dimension
+        assertEquals(List.of("say to_nether 100 64 -8"), contents(ScriptParser.parse("portal", options(aliases, store))));
+        // coords only
+        assertEquals(List.of("say to_nether 64 64 64"), contents(ScriptParser.parse("portal 64 64 64", options(aliases, store))));
+        // dimension only — pos is skipped because to_overworld isn't a coordinate
+        assertEquals(List.of("say to_overworld 100 64 -8"), contents(ScriptParser.parse("portal to_overworld", options(aliases, store))));
+        // both
+        assertEquals(List.of("say to_overworld 1 2 3"), contents(ScriptParser.parse("portal 1 2 3 to_overworld", options(aliases, store))));
+    }
+
+    @Test
+    void optionalDefaultsCanReferenceEarlierParams() {
+        Map<String, String> aliases = Map.of("greet", "<who:player> <msg:text=hello $who$> /say $msg$");
+        assertEquals(List.of("say hello Steve"), contents(parse("greet Steve", aliases)));
+        assertEquals(List.of("say yo"), contents(parse("greet Steve yo", aliases)));
+    }
+
+    @Test
+    void optionalParamEdgeCases() {
+        Map<String, String> aliases = Map.of(
+                "radius", "<r:int=5> /say r=$r$",
+                "need", "<n:int> /say $n$");
+        assertEquals(List.of("say r=5"), contents(parse("radius", aliases)));
+        assertEquals(List.of("say r=9"), contents(parse("radius 9", aliases)));
+        // junk that isn't an int falls through, and nothing else claims it
+        assertNotNull(parse("radius bogus", aliases).error());
+        // required params stay required
+        assertNotNull(parse("need", aliases).error());
+    }
+
+    @Test
     void paramsCanDriveLoops() {
         Map<String, String> aliases = Map.of("spam", "<count:int> #repeat $count$ (/say hi $i$)");
         ScriptParser.ParseResult result = parse("spam 3", aliases);

@@ -73,6 +73,29 @@ class AliasDefinitionTest {
     }
 
     @Test
+    void defaultsMakeParamsOptional() {
+        AliasDefinition def = AliasDefinition.parse("<r:int=5> <p:pos=~ ~ ~> <msg=hi> /say $r$ $p$ $msg$");
+        assertEquals("5", def.params().get(0).defaultValue());
+        assertTrue(def.params().get(0).optional());
+        assertEquals("~ ~ ~", def.params().get(1).defaultValue());
+        assertEquals(AliasDefinition.ParamType.STRING, def.params().get(2).type());
+        assertEquals("hi", def.params().get(2).defaultValue());
+        assertEquals("<r:int=5> <p:pos=~ ~ ~> <msg=hi> ", def.declarationPrefix());
+        assertThrows(IllegalArgumentException.class, () -> AliasDefinition.parse("<r:int=> /say hi"));
+    }
+
+    @Test
+    void defaultExpressionsMayContainDeclarationCharacters() {
+        // = > : , inside $...$ belong to the expression, not the declaration
+        AliasDefinition def = AliasDefinition.parse(
+                "<dim:to_overworld,to_nether=$client.y > 0 ? \"to_nether\" : \"to_overworld\"$> /say $dim$");
+        assertEquals(AliasDefinition.ParamType.CHOICE, def.params().get(0).type());
+        assertEquals(java.util.List.of("to_overworld", "to_nether"), def.params().get(0).options());
+        assertEquals("$client.y > 0 ? \"to_nether\" : \"to_overworld\"$", def.params().get(0).defaultValue());
+        assertEquals("/say $dim$", def.body());
+    }
+
+    @Test
     void noParamsIsJustABody() {
         AliasDefinition def = AliasDefinition.parse("/weather clear && Have fun!");
         assertTrue(def.params().isEmpty());

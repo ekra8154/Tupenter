@@ -1,5 +1,6 @@
 package net.tupenter.command;
 
+import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.ArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
@@ -62,25 +63,55 @@ public final class ClientCommandRegistrar {
             return node;
         }
 
-        ArgumentBuilder<FabricClientCommandSource, ?> chain = null;
-        for (int i = definition.params().size() - 1; i >= 0; i--) {
-            AliasDefinition.Param param = definition.params().get(i);
-            RequiredArgumentBuilder<FabricClientCommandSource, ?> arg = argument(param.name(), argumentTypeFor(param.type(), buildContext));
-            if (param.type() == AliasDefinition.ParamType.PLAYER) {
-                arg.suggests((context, builder) -> SharedSuggestionProvider.suggest(context.getSource().getOnlinePlayerNames(), builder));
-            } else if (param.type() == AliasDefinition.ParamType.CHOICE) {
-                arg.suggests((context, builder) -> SharedSuggestionProvider.suggest(param.options(), builder));
-            }
-            if (i == definition.params().size() - 1) {
-                arg.executes(context -> sendAliasCommand(name, collectArgs(context, definition)));
-            }
-            if (chain != null) {
-                arg.then(chain);
-            }
-            chain = arg;
+        Command<FabricClientCommandSource> terminal = context -> sendAliasCommand(name, collectArgs(context, definition));
+        if (allOptionalFrom(definition, 0)) {
+            node.executes(terminal);
         }
-        node.then(chain);
+        for (ArgumentBuilder<FabricClientCommandSource, ?> branch : paramBranches(definition, buildContext, 0, terminal)) {
+            node.then(branch);
+        }
         return node;
+    }
+
+    /**
+     * Builds the subtree for params[index..]. Optional params add a sibling
+     * branch where they're skipped (so /portal to_overworld parses even though
+     * the pos param comes first), and every node whose remaining params are
+     * all optional can execute.
+     */
+    private static <S extends SharedSuggestionProvider> java.util.List<ArgumentBuilder<S, ?>> paramBranches(
+            AliasDefinition definition, CommandBuildContext buildContext, int index, Command<S> terminal) {
+        java.util.List<ArgumentBuilder<S, ?>> branches = new java.util.ArrayList<>();
+        if (index >= definition.params().size()) {
+            return branches;
+        }
+        AliasDefinition.Param param = definition.params().get(index);
+        RequiredArgumentBuilder<S, ?> arg = RequiredArgumentBuilder.argument(param.name(), argumentTypeFor(param.type(), buildContext));
+        if (param.type() == AliasDefinition.ParamType.PLAYER) {
+            arg.suggests((context, builder) -> SharedSuggestionProvider.suggest(context.getSource().getOnlinePlayerNames(), builder));
+        } else if (param.type() == AliasDefinition.ParamType.CHOICE) {
+            arg.suggests((context, builder) -> SharedSuggestionProvider.suggest(param.options(), builder));
+        }
+        if (terminal != null && allOptionalFrom(definition, index + 1)) {
+            arg.executes(terminal);
+        }
+        for (ArgumentBuilder<S, ?> tail : paramBranches(definition, buildContext, index + 1, terminal)) {
+            arg.then(tail);
+        }
+        branches.add(arg);
+        if (param.optional()) {
+            branches.addAll(paramBranches(definition, buildContext, index + 1, terminal));
+        }
+        return branches;
+    }
+
+    private static boolean allOptionalFrom(AliasDefinition definition, int index) {
+        for (int i = index; i < definition.params().size(); i++) {
+            if (!definition.params().get(i).optional()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static ArgumentType<?> argumentTypeFor(AliasDefinition.ParamType type, CommandBuildContext buildContext) {
@@ -118,10 +149,14 @@ public final class ClientCommandRegistrar {
     private static String collectArgs(CommandContext<FabricClientCommandSource> context, AliasDefinition definition) {
         StringBuilder args = new StringBuilder();
         for (AliasDefinition.Param param : definition.params()) {
+            String raw = rawArgument(context, param.name());
+            if (raw == null) {
+                continue; // omitted optional — the script parser binds its default
+            }
             if (args.length() > 0) {
                 args.append(' ');
             }
-            args.append(rawArgument(context, param.name()));
+            args.append(raw);
         }
         return args.toString();
     }
@@ -132,7 +167,7 @@ public final class ClientCommandRegistrar {
                 return parsed.getRange().get(context.getInput());
             }
         }
-        return StringArgumentType.getString(context, name); // shouldn't happen
+        return null; // not in the parse — an omitted optional param
     }
 
     /**
@@ -198,22 +233,10 @@ public final class ClientCommandRegistrar {
             return node;
         }
 
-        ArgumentBuilder<ClientSuggestionProvider, ?> chain = null;
-        for (int i = definition.params().size() - 1; i >= 0; i--) {
-            AliasDefinition.Param param = definition.params().get(i);
-            RequiredArgumentBuilder<ClientSuggestionProvider, ?> arg =
-                    RequiredArgumentBuilder.argument(param.name(), argumentTypeFor(param.type(), buildContext));
-            if (param.type() == AliasDefinition.ParamType.PLAYER) {
-                arg.suggests((context, builder) -> SharedSuggestionProvider.suggest(context.getSource().getOnlinePlayerNames(), builder));
-            } else if (param.type() == AliasDefinition.ParamType.CHOICE) {
-                arg.suggests((context, builder) -> SharedSuggestionProvider.suggest(param.options(), builder));
-            }
-            if (chain != null) {
-                arg.then(chain);
-            }
-            chain = arg;
+        for (ArgumentBuilder<ClientSuggestionProvider, ?> branch
+                : ClientCommandRegistrar.<ClientSuggestionProvider>paramBranches(definition, buildContext, 0, null)) {
+            node.then(branch);
         }
-        node.then(chain);
         return node;
     }
 

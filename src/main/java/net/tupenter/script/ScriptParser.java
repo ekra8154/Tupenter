@@ -468,61 +468,101 @@ public final class ScriptParser {
             for (int i = 0; i < params.size(); i++) {
                 AliasDefinition.Param param = params.get(i);
                 rest = rest.trim();
+
                 if (rest.isEmpty()) {
+                    if (param.optional()) {
+                        bindDefault(param, i, bindings, usage);
+                        continue;
+                    }
                     throw new ParseAbort("Missing argument <" + param.name() + ">. " + usage);
                 }
 
-                switch (param.type()) {
-                    case POS -> {
-                        rest = bindCoordinateParam(param, i, rest, bindings, usage,
-                                new String[]{"x", "y", "z"}, new String[]{"client.bx", "client.by", "client.bz"}, true);
-                        continue;
-                    }
-                    case VEC3 -> {
-                        rest = bindCoordinateParam(param, i, rest, bindings, usage,
-                                new String[]{"x", "y", "z"}, new String[]{"client.x", "client.y", "client.z"}, false);
-                        continue;
-                    }
-                    case COLUMN_POS -> {
-                        rest = bindCoordinateParam(param, i, rest, bindings, usage,
-                                new String[]{"x", "z"}, new String[]{"client.bx", "client.bz"}, true);
-                        continue;
-                    }
-                    case ROTATION -> {
-                        rest = bindCoordinateParam(param, i, rest, bindings, usage,
-                                new String[]{"yaw", "pitch"}, new String[]{"client.yaw", "client.pitch"}, false);
-                        continue;
-                    }
-                    case ANGLE -> {
-                        // single yaw; binds as a number so $a + 90$ works
-                        ArgToken angleToken = readArgToken(rest);
-                        rest = rest.substring(angleToken.consumed());
-                        Value angle = new Value.NumberValue(resolveCoordinate(param, angleToken.value(), "client.yaw", false));
-                        bindings.put(param.name(), angle);
-                        bindings.put(String.valueOf(i + 1), angle);
-                        continue;
-                    }
-                    default -> {
-                    }
+                if (!param.optional()) {
+                    rest = bindOne(param, i, rest, bindings, usage);
+                    continue;
                 }
 
-                String token;
-                if (param.type() == AliasDefinition.ParamType.TEXT) {
-                    token = rest;
-                    rest = "";
-                } else {
-                    ArgToken argToken = readArgToken(rest);
-                    token = argToken.value();
-                    rest = rest.substring(argToken.consumed());
+                // optional with input present: if the input doesn't parse as this
+                // type, fall back to the default and let the next param claim it
+                Map<String, Value> attempt = new HashMap<>();
+                try {
+                    String after = bindOne(param, i, rest, attempt, usage);
+                    bindings.putAll(attempt);
+                    rest = after;
+                } catch (ParseAbort ex) {
+                    bindDefault(param, i, bindings, usage);
                 }
-
-                Value value = parseParamValue(param, token, usage);
-                bindings.put(param.name(), value);
-                bindings.put(String.valueOf(i + 1), value);
             }
 
             if (!rest.trim().isEmpty()) {
                 throw new ParseAbort("Too many arguments: '" + rest.trim() + "'. " + usage);
+            }
+        }
+
+        /** Binds one param from the front of {@code rest}; returns the remaining argument text. */
+        private String bindOne(AliasDefinition.Param param, int index, String rest, Map<String, Value> bindings, String usage) {
+            switch (param.type()) {
+                case POS -> {
+                    return bindCoordinateParam(param, index, rest, bindings, usage,
+                            new String[]{"x", "y", "z"}, new String[]{"client.bx", "client.by", "client.bz"}, true);
+                }
+                case VEC3 -> {
+                    return bindCoordinateParam(param, index, rest, bindings, usage,
+                            new String[]{"x", "y", "z"}, new String[]{"client.x", "client.y", "client.z"}, false);
+                }
+                case COLUMN_POS -> {
+                    return bindCoordinateParam(param, index, rest, bindings, usage,
+                            new String[]{"x", "z"}, new String[]{"client.bx", "client.bz"}, true);
+                }
+                case ROTATION -> {
+                    return bindCoordinateParam(param, index, rest, bindings, usage,
+                            new String[]{"yaw", "pitch"}, new String[]{"client.yaw", "client.pitch"}, false);
+                }
+                case ANGLE -> {
+                    // single yaw; binds as a number so $a + 90$ works
+                    ArgToken angleToken = readArgToken(rest);
+                    Value angle = new Value.NumberValue(resolveCoordinate(param, angleToken.value(), "client.yaw", false));
+                    bindings.put(param.name(), angle);
+                    bindings.put(String.valueOf(index + 1), angle);
+                    return rest.substring(angleToken.consumed());
+                }
+                default -> {
+                    String token;
+                    if (param.type() == AliasDefinition.ParamType.TEXT) {
+                        token = rest;
+                        rest = "";
+                    } else {
+                        ArgToken argToken = readArgToken(rest);
+                        token = argToken.value();
+                        rest = rest.substring(argToken.consumed());
+                    }
+                    Value value = parseParamValue(param, token, usage);
+                    bindings.put(param.name(), value);
+                    bindings.put(String.valueOf(index + 1), value);
+                    return rest;
+                }
+            }
+        }
+
+        /**
+         * Binds an omitted optional param: $...$ in the default is evaluated
+         * first (earlier params of the same command are visible), then the
+         * result is bound exactly as if the user had typed it — so a pos
+         * default of "~ ~ ~" resolves to the current position.
+         */
+        private void bindDefault(AliasDefinition.Param param, int index, Map<String, Value> bindings, String usage) {
+            String text = param.defaultValue();
+            scopes.push(bindings);
+            try {
+                text = MathEvaluator.applyNumberMath(text, NumberMathMode.EXPLICIT_ONLY, context);
+            } catch (IllegalArgumentException ex) {
+                throw new ParseAbort("<" + param.name() + "> default: " + ex.getMessage());
+            } finally {
+                scopes.pop();
+            }
+            String leftover = bindOne(param, index, text.trim(), bindings, usage);
+            if (!leftover.trim().isEmpty()) {
+                throw new ParseAbort("<" + param.name() + "> default has extra text: '" + leftover.trim() + "'. " + usage);
             }
         }
 

@@ -19,9 +19,18 @@ public record AliasDefinition(String body, List<Param> params) {
         return new AliasDefinition(body, List.of());
     }
 
-    public record Param(String name, ParamType type, List<String> options) {
+    /** {@code defaultValue} != null makes the param optional; the text may hold $...$ expressions. */
+    public record Param(String name, ParamType type, List<String> options, String defaultValue) {
         public Param(String name, ParamType type) {
-            this(name, type, List.of());
+            this(name, type, List.of(), null);
+        }
+
+        public Param(String name, ParamType type, List<String> options) {
+            this(name, type, options, null);
+        }
+
+        public boolean optional() {
+            return defaultValue != null;
         }
     }
 
@@ -81,25 +90,38 @@ public record AliasDefinition(String body, List<Param> params) {
         List<Param> params = new ArrayList<>();
 
         while (rest.startsWith("<")) {
-            int close = rest.indexOf('>');
+            // > (and later = ) inside $...$ belong to a default expression, not the declaration
+            int close = indexOfOutsideMarkers(rest, '>');
             if (close < 0) {
                 throw new IllegalArgumentException("Unclosed parameter declaration: " + rest);
             }
             String declaration = rest.substring(1, close).trim();
-            int colon = declaration.indexOf(':');
+
+            String defaultValue = null;
+            String head = declaration;
+            int eq = indexOfOutsideMarkers(declaration, '=');
+            if (eq >= 0) {
+                head = declaration.substring(0, eq).trim();
+                defaultValue = declaration.substring(eq + 1).trim();
+                if (defaultValue.isEmpty()) {
+                    throw new IllegalArgumentException("Empty default in <" + declaration + "> — write <name:type=value>");
+                }
+            }
+
+            int colon = head.indexOf(':');
             String name;
             ParamType type;
             List<String> choices = List.of();
             if (colon < 0) {
                 // bare <name> defaults to the quotable string type
-                name = declaration.toLowerCase(Locale.ROOT);
+                name = head.toLowerCase(Locale.ROOT);
                 type = ParamType.STRING;
             } else {
-                if (colon == 0 || colon == declaration.length() - 1) {
+                if (colon == 0 || colon == head.length() - 1) {
                     throw new IllegalArgumentException("Parameter declarations look like <name:type> or just <name>, got <" + declaration + ">");
                 }
-                name = declaration.substring(0, colon).trim().toLowerCase(Locale.ROOT);
-                String typeText = declaration.substring(colon + 1).trim();
+                name = head.substring(0, colon).trim().toLowerCase(Locale.ROOT);
+                String typeText = head.substring(colon + 1).trim();
                 if (typeText.contains(",")) {
                     // enumerated options: <dim:to_overworld,to_nether>
                     type = ParamType.CHOICE;
@@ -121,7 +143,7 @@ public record AliasDefinition(String body, List<Param> params) {
             if (!params.isEmpty() && params.get(params.size() - 1).type() == ParamType.TEXT) {
                 throw new IllegalArgumentException("A <name:text> parameter is greedy and must be last");
             }
-            params.add(new Param(name, type, choices));
+            params.add(new Param(name, type, choices, defaultValue));
             rest = rest.substring(close + 1).trim();
         }
 
@@ -129,6 +151,24 @@ public record AliasDefinition(String body, List<Param> params) {
             throw new IllegalArgumentException("Custom command body cannot be empty");
         }
         return new AliasDefinition(rest, List.copyOf(params));
+    }
+
+    /** First index of {@code target} that isn't inside a $...$ span ({@code \} escapes the next char). */
+    private static int indexOfOutsideMarkers(String text, char target) {
+        boolean inMarker = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+                continue;
+            }
+            if (c == '$') {
+                inMarker = !inMarker;
+            } else if (c == target && !inMarker) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static void validateParamName(String name, List<Param> existing) {
@@ -160,6 +200,9 @@ public record AliasDefinition(String body, List<Param> params) {
                 builder.append(':').append(String.join(",", param.options()));
             } else if (param.type() != ParamType.STRING) {
                 builder.append(':').append(param.type().name().toLowerCase(Locale.ROOT));
+            }
+            if (param.defaultValue() != null) {
+                builder.append('=').append(param.defaultValue());
             }
             builder.append("> ");
         }
