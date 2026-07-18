@@ -448,7 +448,13 @@ public class TupenterModClient implements ClientModInitializer {
                                     .then(literal("flow").executes(context -> runHelpCommand(context, "flow")))
                                     .then(literal("prefixes").executes(context -> runHelpCommand(context, "prefixes")))
                                     .then(literal("scripts").executes(context -> runHelpCommand(context, "scripts")))
-                                    .then(literal("commands").executes(context -> runHelpCommand(context, "commands")))));
+                                    .then(literal("commands").executes(context -> runCommandHelp(context, "all")))
+                                    .then(literal("command")
+                                            .executes(context -> runCommandHelp(context, "all"))
+                                            .then(argument("name", StringArgumentType.word())
+                                                    .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
+                                                            new String[]{"all", "tupenter", "customcommand", "echo", "calc", "unroll"}, b))
+                                                    .executes(context -> runCommandHelp(context, StringArgumentType.getString(context, "name")))))));
 
                     dispatcher.register(literal("echo")
                             .then(argument("message", StringArgumentType.greedyString())
@@ -1121,19 +1127,6 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Tick scripts never touch resend history and never print #set notices.",
                     "§7Panic:§r /tupenter abort — also flips the master toggle off",
             };
-            case "commands" -> new String[]{
-                    "§bCommands Tupenter adds (all client-side):",
-                    "§7/tupenter abort§r — stop scripts + resend queue (+ disables tick scripts)",
-                    "§7/tupenter vars [group]§r — variables overview / one group with live values",
-                    "§7/tupenter var save|delete <name>§r — persist / remove a variable",
-                    "§7/tupenter dump [client|target] [path]§r — browse entity NBT",
-                    "§7/tupenter help <topic>§r — this help",
-                    "§7/customcommand add|remove|list [verbose]|help§r · /customcommand <name> — inspect one",
-                    "§7/echo <text>§r — local-only output, evaluates $...$",
-                    "§7/calc <expr>§r — local calculator · /$ expr $ — like /calc for numbers, but a string result runs as a fresh line (\"/...\" command, \"#...\" directive, else chat)",
-                    "§7/unroll <line>§r — dry-run debugger: shows what a line unrolls to (color-coded: §b/commands§7, §echat§7) without sending anything. #set values aren't saved.",
-                    "§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking",
-            };
             default -> new String[]{
                     "§bTupenter help — pick a topic:",
                     "§7/tupenter help expressions§r — $...$ math, text, conditions, functions",
@@ -1141,9 +1134,75 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7/tupenter help flow§r — && chains, #repeat, #for, #foreach, #if/#elseif",
                     "§7/tupenter help prefixes§r — #silent, #norecord, #stage, /echo",
                     "§7/tupenter help scripts§r — the every-tick Scripts tab",
-                    "§7/tupenter help commands§r — every command the mod adds",
+                    "§7/tupenter help command [name]§r — the mod's commands, with per-command detail pages",
                     "§7/customcommand help§r — make your own commands (typed params, autocomplete)",
                     "§7Quick taste:§r #set $x$ = rand(1,10) && /give @s stick $x$ && /echo got $x$!",
+            };
+        };
+        for (String line : lines) {
+            context.getSource().sendFeedback(Component.literal(line));
+        }
+        return 1;
+    }
+
+    /** /tupenter help command [name] — brief overview, or one command in depth. */
+    private static int runCommandHelp(CommandContext<FabricClientCommandSource> context, String rawName) {
+        String name = rawName.toLowerCase(java.util.Locale.ROOT);
+        if (name.startsWith("/")) {
+            name = name.substring(1);
+        }
+        String[] lines = switch (name) {
+            case "all", "commands" -> new String[]{
+                    "§bCommands Tupenter adds (all client-side) — detail: /tupenter help command <name>:",
+                    "§7/tupenter§r — abort · vars · var save/delete · dump · help",
+                    "§7/customcommand§r — add · update · remove · list · make your own commands",
+                    "§7/echo <text>§r — local-only output, &-colors, evaluates $...$",
+                    "§7/calc <expr>§r · §7/$ expr $§r — local calculator / top-down shorthand",
+                    "§7/unroll <line>§r — dry-run debugger",
+                    "§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking",
+            };
+            case "tupenter" -> new String[]{
+                    "§b/tupenter — mod control:",
+                    "§7abort§r — stop all running scripts + the resend queue, and disable tick scripts (panic switch)",
+                    "§7vars [group]§r — variables overview, or one group with live values",
+                    "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
+                    "§7dump [client|target] [path]§r — browse entity NBT (the data behind client.nbt.* / target.nbt.*)",
+                    "§7help <topic>§r — topics: expressions, variables, flow, prefixes, scripts, command [name]",
+            };
+            case "customcommand" -> new String[]{
+                    "§b/customcommand — make your own commands:",
+                    "§7add <name> <body>§r — create · §7update <name> <body>§r — edit · §7remove <name>§r — delete",
+                    "§7list [verbose]§r — signatures (verbose: full bodies) · §7/customcommand <name>§r — one command + [edit] link",
+                    "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing",
+                    "§7Full guide§r (typed params, defaults, examples): /customcommand help",
+            };
+            case "echo" -> new String[]{
+                    "§b/echo <text> — show text only to yourself (nothing is sent):",
+                    "§7$...$§r evaluates first: /echo y is $client.y$",
+                    "§7&-codes color the text from that point on, until the next code or &r:",
+                    "§7Colors:§r §0&0§1&1§2&2§3&3§4&4§5&5§6&6§7&7§8&8§9&9§a&a§b&b§c&c§d&d§e&e§f&f§r §7(0-9, a-f)",
+                    "§7Formats:§r &l §lbold§r§7 · &o §oitalic§r§7 · &n §nunderline§r§7 · &m §mstrike§r§7 · &k obfuscated · &r reset",
+                    "§7\\&§r prints a literal & · codes work from variables too: #set $ok$ = \"&aOK\"",
+                    "§7Example:§r /echo &ahp $client.health$ &7/ 20",
+            };
+            case "calc" -> new String[]{
+                    "§b/calc <expr> — local calculator (nothing is sent):",
+                    "§7/calc int <expr>§r / §7/calc float <expr>§r — force integer / decimal display",
+                    "§7/$ expr $§r — top-down shorthand: numbers, booleans, and lists display like /calc,",
+                    "§7but a STRING result runs as a fresh line: \"/...\" command, \"#...\" directive, else chat.",
+                    "§7/$pick(\"hi\" | \"/time set day\")$§r — chats hi, or runs the command. Resending re-rolls.",
+                    "§7Expression reference: /tupenter help expressions",
+            };
+            case "unroll" -> new String[]{
+                    "§b/unroll <line> — dry-run debugger (nothing is sent):",
+                    "§7Parses and unrolls the line exactly like running it: statement forms, aliases, loops, markers.",
+                    "§7Output: §b/commands§7 in aqua, §echat§7 in yellow, plus (silent) tags, #set notices, and the history mode.",
+                    "§7#set values are NOT saved by a dry run · display caps at 30 rows.",
+                    "§7rand()/pick() roll once per unroll — running the line afterwards re-rolls.",
+                    "§7Example: /unroll /blink 200 — see exactly what /blink would send.",
+            };
+            default -> new String[]{
+                    "§cNo command page for '" + rawName + "' — try: all, tupenter, customcommand, echo, calc, unroll",
             };
         };
         for (String line : lines) {
