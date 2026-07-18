@@ -120,6 +120,21 @@ public final class ClientCommandRegistrar {
             TupenterMod.LOGGER.warn("No registry context for an item/block parameter — falling back to a plain string argument");
             return StringArgumentType.string();
         }
+        ArgumentType<?> strict = strictArgumentTypeFor(type, buildContext);
+        if (type == AliasDefinition.ParamType.TEXT) {
+            return strict; // greedy — already accepts $...$ arguments
+        }
+        int tokens = switch (type) {
+            case POS, VEC3 -> 3;
+            case COLUMN_POS, ROTATION -> 2;
+            default -> 1;
+        };
+        // $...$ expression arguments must get past Brigadier so the script
+        // parser can evaluate them: /replacenearcube $rand(1,15)$ ...
+        return new MarkerTolerantArgumentType(strict, tokens);
+    }
+
+    private static ArgumentType<?> strictArgumentTypeFor(AliasDefinition.ParamType type, CommandBuildContext buildContext) {
         return switch (type) {
             case INT -> IntegerArgumentType.integer();
             case FLOAT -> DoubleArgumentType.doubleArg();
@@ -238,6 +253,140 @@ public final class ClientCommandRegistrar {
             node.then(branch);
         }
         return node;
+    }
+
+    /**
+     * Wraps a strict Brigadier type so $...$ expression arguments parse:
+     * when the upcoming input holds a marker, the tokens are consumed as
+     * opaque text (markers are atomic even with spaces inside, and the
+     * script parser evaluates them after the packet is intercepted).
+     * Marker-free input still gets the wrapped type's validation, and
+     * suggestions always delegate. {@code tokens} > 1 covers multi-token
+     * types like pos (three coordinates).
+     */
+    private static final class MarkerTolerantArgumentType implements ArgumentType<Object> {
+        private final ArgumentType<?> wrapped;
+        private final int tokens;
+
+        MarkerTolerantArgumentType(ArgumentType<?> wrapped, int tokens) {
+            this.wrapped = wrapped;
+            this.tokens = tokens;
+        }
+
+        @Override
+        public Object parse(com.mojang.brigadier.StringReader reader) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+            if (!upcomingTokensContainMarker(reader)) {
+                return wrapped.parse(reader);
+            }
+            return parseLenient(reader);
+        }
+
+        @Override
+        public <S> Object parse(com.mojang.brigadier.StringReader reader, S source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+            if (!upcomingTokensContainMarker(reader)) {
+                return wrapped.parse(reader, source);
+            }
+            return parseLenient(reader);
+        }
+
+        private String parseLenient(com.mojang.brigadier.StringReader reader) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+            int start = reader.getCursor();
+            for (int i = 0; i < tokens; i++) {
+                if (i > 0) {
+                    if (!reader.canRead() || reader.peek() != ' ') {
+                        throw com.mojang.brigadier.exceptions.CommandSyntaxException.BUILT_IN_EXCEPTIONS
+                                .dispatcherExpectedArgumentSeparator().createWithContext(reader);
+                    }
+                    reader.skip();
+                }
+                consumeToken(reader);
+            }
+            return reader.getString().substring(start, reader.getCursor());
+        }
+
+        /** Scans only the text this argument would consume for a $...$ marker. */
+        private boolean upcomingTokensContainMarker(com.mojang.brigadier.StringReader reader) {
+            String text = reader.getRemaining();
+            boolean marker = false;
+            boolean quoted = false;
+            int depth = 0;
+            int completed = 0;
+            boolean sawMarker = false;
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c == '\\') {
+                    i++;
+                    continue;
+                }
+                if (c == '$') {
+                    marker = !marker;
+                    sawMarker = true;
+                    continue;
+                }
+                if (marker) {
+                    continue;
+                }
+                if (c == '"') {
+                    quoted = !quoted;
+                } else if (!quoted) {
+                    if (c == '[' || c == '{') {
+                        depth++;
+                    } else if (c == ']' || c == '}') {
+                        depth = Math.max(0, depth - 1);
+                    } else if (c == ' ' && depth == 0) {
+                        completed++;
+                        if (completed >= tokens) {
+                            return sawMarker;
+                        }
+                    }
+                }
+            }
+            return sawMarker;
+        }
+
+        /** One argument token; $...$ spans, "..." quotes, and [..]/{..} are atomic. */
+        private static void consumeToken(com.mojang.brigadier.StringReader reader) {
+            boolean marker = false;
+            boolean quoted = false;
+            int depth = 0;
+            while (reader.canRead()) {
+                char c = reader.peek();
+                if (c == '\\') {
+                    reader.skip();
+                    if (reader.canRead()) {
+                        reader.skip();
+                    }
+                    continue;
+                }
+                if (c == '$') {
+                    marker = !marker;
+                } else if (!marker) {
+                    if (c == '"') {
+                        quoted = !quoted;
+                    } else if (!quoted) {
+                        if (c == '[' || c == '{') {
+                            depth++;
+                        } else if (c == ']' || c == '}') {
+                            depth = Math.max(0, depth - 1);
+                        } else if (c == ' ' && depth == 0) {
+                            return;
+                        }
+                    }
+                }
+                reader.skip();
+            }
+        }
+
+        @Override
+        public <S> java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> listSuggestions(
+                CommandContext<S> context, com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+            return wrapped.listSuggestions(context, builder);
+        }
+
+        @Override
+        public java.util.Collection<String> getExamples() {
+            return wrapped.getExamples();
+        }
     }
 
     /**
