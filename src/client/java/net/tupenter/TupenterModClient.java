@@ -393,6 +393,10 @@ public class TupenterModClient implements ClientModInitializer {
                             .then(argument("message", StringArgumentType.greedyString())
                                     .executes(TupenterModClient::runEchoCommand)));
 
+                    dispatcher.register(literal("unroll")
+                            .then(argument("line", StringArgumentType.greedyString())
+                                    .executes(TupenterModClient::runUnrollCommand)));
+
                     dispatcher.register(literal("customcommand")
                             .then(literal("add")
                                     .then(argument("name", StringArgumentType.word())
@@ -768,6 +772,72 @@ public class TupenterModClient implements ClientModInitializer {
         }
     }
 
+    /**
+     * /unroll <line> — dry-run debugger: parses and unrolls the line exactly
+     * like running it (statement forms, aliases, loops, markers), prints the
+     * resulting statements color-coded, and sends nothing. #set values are
+     * NOT committed to the session.
+     */
+    private static int runUnrollCommand(CommandContext<FabricClientCommandSource> context) {
+        String line = StringArgumentType.getString(context, "line").trim();
+        if (!TupenterConfig.INSTANCE.enhancedCommandParsingEnabled) {
+            context.getSource().sendError(Component.literal("Enhanced command parsing is disabled."));
+            return 0;
+        }
+
+        ScriptParser.Options base = parserOptions();
+        ScriptParser.Options options = new ScriptParser.Options(
+                base.chainingEnabled(), base.mathMode(), base.aliases(), base.silentDirectiveEnabled(),
+                base.variablesEnabled(), base.loopsEnabled(), base.conditionalsEnabled(),
+                base.maxLoopIterations(), base.maxCommandsPerScript(), base.random(), base.variables(),
+                null); // dry run — #set writes stay out of the session
+
+        ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(line, line, options);
+        if (result.error() != null) {
+            context.getSource().sendError(Component.literal("Unroll stopped: " + result.error()));
+            return 0;
+        }
+
+        java.util.List<Script.SendStatement> statements = result.script().statements();
+        String historyNote = switch (result.script().history()) {
+            case SKIP -> " · history: skipped";
+            case FORCE -> " · history: forced";
+            default -> "";
+        };
+        context.getSource().sendFeedback(Component.literal(
+                "Unrolls to " + statements.size() + " statement" + (statements.size() == 1 ? "" : "s")
+                + historyNote + " — nothing sent:").withStyle(ChatFormatting.AQUA));
+        result.notices().forEach(notice ->
+                context.getSource().sendFeedback(Component.literal(" · " + notice).withStyle(ChatFormatting.YELLOW)));
+
+        int shown = 0;
+        for (Script.SendStatement statement : statements) {
+            if (shown >= 30) {
+                context.getSource().sendFeedback(Component.literal(
+                        " … and " + (statements.size() - shown) + " more").withStyle(ChatFormatting.DARK_GRAY));
+                break;
+            }
+            shown++;
+            ChatFormatting color = switch (statement.kind()) {
+                case COMMAND -> ChatFormatting.AQUA;
+                case CHAT -> ChatFormatting.YELLOW;
+                case ECHO -> ChatFormatting.LIGHT_PURPLE;
+            };
+            String label = switch (statement.kind()) {
+                case COMMAND -> "/";
+                case CHAT -> "chat: ";
+                case ECHO -> "echo: ";
+            };
+            net.minecraft.network.chat.MutableComponent entry = Component.literal(" " + shown + ". ").withStyle(ChatFormatting.DARK_GRAY)
+                    .append(Component.literal(label + statement.content()).withStyle(color));
+            if (statement.silent()) {
+                entry.append(Component.literal("  (silent)").withStyle(ChatFormatting.DARK_GRAY));
+            }
+            context.getSource().sendFeedback(entry);
+        }
+        return 1;
+    }
+
     /** /customcommand add|update <name> with no body: offer the existing definition for editing. */
     private static int runAliasPrefillCommand(CommandContext<FabricClientCommandSource> context, boolean fromAdd) {
         String normalized = CommandAliasManager.normalizeName(StringArgumentType.getString(context, "name"));
@@ -1001,6 +1071,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7/customcommand add|remove|list [verbose]|help§r · /customcommand <name> — inspect one",
                     "§7/echo <text>§r — local-only output, evaluates $...$",
                     "§7/calc <expr>§r — local calculator · /$ expr $ — like /calc for numbers, but a string result runs as a fresh line (\"/...\" command, \"#...\" directive, else chat)",
+                    "§7/unroll <line>§r — dry-run debugger: shows what a line unrolls to (color-coded: §b/commands§7, §echat§7, §decho§7) without sending anything. #set values aren't saved.",
                     "§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking",
             };
             default -> new String[]{

@@ -171,7 +171,7 @@ public final class CommandAliasManager {
 
         if ("alias".equals(name) || "calc".equals(name) || "customcommand".equals(name) || "tupenter".equals(name) || "echo".equals(name)
                 || "list".equals(name) || "verbose".equals(name) || "help".equals(name) || "add".equals(name) || "remove".equals(name)
-                || "update".equals(name)) {
+                || "update".equals(name) || "unroll".equals(name)) {
             throw new IllegalArgumentException("That custom command name is reserved");
         }
 

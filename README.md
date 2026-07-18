@@ -177,6 +177,8 @@ original `/$...$` form. pick options are expressions, so picks nest:
 ## Reference
 
 - `/tupenter help` — in-game quick reference
+- `/unroll <line>` — dry-run debugger: prints what a line unrolls to,
+  color-coded by kind (command/chat/echo), without sending anything
 - `/tupenter abort` — stop all running scripts
 - `/tupenter vars`, `/tupenter var save|delete <name>` — variable management
 - Every feature has an on/off toggle in Mod Menu → Tupenter → Scripting.
