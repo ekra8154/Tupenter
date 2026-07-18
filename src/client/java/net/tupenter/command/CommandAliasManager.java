@@ -29,8 +29,29 @@ public final class CommandAliasManager {
         return new ArrayList<>(TupenterConfig.INSTANCE.aliases);
     }
 
+    /** Saves a NEW alias; throws if the name is already taken (use updateAlias). */
     public static String addAlias(String rawName, String rawCommand) {
         String name = normalizeName(rawName);
+        if (hasAlias(name)) {
+            throw new IllegalArgumentException("/" + name + " already exists — use /customcommand update " + name + " ...");
+        }
+        return saveAlias(name, rawCommand);
+    }
+
+    /** Replaces an EXISTING alias (body and/or signature); throws if it doesn't exist. */
+    public static String updateAlias(String rawName, String rawCommand) {
+        String name = normalizeName(rawName);
+        if (!hasAlias(name)) {
+            throw new IllegalArgumentException("/" + name + " doesn't exist — use /customcommand add " + name + " ...");
+        }
+        return saveAlias(name, rawCommand);
+    }
+
+    public static boolean hasAlias(String rawName) {
+        return getAliasMap().containsKey(normalizeName(rawName));
+    }
+
+    private static String saveAlias(String name, String rawCommand) {
         validateName(name);
 
         String command = rawCommand.trim();
@@ -127,7 +148,8 @@ public final class CommandAliasManager {
         }
 
         if ("alias".equals(name) || "calc".equals(name) || "customcommand".equals(name) || "tupenter".equals(name) || "echo".equals(name)
-                || "list".equals(name) || "verbose".equals(name) || "help".equals(name) || "add".equals(name) || "remove".equals(name)) {
+                || "list".equals(name) || "verbose".equals(name) || "help".equals(name) || "add".equals(name) || "remove".equals(name)
+                || "update".equals(name)) {
             throw new IllegalArgumentException("That custom command name is reserved");
         }
 

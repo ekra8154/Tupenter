@@ -398,8 +398,16 @@ public class TupenterModClient implements ClientModInitializer {
                                     .then(argument("name", StringArgumentType.word())
                                             .then(argument("command", StringArgumentType.greedyString())
                                                     .executes(TupenterModClient::runAliasAddCommand))))
+                            .then(literal("update")
+                                    .then(argument("name", StringArgumentType.word())
+                                            .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
+                                                    CommandAliasManager.getAliasMap().keySet(), b))
+                                            .then(argument("command", StringArgumentType.greedyString())
+                                                    .executes(TupenterModClient::runAliasUpdateCommand))))
                             .then(literal("remove")
                                     .then(argument("name", StringArgumentType.word())
+                                            .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
+                                                    CommandAliasManager.getAliasMap().keySet(), b))
                                             .executes(TupenterModClient::runAliasRemoveCommand)))
                             .then(literal("list")
                                     .executes(context -> runAliasListCommand(context, false))
@@ -714,19 +722,57 @@ public class TupenterModClient implements ClientModInitializer {
         String name = StringArgumentType.getString(context, "name");
         String command = StringArgumentType.getString(context, "command");
 
+        String normalized = CommandAliasManager.normalizeName(name);
+        if (CommandAliasManager.hasAlias(normalized)) {
+            context.getSource().sendFeedback(Component.literal("/" + normalized + " already exists. ")
+                    .withStyle(ChatFormatting.RED)
+                    .append(suggestLink("[update it instead]", "/customcommand update " + normalized + " " + command)));
+            return 0;
+        }
+
+        return saveAlias(context, name, command, true);
+    }
+
+    private static int runAliasUpdateCommand(CommandContext<FabricClientCommandSource> context) {
+        String name = StringArgumentType.getString(context, "name");
+        String command = StringArgumentType.getString(context, "command");
+
+        String normalized = CommandAliasManager.normalizeName(name);
+        if (!CommandAliasManager.hasAlias(normalized)) {
+            context.getSource().sendFeedback(Component.literal("/" + normalized + " doesn't exist. ")
+                    .withStyle(ChatFormatting.RED)
+                    .append(suggestLink("[add it instead]", "/customcommand add " + normalized + " " + command)));
+            return 0;
+        }
+
+        return saveAlias(context, name, command, false);
+    }
+
+    /** Shared tail of add/update: persist, (re-)register the Brigadier tree, report. */
+    private static int saveAlias(CommandContext<FabricClientCommandSource> context, String name, String command, boolean isNew) {
         try {
-            String savedName = CommandAliasManager.addAlias(name, command);
+            String savedName = isNew ? CommandAliasManager.addAlias(name, command) : CommandAliasManager.updateAlias(name, command);
             AliasDefinition definition = CommandAliasManager.getAliasMap().get(savedName);
             if (definition != null) {
                 ClientCommandRegistrar.registerDynamic(savedName, definition);
             }
-            context.getSource().sendFeedback(Component.literal("Saved custom command /" + savedName + " — available now.").withStyle(ChatFormatting.GREEN));
+            context.getSource().sendFeedback(Component.literal(
+                    (isNew ? "Saved custom command /" : "Updated custom command /") + savedName + " — available now.").withStyle(ChatFormatting.GREEN));
             warnUnknownNamespacedVariables(context, command);
             return 1;
         } catch (IllegalArgumentException ex) {
             context.getSource().sendError(Component.literal(ex.getMessage()));
             return 0;
         }
+    }
+
+    /** Clickable chat link that puts the given command into the chat bar. */
+    private static Component suggestLink(String label, String suggestedCommand) {
+        return Component.literal(label).withStyle(style -> style
+                .withColor(ChatFormatting.AQUA)
+                .withUnderlined(true)
+                .withClickEvent(new net.minecraft.network.chat.ClickEvent.SuggestCommand(suggestedCommand))
+                .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(Component.literal("Click to put this in your chat bar"))));
     }
 
     /**
@@ -1061,7 +1107,7 @@ public class TupenterModClient implements ClientModInitializer {
     private static int runCustomCommandHelp(CommandContext<FabricClientCommandSource> context) {
         String[] lines = {
                 "§bCustom commands:",
-                "§7Create:§r /customcommand add <name> <body>  ·  Remove:§r /customcommand remove <name>  ·  List:§r /customcommand list",
+                "§7Create:§r /customcommand add <name> <body>  ·  Edit:§r /customcommand update <name> <body>  ·  Remove:§r /customcommand remove <name>  ·  List:§r /customcommand list",
                 "§7Bodies§r can hold commands, chat, && chains, $...$ expressions, directives (#repeat, #if, #silent, ...), and other custom commands. Commands need their /: sunny = /weather clear && Have fun!",
                 "§7Parameters§r go before the body: /customcommand add smite <target:player> /execute at $target$ run summon lightning_bolt — then /smite Steve. Use as $target$ or $1$.",
                 "§7Types:§r <name> or <name:string> = a word or \"anything quoted\" · <n:int> / <n:float> = numbers · <n:word> = one plain token (letters/digits/_-.+ only — no selectors!) · <n:selector> = @e[...] with tab-complete · <n:player> = player name · <n:text> = rest of the line (must be last) · <n:opt1,opt2,...> = one of a fixed list, tab-completed",
