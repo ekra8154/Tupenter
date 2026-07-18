@@ -122,6 +122,26 @@ class ScriptParserTest {
     }
 
     @Test
+    void wholeMarkerRedispatchNestsAndSplitsChains() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("cmd2", Value.of("/tp ~ ~ ~1"));
+        store.set("cmd1", Value.of("/tp ~ ~1 ~ && $cmd2$"));
+        ScriptParser.ParseResult result = ScriptParser.parse("say teleporting! && $cmd1$", options(Map.of(), store));
+        assertNull(result.error());
+        assertEquals(List.of("say teleporting!", "tp ~ ~1 ~", "tp ~ ~ ~1"), contents(result));
+        assertTrue(result.script().statements().stream().allMatch(Script.SendStatement::isCommand));
+    }
+
+    @Test
+    void selfReferentialMarkerHitsDepthCapBeforeSending() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("loop", Value.of("$loop$"));
+        ScriptParser.ParseResult result = ScriptParser.parse("say hi && $loop$", options(Map.of(), store));
+        assertNotNull(result.error());
+        assertTrue(result.error().contains("nest"));
+    }
+
+    @Test
     void wholeMarkerNumbersStayChatText() {
         ScriptParser.ParseResult result = parse("say x && $1+2$");
         assertNull(result.error());
