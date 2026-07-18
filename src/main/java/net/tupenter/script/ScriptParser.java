@@ -1,0 +1,1342 @@
+package net.tupenter.script;
+
+import java.math.BigInteger;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Random;
+import java.util.Set;
+
+/**
+ * Turns a typed line into a {@link Script}.
+ *
+ * Pipeline (docs/SCRIPTING_DESIGN.md §2-§6): the #silent prefix, then a
+ * directive-aware statement scan (structural parens exist only after
+ * #repeat/#if/#foreach/#for headers — parens anywhere else are literal text),
+ * then an eager unroll walk: aliases expand (capped, with typed parameter
+ * binding), loops unroll under the iteration cap, conditions evaluate, #set
+ * writes a script-scope overlay, and $...$ markers are evaluated per emitted
+ * command. The output is a flat list of sends.
+ *
+ * Everything evaluates at Enter-press time. Without #wait that is observably
+ * identical to send-time evaluation (scripts drain within a tick unless the
+ * send budget stretches them); the interpreter migration is tied to #wait.
+ *
+ * Two entry points, matching the two ways a line leaves the client:
+ * - {@link #parse}: command packets ("/..." lines, slash already stripped)
+ * - {@link #parseChatLine}: chat packets — only inspected when they start
+ *   with a known directive word; ordinary chat like "#1 victory" passes
+ *   through untouched.
+ */
+public final class ScriptParser {
+    public static final int MAX_ALIAS_EXPANSIONS = 50;
+    // must exceed MAX_ALIAS_EXPANSIONS so a recursive alias reports the
+    // alias-loop error rather than the generic nesting error
+    private static final int MAX_NESTING_DEPTH = 64;
+
+    private static final String SILENT = "#silent";
+    private static final String NORECORD = "#norecord";
+    private static final String RECORD = "#record";
+    private static final String SET = "#set";
+    private static final String LOCAL = "#local";
+    private static final String ECHO = "#echo";
+    /** Directives handled by the statement scanner (own a (...) group). */
+    private static final Set<String> SCANNER_DIRECTIVES = Set.of("#repeat", "#if", "#foreach", "#for", "#silent");
+    private static final Set<String> STATEMENT_DIRECTIVES = Set.of(SET, LOCAL, ECHO);
+    private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
+            "rand", "randf", "pick", "int", "float", "range", "true", "false",
+            "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len");
+
+    private ScriptParser() {
+    }
+
+    public record Options(
+            boolean chainingEnabled,
+            NumberMathMode mathMode,
+            Map<String, AliasDefinition> aliases,
+            boolean silentDirectiveEnabled,
+            boolean variablesEnabled,
+            boolean loopsEnabled,
+            boolean conditionalsEnabled,
+            int maxLoopIterations,
+            int maxCommandsPerScript,
+            Random random,
+            VariableProvider variables,
+            SessionVariableStore sessionVariables
+    ) {
+    }
+
+    /** Parses a command-packet line (leading slash already stripped by vanilla). */
+    public static ParseResult parse(String command, Options options) {
+        LinePrefixes prefixes;
+        try {
+            prefixes = stripLinePrefixes(command, options);
+        } catch (ParseAbort abort) {
+            return ParseResult.error(abort.getMessage());
+        }
+
+        String work = prefixes.rest();
+        if (work.isEmpty()) {
+            return ParseResult.error("That prefix needs a command to run, e.g. #silent /time set day");
+        }
+
+        if (work.startsWith("#")) {
+            String word = firstWord(work).toLowerCase(Locale.ROOT);
+            if (!isKnownStatementWord(word)) {
+                return ParseResult.error("Unknown directive " + firstWord(work));
+            }
+        } else if (!work.startsWith("/")) {
+            work = "/" + work;
+        }
+
+        boolean allowChat = isAlias(stripLeadingSlash(work), options.aliases());
+        return parseSequence(work, command, allowChat, prefixes.silent(), prefixes.history(), options);
+    }
+
+    /**
+     * Parses a chat-packet line. Returns an unchanged result (let the chat
+     * through) unless the line starts with a known directive word.
+     */
+    public static ParseResult parseChatLine(String message, Options options) {
+        String trimmed = message.trim();
+        if (!trimmed.startsWith("#")) {
+            return ParseResult.unchanged(message);
+        }
+        if (!isKnownStatementWord(firstWord(trimmed).toLowerCase(Locale.ROOT))) {
+            return ParseResult.unchanged(message); // "#1 victory" stays chat
+        }
+
+        LinePrefixes prefixes;
+        try {
+            prefixes = stripLinePrefixes(trimmed, options);
+        } catch (ParseAbort abort) {
+            return ParseResult.error(abort.getMessage());
+        }
+
+        String work = prefixes.rest();
+        if (work.isEmpty()) {
+            return ParseResult.error("That prefix needs a command to run, e.g. #silent /time set day");
+        }
+        if (work.startsWith("#") && !isKnownStatementWord(firstWord(work).toLowerCase(Locale.ROOT))) {
+            return ParseResult.error("Unknown directive " + firstWord(work));
+        }
+
+        return parseSequence(work, message, true, prefixes.silent(), prefixes.history(), options);
+    }
+
+    private static boolean isKnownStatementWord(String word) {
+        return STATEMENT_DIRECTIVES.contains(word)
+                || SCANNER_DIRECTIVES.contains(word)
+                || word.equals(SILENT)
+                || word.equals(NORECORD)
+                || word.equals(RECORD);
+    }
+
+    private record LinePrefixes(String rest, boolean silent, Script.HistoryMode history) {
+    }
+
+    /**
+     * Consumes leading line modifiers (#silent, #norecord, #record) in any
+     * order; for #norecord/#record the last one wins. A #silent followed by
+     * '(' is the group form and stays for the scanner.
+     */
+    private static LinePrefixes stripLinePrefixes(String text, Options options) {
+        String work = text.trim();
+        boolean silent = false;
+        Script.HistoryMode history = Script.HistoryMode.NORMAL;
+
+        while (work.startsWith("#")) {
+            String word = firstWord(work).toLowerCase(Locale.ROOT);
+            if (word.equals(SILENT)) {
+                String after = work.substring(SILENT.length()).trim();
+                if (after.startsWith("(")) {
+                    break; // #silent (...) — statement form, scanner's job
+                }
+                requireSilentEnabled(options);
+                silent = true;
+                work = after;
+            } else if (word.equals(NORECORD)) {
+                history = Script.HistoryMode.SKIP;
+                work = work.substring(NORECORD.length()).trim();
+            } else if (word.equals(RECORD)) {
+                history = Script.HistoryMode.FORCE;
+                work = work.substring(RECORD.length()).trim();
+            } else {
+                break;
+            }
+        }
+        return new LinePrefixes(work, silent, history);
+    }
+
+    private static void requireSilentEnabled(Options options) {
+        if (!options.silentDirectiveEnabled()) {
+            throw new ParseAbort("#silent is disabled in the Tupenter config (Scripting tab).");
+        }
+    }
+
+    private static ParseResult parseSequence(String input, String originalLine, boolean allowChat, boolean silent, Script.HistoryMode history, Options options) {
+        Walker walker = new Walker(options);
+        walker.silentDepth = silent ? 1 : 0;
+        walker.history = history;
+
+        try {
+            walker.processStatements(input, allowChat);
+        } catch (ParseAbort abort) {
+            return ParseResult.error(abort.getMessage());
+        }
+
+        if (silent || walker.history != Script.HistoryMode.NORMAL) {
+            walker.changed = true; // these lines always need the executor path
+        }
+
+        if (!walker.changed) {
+            return ParseResult.unchanged(originalLine);
+        }
+
+        // whole line parsed cleanly — commit #set writes to the session
+        // (#local names stay script-only)
+        if (options.sessionVariables() != null) {
+            walker.scriptScope.forEach((name, value) -> {
+                if (!walker.localNames.contains(name)) {
+                    options.sessionVariables().set(name, value);
+                }
+            });
+        }
+
+        return ParseResult.script(new Script(originalLine, walker.sends, walker.history), walker.notices);
+    }
+
+    // =====================================================================
+    // The unroll walker
+    // =====================================================================
+
+    private static final class Walker {
+        private final Options options;
+        private final List<Script.SendStatement> sends = new ArrayList<>();
+        private final List<String> notices = new ArrayList<>();
+        private final Map<String, Value> scriptScope = new LinkedHashMap<>();
+        private final Set<String> localNames = new HashSet<>();
+        private final Deque<Map<String, Value>> scopes = new ArrayDeque<>();
+        private final EvalContext context;
+        private boolean changed;
+        private int silentDepth;
+        private Script.HistoryMode history = Script.HistoryMode.NORMAL;
+        private int aliasExpansions;
+        private int depth;
+
+        private Walker(Options options) {
+            this.options = options;
+            VariableProvider lookup = new VariableProvider() {
+                @Override
+                public Set<String> names() {
+                    Set<String> names = new HashSet<>(options.variables().names());
+                    names.addAll(scriptScope.keySet());
+                    for (Map<String, Value> scope : scopes) {
+                        names.addAll(scope.keySet());
+                    }
+                    return names;
+                }
+
+                @Override
+                public Optional<Value> resolve(String name) {
+                    String key = name.toLowerCase(Locale.ROOT);
+                    for (Map<String, Value> scope : scopes) { // innermost first
+                        Value value = scope.get(key);
+                        if (value != null) {
+                            return Optional.of(value);
+                        }
+                    }
+                    Value fromSet = scriptScope.get(key);
+                    if (fromSet != null) {
+                        return Optional.of(fromSet);
+                    }
+                    return options.variables().resolve(name);
+                }
+            };
+            this.context = new EvalContext(options.random(), lookup);
+        }
+
+        private void processStatements(String text, boolean allowChat) {
+            if (++depth > MAX_NESTING_DEPTH) {
+                throw new ParseAbort("Scripts can't nest deeper than " + MAX_NESTING_DEPTH + " levels");
+            }
+            try {
+                List<Stmt> statements = scanStatements(text, options.chainingEnabled());
+                if (statements.size() > 1) {
+                    changed = true;
+                }
+                for (Stmt statement : statements) {
+                    if (statement instanceof DirectiveStmt directive) {
+                        processDirective(directive, allowChat);
+                    } else {
+                        processRaw(((RawStmt) statement).text(), allowChat);
+                    }
+                }
+            } finally {
+                depth--;
+            }
+        }
+
+        private void processRaw(String text, boolean allowChat) {
+            Script.SendStatement normalized = normalizeSegment(text);
+            if (normalized == null) {
+                return; // empty segment (e.g. "a && && b") — skip it
+            }
+            String content = normalized.content();
+
+            if (content.startsWith("#")) {
+                String word = firstWord(content).toLowerCase(Locale.ROOT);
+                if (word.equals(SET)) {
+                    handleSet(content, SET, true);
+                    return;
+                }
+                if (word.equals(LOCAL)) {
+                    handleSet(content, LOCAL, false);
+                    return;
+                }
+                if (word.equals(ECHO)) {
+                    handleEcho(content);
+                    return;
+                }
+                if (word.equals(SILENT) || word.equals(NORECORD)) {
+                    throw new ParseAbort(word + " goes at the start of the line" + (word.equals(SILENT) ? ", or wrap statements: #silent (/cmd && /cmd)" : ""));
+                }
+                throw new ParseAbort("Unknown directive " + firstWord(content));
+            }
+
+            boolean isCommand = normalized.isCommand();
+            if (!allowChat && !isCommand) {
+                isCommand = true;
+            }
+
+            if (isAlias(content, options.aliases())) {
+                processAliasInvocation(content, allowChat);
+            } else {
+                emitSend(content, isCommand);
+            }
+        }
+
+        private void emitSend(String content, boolean isCommand) {
+            String rewritten = content;
+            if (isCommand && options.mathMode() != NumberMathMode.DISABLED) {
+                try {
+                    rewritten = MathEvaluator.applyNumberMath(content, options.mathMode(), context);
+                } catch (ExpressionException ex) {
+                    throw new ParseAbort(ex.getMessage());
+                }
+            }
+            if (!rewritten.equals(content)) {
+                changed = true;
+            }
+            boolean silent = silentDepth > 0;
+            if (silent) {
+                changed = true;
+            }
+            sends.add(new Script.SendStatement(rewritten, isCommand ? Script.Kind.COMMAND : Script.Kind.CHAT, silent));
+            if (sends.size() > options.maxCommandsPerScript()) {
+                throw new ParseAbort("Script would send more than " + options.maxCommandsPerScript()
+                        + " commands (Max Commands Per Script in the config)");
+            }
+        }
+
+        // --- #set / #local ---
+
+        private void handleSet(String content, String directive, boolean commitToSession) {
+            if (!options.variablesEnabled()) {
+                throw new ParseAbort("Variables (" + directive + ") are disabled in the Tupenter config (Scripting tab).");
+            }
+            SetVar setVar = parseSetDirective(content, directive);
+
+            for (Map<String, Value> scope : scopes) {
+                if (scope.containsKey(setVar.name())) {
+                    throw new ParseAbort("$" + setVar.name() + "$ is a loop variable or parameter here — it is read-only");
+                }
+            }
+
+            Value value;
+            try {
+                value = ExpressionEvaluator.evaluate(setVar.expression(), context);
+            } catch (IllegalArgumentException ex) {
+                throw new ParseAbort(directive + " $" + setVar.name() + "$ — " + ex.getMessage());
+            }
+            scriptScope.put(setVar.name(), value);
+            if (commitToSession) {
+                localNames.remove(setVar.name()); // an explicit #set wins over an earlier #local
+                if (silentDepth == 0) {
+                    notices.add("$" + setVar.name() + "$ = " + value.displayString());
+                }
+            } else {
+                localNames.add(setVar.name());
+            }
+            changed = true;
+        }
+
+        // --- #echo ---
+
+        private void handleEcho(String content) {
+            String text = content.substring(ECHO.length()).trim();
+            if (text.isEmpty()) {
+                throw new ParseAbort("#echo needs text, e.g. #echo y is $client.y$");
+            }
+            if (options.mathMode() != NumberMathMode.DISABLED) {
+                try {
+                    // markers only — auto-detect would mangle prose
+                    text = MathEvaluator.applyNumberMath(text, NumberMathMode.EXPLICIT_ONLY, context);
+                } catch (ExpressionException ex) {
+                    throw new ParseAbort(ex.getMessage());
+                }
+            }
+            changed = true;
+            sends.add(new Script.SendStatement(text, Script.Kind.ECHO, false));
+        }
+
+        // --- aliases ---
+
+        private void processAliasInvocation(String content, boolean allowChat) {
+            int separator = findFirstWhitespace(content);
+            String name = (separator >= 0 ? content.substring(0, separator) : content).toLowerCase(Locale.ROOT);
+            String remainder = separator >= 0 ? content.substring(separator).trim() : "";
+
+            AliasDefinition definition = options.aliases().get(name);
+            aliasExpansions++;
+            if (aliasExpansions > MAX_ALIAS_EXPANSIONS) {
+                throw new ParseAbort("Alias expansion limit reached (" + MAX_ALIAS_EXPANSIONS + "). Possible recursive alias loop.");
+            }
+
+            String body = definition.body().trim();
+            Map<String, Value> bindings = new HashMap<>();
+
+            if (definition.params().isEmpty()) {
+                if (!remainder.isEmpty()) {
+                    body = body + " " + remainder;
+                }
+            } else {
+                bindParams(name, definition, remainder, bindings);
+            }
+
+            changed = true;
+
+            // alias bodies may carry line-prefix modifiers; #silent scopes to
+            // this body's statements, #norecord applies to the whole line
+            int silentPushes = 0;
+            while (body.startsWith("#")) {
+                String word = firstWord(body).toLowerCase(Locale.ROOT);
+                if (word.equals(SILENT)) {
+                    String after = body.substring(SILENT.length()).trim();
+                    if (after.startsWith("(")) {
+                        break; // group form — scanner's job
+                    }
+                    requireSilentEnabled(options);
+                    silentPushes++;
+                    body = after;
+                } else if (word.equals(NORECORD)) {
+                    history = Script.HistoryMode.SKIP;
+                    body = body.substring(NORECORD.length()).trim();
+                } else if (word.equals(RECORD)) {
+                    history = Script.HistoryMode.FORCE;
+                    body = body.substring(RECORD.length()).trim();
+                } else {
+                    break;
+                }
+            }
+            if (body.isEmpty()) {
+                throw new ParseAbort("Custom command body is empty after its #-prefixes");
+            }
+
+            scopes.push(bindings);
+            silentDepth += silentPushes;
+            try {
+                processStatements(body, true);
+            } finally {
+                silentDepth -= silentPushes;
+                scopes.pop();
+            }
+        }
+
+        private void bindParams(String aliasName, AliasDefinition definition, String remainder, Map<String, Value> bindings) {
+            String usage = "Usage: /" + aliasName + " " + definition.declarationPrefix().trim();
+            String rest = remainder;
+
+            List<AliasDefinition.Param> params = definition.params();
+            for (int i = 0; i < params.size(); i++) {
+                AliasDefinition.Param param = params.get(i);
+                rest = rest.trim();
+                if (rest.isEmpty()) {
+                    throw new ParseAbort("Missing argument <" + param.name() + ">. " + usage);
+                }
+
+                String token;
+                if (param.type() == AliasDefinition.ParamType.TEXT) {
+                    token = rest;
+                    rest = "";
+                } else {
+                    ArgToken argToken = readArgToken(rest);
+                    token = argToken.value();
+                    rest = rest.substring(argToken.consumed());
+                }
+
+                Value value = parseParamValue(param, token, usage);
+                bindings.put(param.name(), value);
+                bindings.put(String.valueOf(i + 1), value);
+            }
+
+            if (!rest.trim().isEmpty()) {
+                throw new ParseAbort("Too many arguments: '" + rest.trim() + "'. " + usage);
+            }
+        }
+
+        private record ArgToken(String value, int consumed) {
+        }
+
+        /**
+         * Reads one argument token: either "quoted anything" (quotes stripped,
+         * \" and \\ escapes) or a bare token — where whitespace inside [...]
+         * brackets or "..." spans doesn't split, so raw selectors like
+         * {@code @e[name="a b"]} stay one argument.
+         */
+        private static ArgToken readArgToken(String rest) {
+            if (rest.startsWith("\"")) {
+                StringBuilder value = new StringBuilder();
+                int i = 1;
+                while (i < rest.length()) {
+                    char c = rest.charAt(i);
+                    if (c == '\\' && i + 1 < rest.length()) {
+                        value.append(rest.charAt(i + 1));
+                        i += 2;
+                        continue;
+                    }
+                    if (c == '"') {
+                        return new ArgToken(value.toString(), i + 1);
+                    }
+                    value.append(c);
+                    i++;
+                }
+                throw new ParseAbort("Unclosed quote in argument: " + rest);
+            }
+
+            int depth = 0;
+            boolean insideQuotes = false;
+            int i = 0;
+            while (i < rest.length()) {
+                char c = rest.charAt(i);
+                if (c == '\\' && i + 1 < rest.length()) {
+                    i += 2;
+                    continue;
+                }
+                if (c == '"') {
+                    insideQuotes = !insideQuotes;
+                } else if (!insideQuotes) {
+                    if (c == '[' || c == '{') depth++;
+                    else if (c == ']' || c == '}') depth = Math.max(0, depth - 1);
+                    else if (depth == 0 && Character.isWhitespace(c)) break;
+                }
+                i++;
+            }
+            return new ArgToken(rest.substring(0, i), i);
+        }
+
+        private static Value parseParamValue(AliasDefinition.Param param, String token, String usage) {
+            switch (param.type()) {
+                case INT -> {
+                    try {
+                        return new Value.NumberValue(Rational.of(new BigInteger(token)));
+                    } catch (NumberFormatException ex) {
+                        throw new ParseAbort("<" + param.name() + "> must be a whole number, got '" + token + "'. " + usage);
+                    }
+                }
+                case FLOAT -> {
+                    try {
+                        return Value.ofNumber(token);
+                    } catch (IllegalArgumentException | ArithmeticException ex) {
+                        throw new ParseAbort("<" + param.name() + "> must be a number, got '" + token + "'. " + usage);
+                    }
+                }
+                case CHOICE -> {
+                    for (String option : param.options()) {
+                        if (option.equalsIgnoreCase(token)) {
+                            return Value.of(option);
+                        }
+                    }
+                    throw new ParseAbort("<" + param.name() + "> must be one of: " + String.join(", ", param.options()) + " — got '" + token + "'. " + usage);
+                }
+                default -> {
+                    return Value.of(token);
+                }
+            }
+        }
+
+        // --- structural directives ---
+
+        private void processDirective(DirectiveStmt directive, boolean allowChat) {
+            changed = true;
+            switch (directive.word()) {
+                case "#repeat" -> processRepeat(directive, allowChat);
+                case "#if" -> processIf(directive, allowChat);
+                case "#for" -> processFor(directive, allowChat);
+                case "#foreach" -> processForeach(directive, allowChat);
+                case "#silent" -> processSilentGroup(directive, allowChat);
+                default -> throw new ParseAbort("Unknown directive " + directive.word());
+            }
+        }
+
+        private void processSilentGroup(DirectiveStmt directive, boolean allowChat) {
+            requireSilentEnabled(options);
+            silentDepth++;
+            try {
+                processStatements(directive.group(), allowChat);
+            } finally {
+                silentDepth--;
+            }
+        }
+
+        private void requireLoops(String word) {
+            if (!options.loopsEnabled()) {
+                throw new ParseAbort("Loops (" + word + ") are disabled in the Tupenter config (Scripting tab).");
+            }
+        }
+
+        private void processRepeat(DirectiveStmt directive, boolean allowChat) {
+            requireLoops("#repeat");
+            if (directive.header().isEmpty()) {
+                throw new ParseAbort("#repeat needs a count, e.g. #repeat 5 (/say hi)");
+            }
+            long count = evalWholeNumber(directive.header(), "#repeat count");
+            if (count < 0) {
+                throw new ParseAbort("#repeat count can't be negative (got " + count + ")");
+            }
+            checkIterations(count, "#repeat");
+
+            for (long i = 1; i <= count; i++) {
+                runScoped(Map.of("i", Value.ofNumber(i)), directive.group(), allowChat);
+            }
+        }
+
+        private void processIf(DirectiveStmt directive, boolean allowChat) {
+            if (!options.conditionalsEnabled()) {
+                throw new ParseAbort("Conditionals (#if) are disabled in the Tupenter config (Scripting tab).");
+            }
+            Value condition = evalExpression(directive.header(), "#if condition");
+            if (!(condition instanceof Value.BoolValue bool)) {
+                throw new ParseAbort("#if condition must be true/false, e.g. #if ($client.y$ > 60) (...)");
+            }
+            if (bool.value()) {
+                processStatements(directive.group(), allowChat);
+            } else if (directive.elseGroup() != null) {
+                processStatements(directive.elseGroup(), allowChat);
+            }
+        }
+
+        private void processFor(DirectiveStmt directive, boolean allowChat) {
+            requireLoops("#for");
+            ForHeader header = parseForHeader(directive.header());
+
+            BigInteger a = BigInteger.valueOf(evalWholeNumber(header.from(), "#for start"));
+            BigInteger b = BigInteger.valueOf(evalWholeNumber(header.to(), "#for stop"));
+            BigInteger step;
+            if (header.step() != null) {
+                step = BigInteger.valueOf(evalWholeNumber(header.step(), "#for step"));
+                if (step.signum() == 0) {
+                    throw new ParseAbort("#for step can't be 0");
+                }
+                if (a.compareTo(b) != 0 && step.signum() != b.subtract(a).signum()) {
+                    throw new ParseAbort("#for step goes the wrong way (from " + a + " to " + b + " step " + step + ")");
+                }
+            } else {
+                step = a.compareTo(b) <= 0 ? BigInteger.ONE : BigInteger.valueOf(-1);
+            }
+
+            long iterations = b.subtract(a).divide(step).longValue() + 1;
+            checkIterations(iterations, "#for");
+
+            BigInteger current = a;
+            while (step.signum() > 0 ? current.compareTo(b) <= 0 : current.compareTo(b) >= 0) {
+                runScoped(Map.of(header.var(), new Value.NumberValue(Rational.of(current))), directive.group(), allowChat);
+                current = current.add(step);
+            }
+        }
+
+        private void processForeach(DirectiveStmt directive, boolean allowChat) {
+            requireLoops("#foreach");
+            ForeachHeader header = parseForeachHeader(directive.header());
+
+            List<Value> items;
+            if (header.literalList() != null) {
+                items = new ArrayList<>();
+                for (String item : splitListItems(header.literalList())) {
+                    items.add(Value.of(item));
+                }
+            } else {
+                Value listValue = evalExpression(header.listExpression(), "#foreach list");
+                if (!(listValue instanceof Value.ListValue list)) {
+                    throw new ParseAbort("#foreach needs a list: (a | b | c) or range(1, 10)");
+                }
+                items = list.values();
+            }
+
+            checkIterations(items.size(), "#foreach");
+            for (Value item : items) {
+                runScoped(Map.of(header.var(), item), directive.group(), allowChat);
+            }
+        }
+
+        private void runScoped(Map<String, Value> bindings, String body, boolean allowChat) {
+            scopes.push(bindings);
+            try {
+                processStatements(body, allowChat);
+            } finally {
+                scopes.pop();
+            }
+        }
+
+        private void checkIterations(long count, String word) {
+            if (count > options.maxLoopIterations()) {
+                throw new ParseAbort(word + " would run " + count + " times — the loop limit is "
+                        + options.maxLoopIterations() + " (Max Loop Iterations in the config)");
+            }
+        }
+
+        private Value evalExpression(String expression, String where) {
+            if (expression == null || expression.trim().isEmpty()) {
+                throw new ParseAbort(where + " is missing");
+            }
+            try {
+                return ExpressionEvaluator.evaluate(expression, context);
+            } catch (IllegalArgumentException ex) {
+                throw new ParseAbort(where + ": " + ex.getMessage());
+            }
+        }
+
+        private long evalWholeNumber(String expression, String where) {
+            Value value = evalExpression(expression, where);
+            if (!(value instanceof Value.NumberValue number)) {
+                throw new ParseAbort(where + " must be a number");
+            }
+            try {
+                return number.value().wholeValue().longValueExact();
+            } catch (ArithmeticException ex) {
+                throw new ParseAbort(where + " is too large");
+            } catch (ExpressionException ex) {
+                throw new ParseAbort(where + " must be a whole number, got " + number.value().toCommandString());
+            }
+        }
+    }
+
+    // =====================================================================
+    // Statement scanning (structural parens only after directive words)
+    // =====================================================================
+
+    private sealed interface Stmt permits RawStmt, DirectiveStmt {
+    }
+
+    private record RawStmt(String text) implements Stmt {
+    }
+
+    private record DirectiveStmt(String word, String header, String group, String elseGroup) implements Stmt {
+    }
+
+    private static List<Stmt> scanStatements(String text, boolean chainingEnabled) {
+        List<Stmt> statements = new ArrayList<>();
+        int pos = 0;
+
+        while (pos < text.length()) {
+            while (pos < text.length() && Character.isWhitespace(text.charAt(pos))) {
+                pos++;
+            }
+            if (pos >= text.length()) {
+                break;
+            }
+
+            int wordStart = text.charAt(pos) == '/' ? pos + 1 : pos;
+            String word = readWord(text, wordStart).toLowerCase(Locale.ROOT);
+
+            if (SCANNER_DIRECTIVES.contains(word)) {
+                int end = findStatementEnd(text, pos, true, chainingEnabled);
+                statements.add(parseDirectiveStmt(word, text.substring(wordStart, end)));
+                pos = advancePastSeparator(text, end);
+            } else {
+                int end = findStatementEnd(text, pos, false, chainingEnabled);
+                statements.add(new RawStmt(text.substring(pos, end)));
+                pos = advancePastSeparator(text, end);
+            }
+        }
+
+        return statements;
+    }
+
+    private static String readWord(String text, int from) {
+        int end = from;
+        while (end < text.length() && !Character.isWhitespace(text.charAt(end)) && text.charAt(end) != '(') {
+            end++;
+        }
+        return text.substring(from, end);
+    }
+
+    /**
+     * Finds the end of a statement: the next top-level && (or end of text).
+     * $...$ spans are opaque; \-escapes never delimit; parens count only for
+     * directive statements.
+     */
+    private static int findStatementEnd(String text, int from, boolean structuralParens, boolean chainingEnabled) {
+        boolean insideSpan = false;
+        int parenDepth = 0;
+
+        for (int i = from; i < text.length() - 1; i++) {
+            char current = text.charAt(i);
+            if (current == '\\') {
+                i++;
+                continue;
+            }
+            if (current == '$') {
+                insideSpan = !insideSpan;
+                continue;
+            }
+            if (insideSpan) {
+                continue;
+            }
+            if (structuralParens) {
+                if (current == '(') {
+                    parenDepth++;
+                    continue;
+                }
+                if (current == ')') {
+                    parenDepth = Math.max(0, parenDepth - 1);
+                    continue;
+                }
+            }
+            if (chainingEnabled && parenDepth == 0 && current == '&' && text.charAt(i + 1) == '&') {
+                return i;
+            }
+        }
+        return text.length();
+    }
+
+    private static int advancePastSeparator(String text, int end) {
+        if (end < text.length() && text.startsWith("&&", end)) {
+            return end + 2;
+        }
+        return end;
+    }
+
+    /** stmtText starts with the directive word itself. */
+    private static DirectiveStmt parseDirectiveStmt(String word, String stmtText) {
+        String rest = stmtText.substring(word.length());
+
+        if (word.equals("#if")) {
+            Cursor cursor = new Cursor(rest);
+            String condition = cursor.readGroup("#if needs a (condition), e.g. #if ($x$ > 5) (/say big)");
+            String body = cursor.readGroup("#if needs a (body) after the condition, e.g. #if ($x$ > 5) (/say big)");
+            String elseBody = null;
+            cursor.skipWhitespace();
+            if (!cursor.atEnd()) {
+                String next = readWord(cursor.text, cursor.pos).toLowerCase(Locale.ROOT);
+                if (next.equals("#elseif")) {
+                    // sugar: the else-branch is a synthetic nested #if, so
+                    // chains of any length reuse this same parse
+                    String chained = "#if" + cursor.text.substring(cursor.pos + next.length());
+                    return new DirectiveStmt(word, condition, body, chained);
+                }
+                if (!next.equals("#else")) {
+                    throw new ParseAbort("Unexpected text after #if body: '" + cursor.remaining() + "'");
+                }
+                cursor.pos += next.length();
+                elseBody = cursor.readGroup("#else needs a (body), e.g. #if (...) (...) #else (/say small)");
+                cursor.skipWhitespace();
+                if (!cursor.atEnd()) {
+                    throw new ParseAbort("Unexpected text after #else body: '" + cursor.remaining() + "'");
+                }
+            }
+            return new DirectiveStmt(word, condition, body, elseBody);
+        }
+
+        if (word.equals(SILENT)) {
+            List<int[]> silentGroups = findTopLevelGroups(rest);
+            if (silentGroups.isEmpty()) {
+                throw new ParseAbort("#silent without (...) only works at the start of the line — mid-chain, wrap statements: #silent (/give @s stick)");
+            }
+            int[] group = silentGroups.get(0);
+            if (!rest.substring(0, group[0]).trim().isEmpty()
+                    || silentGroups.size() > 1
+                    || !rest.substring(group[1] + 1).trim().isEmpty()) {
+                throw new ParseAbort("#silent takes just one (...) group, e.g. #silent (/give @s stick && /say done)");
+            }
+            return new DirectiveStmt(word, "", rest.substring(group[0] + 1, group[1]), null);
+        }
+
+        // #repeat / #for / #foreach: the LAST top-level (...) group is the
+        // body; everything between the word and it is the header. (Headers may
+        // themselves contain parens, e.g. #repeat (2+3) (...) or range(1,5).)
+        List<int[]> groups = findTopLevelGroups(rest);
+        if (groups.isEmpty()) {
+            throw new ParseAbort(word + " needs a (...) body, e.g. " + directiveExample(word));
+        }
+        int[] last = groups.get(groups.size() - 1);
+        if (!rest.substring(last[1] + 1).trim().isEmpty()) {
+            throw new ParseAbort("Unexpected text after " + word + " body: '" + rest.substring(last[1] + 1).trim() + "'");
+        }
+        String header = rest.substring(0, last[0]).trim();
+        String body = rest.substring(last[0] + 1, last[1]);
+        return new DirectiveStmt(word, header, body, null);
+    }
+
+    private static String directiveExample(String word) {
+        return switch (word) {
+            case "#repeat" -> "#repeat 5 (/say hi)";
+            case "#for" -> "#for $x$ in 1..10 (/summon zombie ~$x$ ~ ~)";
+            case "#foreach" -> "#foreach $mob$ in (zombie | skeleton) (/summon $mob$)";
+            default -> word + " (...)";
+        };
+    }
+
+    /** [openIndex, closeIndex] pairs of depth-0 parens, $-span and escape aware. */
+    private static List<int[]> findTopLevelGroups(String text) {
+        List<int[]> groups = new ArrayList<>();
+        boolean insideSpan = false;
+        int depth = 0;
+        int openIndex = -1;
+
+        for (int i = 0; i < text.length(); i++) {
+            char current = text.charAt(i);
+            if (current == '\\') {
+                i++;
+                continue;
+            }
+            if (current == '$') {
+                insideSpan = !insideSpan;
+                continue;
+            }
+            if (insideSpan) {
+                continue;
+            }
+            if (current == '(') {
+                if (depth == 0) {
+                    openIndex = i;
+                }
+                depth++;
+            } else if (current == ')') {
+                depth--;
+                if (depth == 0) {
+                    groups.add(new int[]{openIndex, i});
+                } else if (depth < 0) {
+                    throw new ParseAbort("Unbalanced parentheses: unexpected ')'");
+                }
+            }
+        }
+        if (depth > 0) {
+            throw new ParseAbort("Missing closing parenthesis");
+        }
+        return groups;
+    }
+
+    private static final class Cursor {
+        private final String text;
+        private int pos;
+
+        private Cursor(String text) {
+            this.text = text;
+        }
+
+        private void skipWhitespace() {
+            while (pos < text.length() && Character.isWhitespace(text.charAt(pos))) {
+                pos++;
+            }
+        }
+
+        private boolean atEnd() {
+            return pos >= text.length();
+        }
+
+        private String remaining() {
+            String rest = text.substring(pos).trim();
+            return rest.length() > 30 ? rest.substring(0, 30) + "…" : rest;
+        }
+
+        /** Reads a balanced (...) group, $-span and escape aware. */
+        private String readGroup(String missingMessage) {
+            skipWhitespace();
+            if (atEnd() || text.charAt(pos) != '(') {
+                throw new ParseAbort(missingMessage);
+            }
+            boolean insideSpan = false;
+            int depth = 0;
+            int start = pos + 1;
+            for (int i = pos; i < text.length(); i++) {
+                char current = text.charAt(i);
+                if (current == '\\') {
+                    i++;
+                    continue;
+                }
+                if (current == '$') {
+                    insideSpan = !insideSpan;
+                    continue;
+                }
+                if (insideSpan) {
+                    continue;
+                }
+                if (current == '(') {
+                    depth++;
+                } else if (current == ')') {
+                    depth--;
+                    if (depth == 0) {
+                        pos = i + 1;
+                        return text.substring(start, i);
+                    }
+                }
+            }
+            throw new ParseAbort("Missing closing parenthesis");
+        }
+    }
+
+    // =====================================================================
+    // Directive header parsing
+    // =====================================================================
+
+    private record ForHeader(String var, String from, String to, String step) {
+    }
+
+    private static ForHeader parseForHeader(String header) {
+        String syntax = "#for syntax: #for $x$ in 1..10 step 2 (...)";
+        VarToken var = parseVarToken(header, syntax);
+        String rest = var.rest().trim();
+
+        if (!rest.toLowerCase(Locale.ROOT).startsWith("in") || (rest.length() > 2 && !Character.isWhitespace(rest.charAt(2)))) {
+            throw new ParseAbort(syntax);
+        }
+        rest = rest.substring(2).trim();
+
+        int dots = findRangeDots(rest);
+        if (dots < 0) {
+            throw new ParseAbort("#for needs a range like 1..10. " + syntax);
+        }
+        String from = rest.substring(0, dots).trim();
+        String tail = rest.substring(dots + 2).trim();
+
+        String to = tail;
+        String step = null;
+        int stepIndex = findTopLevelWord(tail, "step");
+        if (stepIndex >= 0) {
+            to = tail.substring(0, stepIndex).trim();
+            step = tail.substring(stepIndex + "step".length()).trim();
+            if (step.isEmpty()) {
+                throw new ParseAbort("#for step needs a value. " + syntax);
+            }
+        }
+        if (from.isEmpty() || to.isEmpty()) {
+            throw new ParseAbort("#for needs a range like 1..10. " + syntax);
+        }
+        return new ForHeader(var.name(), from, to, step);
+    }
+
+    private record ForeachHeader(String var, String literalList, String listExpression) {
+    }
+
+    private static ForeachHeader parseForeachHeader(String header) {
+        String syntax = "#foreach syntax: #foreach $x$ in (a | b | c) (...) or #foreach $x$ in range(1, 10) (...)";
+        VarToken var = parseVarToken(header, syntax);
+        String rest = var.rest().trim();
+
+        if (!rest.toLowerCase(Locale.ROOT).startsWith("in") || (rest.length() > 2 && !Character.isWhitespace(rest.charAt(2)) && rest.charAt(2) != '(')) {
+            throw new ParseAbort(syntax);
+        }
+        rest = rest.substring(2).trim();
+        if (rest.isEmpty()) {
+            throw new ParseAbort(syntax);
+        }
+
+        if (rest.startsWith("(")) {
+            if (!rest.endsWith(")")) {
+                throw new ParseAbort("#foreach list is missing its closing parenthesis");
+            }
+            return new ForeachHeader(var.name(), rest.substring(1, rest.length() - 1), null);
+        }
+        return new ForeachHeader(var.name(), null, rest);
+    }
+
+    private record VarToken(String name, String rest) {
+    }
+
+    private static VarToken parseVarToken(String text, String syntax) {
+        String trimmed = text.trim();
+        boolean wrapped = trimmed.startsWith("$");
+        if (wrapped) {
+            trimmed = trimmed.substring(1);
+        }
+
+        int end = 0;
+        while (end < trimmed.length() && (Character.isLetterOrDigit(trimmed.charAt(end)) || trimmed.charAt(end) == '_')) {
+            end++;
+        }
+        String name = trimmed.substring(0, end).toLowerCase(Locale.ROOT);
+        String rest = trimmed.substring(end);
+
+        if (wrapped) {
+            if (!rest.startsWith("$")) {
+                throw new ParseAbort(syntax);
+            }
+            rest = rest.substring(1);
+        }
+
+        validateVariableName(name);
+        return new VarToken(name, rest);
+    }
+
+    /** Namespaces owned by built-in providers — user variables can't shadow them. */
+    private static final Set<String> BUILTIN_NAMESPACES = Set.of("client", "world", "players", "real", "target");
+
+    private static void validateVariableName(String name) {
+        if (name.isEmpty() || !Character.isLetter(name.charAt(0))) {
+            throw new ParseAbort("Variable names must start with a letter");
+        }
+        if (RESERVED_VARIABLE_NAMES.contains(name)) {
+            throw new ParseAbort("'" + name + "' is reserved and can't be used as a variable name");
+        }
+    }
+
+    /**
+     * #set/#local names may be dotted for grouping ($hitlist.bob$), but not
+     * inside a built-in namespace, with empty segments, or at a group root.
+     */
+    private static void validateSetVariableName(String name) {
+        validateVariableName(name);
+        if (!name.contains(".")) {
+            return;
+        }
+        if (name.startsWith(".") || name.endsWith(".") || name.contains("..")) {
+            throw new ParseAbort("Variable names can't start/end with a dot or contain '..'");
+        }
+        String namespace = name.substring(0, name.indexOf('.'));
+        if (BUILTIN_NAMESPACES.contains(namespace)) {
+            throw new ParseAbort("$" + namespace + ".*$ is a built-in group — pick another name, e.g. $my" + namespace + "." + name.substring(name.indexOf('.') + 1) + "$");
+        }
+    }
+
+    /** First ".." that isn't part of an identifier's single dots, outside parens. */
+    private static int findRangeDots(String text) {
+        boolean insideSpan = false;
+        int depth = 0;
+        for (int i = 0; i < text.length() - 1; i++) {
+            char current = text.charAt(i);
+            if (current == '\\') {
+                i++;
+                continue;
+            }
+            if (current == '$') {
+                insideSpan = !insideSpan;
+                continue;
+            }
+            if (insideSpan) {
+                continue;
+            }
+            if (current == '(') depth++;
+            else if (current == ')') depth--;
+            else if (depth == 0 && current == '.' && text.charAt(i + 1) == '.'
+                    && (i + 2 >= text.length() || text.charAt(i + 2) != '.')
+                    && (i == 0 || text.charAt(i - 1) != '.')) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Index of a standalone word at depth 0, or -1. */
+    private static int findTopLevelWord(String text, String word) {
+        boolean insideSpan = false;
+        int depth = 0;
+        for (int i = 0; i <= text.length() - word.length(); i++) {
+            char current = text.charAt(i);
+            if (current == '\\') {
+                i++;
+                continue;
+            }
+            if (current == '$') {
+                insideSpan = !insideSpan;
+                continue;
+            }
+            if (insideSpan) {
+                continue;
+            }
+            if (current == '(') depth++;
+            else if (current == ')') depth--;
+            else if (depth == 0
+                    && text.regionMatches(true, i, word, 0, word.length())
+                    && (i == 0 || Character.isWhitespace(text.charAt(i - 1)))
+                    && (i + word.length() >= text.length() || Character.isWhitespace(text.charAt(i + word.length())))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Splits a literal foreach list on top-level '|', decoding \-escapes. */
+    private static List<String> splitListItems(String inner) {
+        List<String> items = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean insideSpan = false;
+        int depth = 0;
+
+        for (int i = 0; i < inner.length(); i++) {
+            char c = inner.charAt(i);
+            if (c == '\\' && i + 1 < inner.length()) {
+                current.append(inner.charAt(i + 1));
+                i++;
+                continue;
+            }
+            if (c == '$') {
+                insideSpan = !insideSpan;
+                current.append(c);
+                continue;
+            }
+            if (!insideSpan) {
+                if (c == '(') depth++;
+                else if (c == ')') depth--;
+                else if (c == '|' && depth == 0) {
+                    items.add(current.toString().trim());
+                    current.setLength(0);
+                    continue;
+                }
+            }
+            current.append(c);
+        }
+        items.add(current.toString().trim());
+
+        if (items.size() == 1 && items.get(0).isEmpty()) {
+            throw new ParseAbort("#foreach needs at least one list item, e.g. (a | b)");
+        }
+        return items;
+    }
+
+    // =====================================================================
+    // #set
+    // =====================================================================
+
+    private record SetVar(String name, String expression) {
+    }
+
+    /** Parses "#set $name$ = expression" (the $ around the name is optional). */
+    private static SetVar parseSetDirective(String content, String directive) {
+        String rest = content.substring(directive.length()).trim();
+
+        String syntax = directive + " syntax: " + directive + " $name$ = expression";
+
+        boolean wrapped = rest.startsWith("$");
+        if (wrapped) {
+            rest = rest.substring(1);
+        }
+
+        int nameEnd = 0;
+        while (nameEnd < rest.length() && (Character.isLetterOrDigit(rest.charAt(nameEnd)) || rest.charAt(nameEnd) == '_' || rest.charAt(nameEnd) == '.')) {
+            nameEnd++;
+        }
+        String name = rest.substring(0, nameEnd).toLowerCase(Locale.ROOT);
+        rest = rest.substring(nameEnd).trim();
+
+        if (wrapped) {
+            if (!rest.startsWith("$")) {
+                throw new ParseAbort(syntax);
+            }
+            rest = rest.substring(1).trim();
+        }
+
+        if (name.isEmpty()) {
+            throw new ParseAbort(syntax);
+        }
+        validateSetVariableName(name);
+
+        if (!rest.startsWith("=")) {
+            throw new ParseAbort(syntax);
+        }
+        String expression = rest.substring(1).trim();
+        if (expression.isEmpty()) {
+            throw new ParseAbort(directive + " $" + name + "$ needs a value, e.g. " + directive + " $" + name + "$ = 5");
+        }
+
+        return new SetVar(name, expression);
+    }
+
+    // =====================================================================
+    // Shared helpers
+    // =====================================================================
+
+    private static boolean isAlias(String command, Map<String, AliasDefinition> aliases) {
+        String normalizedCommand = stripLeadingSlash(command.trim());
+        int separator = findFirstWhitespace(normalizedCommand);
+        String aliasName = separator >= 0 ? normalizedCommand.substring(0, separator) : normalizedCommand;
+        return aliases.containsKey(aliasName.toLowerCase(Locale.ROOT));
+    }
+
+    private static Script.SendStatement normalizeSegment(String segment) {
+        String trimmed = segment.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        boolean command = false;
+        if (trimmed.startsWith("/")) {
+            trimmed = trimmed.substring(1).trim();
+            if (trimmed.isEmpty()) {
+                return null;
+            }
+            command = true;
+        }
+
+        return new Script.SendStatement(trimmed, command ? Script.Kind.COMMAND : Script.Kind.CHAT);
+    }
+
+    private static String firstWord(String text) {
+        int separator = findFirstWhitespace(text);
+        return separator >= 0 ? text.substring(0, separator) : text;
+    }
+
+    private static int findFirstWhitespace(String command) {
+        for (int i = 0; i < command.length(); i++) {
+            if (Character.isWhitespace(command.charAt(i))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static String stripLeadingSlash(String command) {
+        if (command.startsWith("/")) {
+            return command.substring(1).trim();
+        }
+        return command;
+    }
+
+    private static final class ParseAbort extends RuntimeException {
+        private ParseAbort(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * Outcome of a parse. Exactly one of these shapes:
+     * - error != null: report it locally, send nothing
+     * - script == null: line is untouched Tupenter-wise — let the original packet through
+     * - script != null: cancel the original packet and run the script;
+     *   notices (e.g. "$x$ = 5" confirmations) are shown to the user
+     */
+    public record ParseResult(Script script, String error, List<String> notices) {
+        public static ParseResult script(Script script, List<String> notices) {
+            return new ParseResult(script, null, List.copyOf(notices));
+        }
+
+        public static ParseResult unchanged(String originalLine) {
+            return new ParseResult(null, null, List.of());
+        }
+
+        public static ParseResult error(String message) {
+            return new ParseResult(null, message, List.of());
+        }
+
+        public boolean changed() {
+            return script != null;
+        }
+    }
+}

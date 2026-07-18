@@ -17,6 +17,7 @@ import net.minecraft.network.chat.Component;
 import net.tupenter.TupenterModClient;
 import net.tupenter.command.CommandAliasManager;
 import net.tupenter.config.TupenterConfig;
+import net.tupenter.script.NumberMathMode;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,8 +39,9 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setTitle(Component.translatable("title.tupenter.config"));
 
         ConfigCategory general = builder.getOrCreateCategory(Component.translatable("category.tupenter.general"));
-        ConfigCategory commandParsing = builder.getOrCreateCategory(Component.translatable("category.tupenter.command_parsing"));
+        ConfigCategory scripting = builder.getOrCreateCategory(Component.translatable("category.tupenter.scripting"));
         ConfigCategory aliases = builder.getOrCreateCategory(Component.translatable("category.tupenter.aliases"));
+        ConfigCategory scripts = builder.getOrCreateCategory(Component.translatable("category.tupenter.scripts"));
         ConfigEntryBuilder entryBuilder = builder.entryBuilder();
 
         // =====================================================================
@@ -185,11 +187,61 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.commandChainingEnabled = newValue)
                 .build();
 
-        AbstractConfigListEntry<?> numberMathEntry = entryBuilder.startEnumSelector(Component.translatable("option.tupenter.number_math"), TupenterConfig.NumberMathMode.class, TupenterConfig.INSTANCE.numberMathMode)
-                .setDefaultValue(TupenterConfig.NumberMathMode.AUTO_DETECT)
+        AbstractConfigListEntry<?> numberMathEntry = entryBuilder.startEnumSelector(Component.translatable("option.tupenter.number_math"), NumberMathMode.class, TupenterConfig.INSTANCE.numberMathMode)
+                .setDefaultValue(NumberMathMode.AUTO_DETECT)
                 .setTooltip(Component.translatable("tooltip.tupenter.number_math"))
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.numberMathMode = newValue)
                 .setEnumNameProvider(mode -> Component.translatable("mode.tupenter.number_math." + mode.name().toLowerCase()))
+                .build();
+
+        AbstractConfigListEntry<?> silentDirectiveEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.silent_directive"), TupenterConfig.INSTANCE.silentDirectiveEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.silent_directive"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.silentDirectiveEnabled = newValue)
+                .build();
+
+        AbstractConfigListEntry<?> variablesEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.variables"), TupenterConfig.INSTANCE.variablesEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.variables"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.variablesEnabled = newValue)
+                .build();
+
+        AbstractConfigListEntry<?> loopsEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.loops"), TupenterConfig.INSTANCE.loopsEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.loops"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.loopsEnabled = newValue)
+                .build();
+
+        AbstractConfigListEntry<?> conditionalsEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.conditionals"), TupenterConfig.INSTANCE.conditionalsEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.conditionals"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.conditionalsEnabled = newValue)
+                .build();
+
+        AbstractConfigListEntry<?> maxLoopIterationsEntry = entryBuilder.startIntField(Component.translatable("option.tupenter.max_loop_iterations"), TupenterConfig.INSTANCE.maxLoopIterations)
+                .setDefaultValue(100)
+                .setMin(1)
+                .setTooltip(Component.translatable("tooltip.tupenter.max_loop_iterations"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.maxLoopIterations = newValue)
+                .build();
+
+        AbstractConfigListEntry<?> maxCommandsPerTickEntry = entryBuilder.startIntSlider(Component.translatable("option.tupenter.max_commands_per_tick"), TupenterConfig.INSTANCE.maxCommandsPerTick, 1, 128)
+                .setDefaultValue(16)
+                .setTooltip(Component.translatable("tooltip.tupenter.max_commands_per_tick"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.maxCommandsPerTick = newValue)
+                .build();
+
+        AbstractConfigListEntry<?> maxCommandsPerScriptEntry = entryBuilder.startIntField(Component.translatable("option.tupenter.max_commands_per_script"), TupenterConfig.INSTANCE.maxCommandsPerScript)
+                .setDefaultValue(1000)
+                .setMin(1)
+                .setTooltip(Component.translatable("tooltip.tupenter.max_commands_per_script"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.maxCommandsPerScript = newValue)
+                .build();
+
+        AbstractConfigListEntry<?> maxConcurrentScriptsEntry = entryBuilder.startIntSlider(Component.translatable("option.tupenter.max_concurrent_scripts"), TupenterConfig.INSTANCE.maxConcurrentScripts, 1, 64)
+                .setDefaultValue(8)
+                .setTooltip(Component.translatable("tooltip.tupenter.max_concurrent_scripts"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.maxConcurrentScripts = newValue)
                 .build();
 
         general.addEntry(entryBuilder.startSubCategory(
@@ -198,9 +250,17 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setExpanded(false)
                 .build());
 
-        commandParsing.addEntry(enhancedCommandParsingEntry);
-        commandParsing.addEntry(commandChainingEntry);
-        commandParsing.addEntry(numberMathEntry);
+        scripting.addEntry(enhancedCommandParsingEntry);
+        scripting.addEntry(commandChainingEntry);
+        scripting.addEntry(numberMathEntry);
+        scripting.addEntry(silentDirectiveEntry);
+        scripting.addEntry(variablesEntry);
+        scripting.addEntry(loopsEntry);
+        scripting.addEntry(conditionalsEntry);
+        scripting.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.script_limits"),
+                List.of(maxCommandsPerTickEntry, maxCommandsPerScriptEntry, maxConcurrentScriptsEntry, maxLoopIterationsEntry))
+                .setExpanded(false)
+                .build());
         aliases.addEntry(aliasesEntry);
 
         general.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.advanced"),
@@ -208,9 +268,165 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setExpanded(false)
                 .build());
 
-        builder.setSavingRunnable(TupenterConfig::save);
+        // =====================================================================
+        // SCRIPTS TAB — tick scripts (the walking mcfunction file)
+        // =====================================================================
+
+        scripts.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.tick_scripts_enabled"), TupenterConfig.INSTANCE.tickScriptsEnabled)
+                .setDefaultValue(false)
+                .setTooltip(Component.translatable("tooltip.tupenter.tick_scripts_enabled"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.tickScriptsEnabled = newValue)
+                .build());
+
+        scripts.addEntry(entryBuilder.startTextDescription(Component.translatable("tooltip.tupenter.tick_scripts")).build());
+
+        // One row per script: [On/Off] [editable text] [✕]
+        tickScriptRows.clear();
+        for (String line : TupenterConfig.INSTANCE.tickScripts) {
+            String stripped = stripDisabledPrefix(line);
+            if (stripped.isEmpty()) {
+                continue;
+            }
+            TickScriptEntry row = new TickScriptEntry(stripped, !line.trim().startsWith("//"));
+            tickScriptRows.add(row);
+            scripts.addEntry(row);
+        }
+
+        scripts.addEntry(new ImportButtonEntry(
+                Component.translatable("text.tupenter.add_script"),
+                Component.translatable("tooltip.tupenter.add_script"),
+                () -> {
+                    List<String> updated = collectTickScriptRows();
+                    updated.add("// /echo new script");
+                    TupenterConfig.INSTANCE.tickScripts = updated;
+                    Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                }
+        ));
+
+        builder.setSavingRunnable(() -> {
+            TupenterConfig.INSTANCE.tickScripts = collectTickScriptRows();
+            TupenterConfig.save();
+            TupenterModClient.resetTickScriptFaults(); // edited scripts get a fresh chance
+        });
 
         return builder.build();
+    }
+
+    private static final List<TickScriptEntry> tickScriptRows = new ArrayList<>();
+
+    private static List<String> collectTickScriptRows() {
+        List<String> lines = new ArrayList<>();
+        for (TickScriptEntry row : tickScriptRows) {
+            if (row.deleted) {
+                continue;
+            }
+            String text = row.text();
+            if (text.isEmpty()) {
+                continue;
+            }
+            lines.add(row.enabled ? text : "// " + text);
+        }
+        return lines;
+    }
+
+    private static String stripDisabledPrefix(String line) {
+        String trimmed = line.trim();
+        return trimmed.startsWith("//") ? trimmed.substring(2).trim() : trimmed;
+    }
+
+    /** One tick script as a single row: toggle button, edit box, delete button. */
+    private static class TickScriptEntry extends AbstractConfigListEntry<String> {
+        private final Button toggleButton;
+        private final Button deleteButton;
+        private final net.minecraft.client.gui.components.EditBox textBox;
+        private final String initialText;
+        private final boolean initialEnabled;
+        private boolean enabled;
+        private boolean deleted;
+
+        TickScriptEntry(String text, boolean enabled) {
+            super(Component.empty(), false);
+            this.initialText = text;
+            this.initialEnabled = enabled;
+            this.enabled = enabled;
+
+            this.toggleButton = Button.builder(toggleLabel(), button -> {
+                        this.enabled = !this.enabled;
+                        button.setMessage(toggleLabel());
+                    })
+                    .bounds(0, 0, 40, 20)
+                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.tick_script_toggle")))
+                    .build();
+
+            this.deleteButton = Button.builder(Component.literal("✕").withStyle(net.minecraft.ChatFormatting.RED), button -> {
+                        this.deleted = true;
+                        TupenterConfig.INSTANCE.tickScripts = collectTickScriptRows();
+                        Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                    })
+                    .bounds(0, 0, 20, 20)
+                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.delete_script")))
+                    .build();
+
+            this.textBox = new net.minecraft.client.gui.components.EditBox(
+                    Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty());
+            this.textBox.setMaxLength(1000);
+            this.textBox.setValue(text);
+        }
+
+        private Component toggleLabel() {
+            return enabled
+                    ? Component.literal("On").withStyle(net.minecraft.ChatFormatting.GREEN)
+                    : Component.literal("Off").withStyle(net.minecraft.ChatFormatting.RED);
+        }
+
+        String text() {
+            return textBox.getValue().trim();
+        }
+
+        @Override
+        public void render(GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
+            toggleButton.setX(x);
+            toggleButton.setY(y);
+            toggleButton.render(graphics, mouseX, mouseY, partialTick);
+
+            textBox.setX(x + 44);
+            textBox.setY(y + 1);
+            textBox.setWidth(entryWidth - 44 - 24);
+            textBox.render(graphics, mouseX, mouseY, partialTick);
+
+            deleteButton.setX(x + entryWidth - 20);
+            deleteButton.setY(y);
+            deleteButton.render(graphics, mouseX, mouseY, partialTick);
+        }
+
+        @Override
+        public boolean isEdited() {
+            return deleted || enabled != initialEnabled || !text().equals(initialText);
+        }
+
+        @Override
+        public List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children() {
+            return List.of(toggleButton, textBox, deleteButton);
+        }
+
+        @Override
+        public List<? extends net.minecraft.client.gui.narration.NarratableEntry> narratables() {
+            return List.of(toggleButton, textBox, deleteButton);
+        }
+
+        @Override
+        public String getValue() {
+            return text();
+        }
+
+        @Override
+        public Optional<String> getDefaultValue() {
+            return Optional.empty();
+        }
+
+        @Override
+        public void save() {
+        }
     }
 
     private static class ImportButtonEntry extends AbstractConfigListEntry<Object> {

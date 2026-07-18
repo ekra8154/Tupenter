@@ -37,8 +37,18 @@ dependencies {
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     // Mod Menu + Cloth Config
-    modImplementation "com.terraformersmc:modmenu:16.0.0-rc.1" 
+    modImplementation "com.terraformersmc:modmenu:16.0.0-rc.1"
     modImplementation "me.shedaniel.cloth:cloth-config-fabric:20.0.149"
+
+    // Unit tests (net.tupenter.script is pure Java, no Minecraft deps)
+    testImplementation platform("org.junit:junit-bom:5.10.2")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+    testImplementation "org.slf4j:slf4j-api:2.0.9"
+}
+
+test {
+    useJUnitPlatform()
 }
 
 processResources {

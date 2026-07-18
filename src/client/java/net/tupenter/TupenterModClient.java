@@ -21,8 +21,27 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.tupenter.command.CommandAliasManager;
-import net.tupenter.command.CommandMathParser;
 import net.tupenter.config.TupenterConfig;
+import net.tupenter.command.ClientCommandRegistrar;
+import net.tupenter.command.ClientVariableProvider;
+import net.tupenter.command.EntityNbtVariableProvider;
+import net.tupenter.command.PlayersVariableProvider;
+import net.tupenter.command.TickScriptRunner;
+import net.tupenter.command.WorldVariableProvider;
+import net.tupenter.script.RealTimeVariableProvider;
+import net.tupenter.script.AliasDefinition;
+import net.tupenter.script.EvalContext;
+import net.tupenter.script.MathEvaluator;
+import net.tupenter.script.PersistentVariableStore;
+import net.tupenter.script.Script;
+import net.tupenter.script.ScriptExecutor;
+import net.tupenter.script.ScriptParser;
+import net.tupenter.script.SessionVariableStore;
+import net.tupenter.script.Value;
+import net.tupenter.script.VariableRegistry;
+
+import java.util.Map;
+import java.util.Random;
 import net.tupenter.compat.ModMenuIntegration;
 import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -43,6 +62,213 @@ public class TupenterModClient implements ClientModInitializer {
     // Queue System
     public static final Queue<String> pendingQueue = new LinkedList<>();
     public static int delayTimer = 0;
+
+    // Script execution (docs/SCRIPTING_DESIGN.md §2)
+    private static boolean forwardingScriptSend = false;
+    private static final ScriptExecutor SCRIPT_EXECUTOR = new ScriptExecutor(
+            new ScriptExecutor.PacketSender() {
+                @Override
+                public void sendCommand(String command) {
+                    Minecraft client = Minecraft.getInstance();
+                    if (client.player == null) return;
+                    if (tryExecuteClientCommand(command)) {
+                        return; // e.g. an alias body containing /calc or /tupenter abort
+                    }
+                    forwardingScriptSend = true;
+                    try {
+                        client.player.connection.sendCommand(command);
+                    } finally {
+                        forwardingScriptSend = false;
+                    }
+                }
+
+                @Override
+                public void sendChat(String message) {
+                    Minecraft client = Minecraft.getInstance();
+                    if (client.player == null) return;
+                    forwardingScriptSend = true;
+                    try {
+                        client.player.connection.sendChat(message);
+                    } finally {
+                        forwardingScriptSend = false;
+                    }
+                }
+
+                @Override
+                public void echo(String message) {
+                    Minecraft client = Minecraft.getInstance();
+                    if (client.player != null) {
+                        client.player.displayClientMessage(Component.literal(message).withStyle(ChatFormatting.GRAY), false);
+                    }
+                }
+
+                @Override
+                public void error(String message) {
+                    sendLocalCalcError(Component.literal(message));
+                }
+            },
+            ScriptExecutor.limits(
+                    () -> TupenterConfig.INSTANCE.maxCommandsPerTick,
+                    () -> TupenterConfig.INSTANCE.maxCommandsPerScript,
+                    () -> TupenterConfig.INSTANCE.maxConcurrentScripts
+            )
+    );
+
+    public static boolean isForwardingScriptSend() {
+        return forwardingScriptSend;
+    }
+
+    /**
+     * Client-side commands (/tupenter, /calc, /echo, custom commands) exist
+     * only in the client dispatcher — sending them as packets makes the
+     * SERVER error. Anything that re-sends a stored command string (resend
+     * key, scripts) must try the client dispatcher first.
+     *
+     * @return true when the command was executed client-side
+     */
+    public static boolean tryExecuteClientCommand(String command) {
+        var dispatcher = net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.getActiveDispatcher();
+        Minecraft client = Minecraft.getInstance();
+        if (dispatcher == null || client.getConnection() == null) {
+            return false;
+        }
+        String root = command.trim();
+        int space = root.indexOf(' ');
+        if (space >= 0) {
+            root = root.substring(0, space);
+        }
+        if (dispatcher.getRoot().getChild(root) == null) {
+            return false;
+        }
+
+        try {
+            dispatcher.execute(command.trim(), (FabricClientCommandSource) client.getConnection().getSuggestionsProvider());
+        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException ex) {
+            sendLocalCalcError(Component.literal(ex.getMessage()));
+        }
+        return true;
+    }
+
+    /** Sends a stored line the way the resend system and scripts need it sent. */
+    public static void dispatchStoredCommand(Minecraft client, String commandWithoutSlash) {
+        if (tryExecuteClientCommand(commandWithoutSlash)) {
+            return;
+        }
+        client.player.connection.sendCommand(commandWithoutSlash);
+    }
+
+    public static void submitScript(Script script) {
+        SCRIPT_EXECUTOR.submit(script);
+    }
+
+    public static boolean isScriptSilenceActive() {
+        return SCRIPT_EXECUTOR.isSilenceActive();
+    }
+
+    private static final Random SCRIPT_RANDOM = new Random();
+
+    // Variable system (docs/SCRIPTING_DESIGN.md §5.3-5.4). Resolution order:
+    // session (#set) → persistent (/tupenter var save) → live client state.
+    public static final SessionVariableStore SESSION_VARIABLES = new SessionVariableStore();
+    public static final PersistentVariableStore PERSISTENT_VARIABLES = new PersistentVariableStore();
+    private static final VariableRegistry VARIABLE_REGISTRY = new VariableRegistry();
+
+    private static final ClientVariableProvider CLIENT_VARIABLES = new ClientVariableProvider();
+    private static final WorldVariableProvider WORLD_VARIABLES = new WorldVariableProvider();
+    private static final PlayersVariableProvider PLAYERS_VARIABLES = new PlayersVariableProvider();
+    private static final RealTimeVariableProvider REAL_VARIABLES = new RealTimeVariableProvider();
+
+    static {
+        VARIABLE_REGISTRY.register(SESSION_VARIABLES);
+        VARIABLE_REGISTRY.register(PERSISTENT_VARIABLES);
+        VARIABLE_REGISTRY.register(CLIENT_VARIABLES);
+        VARIABLE_REGISTRY.register(WORLD_VARIABLES);
+        VARIABLE_REGISTRY.register(PLAYERS_VARIABLES);
+        VARIABLE_REGISTRY.register(REAL_VARIABLES);
+        VARIABLE_REGISTRY.register(new EntityNbtVariableProvider());
+    }
+
+    private static final TickScriptRunner TICK_SCRIPTS = new TickScriptRunner();
+
+    public static void resetTickScriptFaults() {
+        TICK_SCRIPTS.reset();
+    }
+
+    /** Names to check /customcommand bodies against at save time. */
+    public static java.util.Set<String> knownDottedVariableNames() {
+        java.util.Set<String> names = new java.util.HashSet<>(CLIENT_VARIABLES.names());
+        names.addAll(WORLD_VARIABLES.names());
+        names.addAll(PLAYERS_VARIABLES.names());
+        names.addAll(REAL_VARIABLES.names());
+        return names;
+    }
+
+    public static ScriptParser.Options parserOptions() {
+        return new ScriptParser.Options(
+                TupenterConfig.INSTANCE.commandChainingEnabled,
+                TupenterConfig.INSTANCE.numberMathMode,
+                CommandAliasManager.getAliasMap(),
+                TupenterConfig.INSTANCE.silentDirectiveEnabled,
+                TupenterConfig.INSTANCE.variablesEnabled,
+                TupenterConfig.INSTANCE.loopsEnabled,
+                TupenterConfig.INSTANCE.conditionalsEnabled,
+                TupenterConfig.INSTANCE.maxLoopIterations,
+                TupenterConfig.INSTANCE.maxCommandsPerScript,
+                SCRIPT_RANDOM,
+                VARIABLE_REGISTRY,
+                SESSION_VARIABLES
+        );
+    }
+
+    public static void savePersistentVariables() {
+        TupenterConfig.INSTANCE.persistentVariables = PERSISTENT_VARIABLES.serialize();
+        TupenterConfig.save();
+    }
+
+    public static void sendEnhancedParsingInfo(String message) {
+        sendLocalCalcFeedback(Component.literal(message).withStyle(ChatFormatting.AQUA));
+    }
+
+    /**
+     * #stage prefix: records the rest of the line as the most recent resend
+     * history entry WITHOUT executing it. Deliberately bypasses the
+     * recordHistory toggle and resend filter — staging is explicit intent.
+     * Evaluation happens at fire time, so staged $rand(...)$ re-rolls per resend.
+     *
+     * @return true when the line was a #stage line (packet must be cancelled)
+     */
+    public static boolean handleStagePrefix(String line, boolean commandOrigin) {
+        String trimmed = line.trim();
+        if (!trimmed.regionMatches(true, 0, "#stage", 0, 6)) {
+            return false;
+        }
+        if (trimmed.length() > 6 && !Character.isWhitespace(trimmed.charAt(6))) {
+            return false; // "#staged..." or similar — not our word
+        }
+
+        String staged = trimmed.substring(6).trim();
+        if (staged.isEmpty()) {
+            sendEnhancedParsingError("#stage needs a line to stage, e.g. #stage /kill @e[type=fireball]");
+            return true;
+        }
+        if (commandOrigin && !staged.startsWith("/") && !staged.startsWith("#")) {
+            staged = "/" + staged;
+        }
+
+        forceAddToHistory(staged);
+        sendEnhancedParsingInfo("Staged: " + staged);
+        return true;
+    }
+
+    /** Adds to resend history bypassing the recording toggle and filter (#stage, #record). */
+    public static void forceAddToHistory(String msg) {
+        if (messageHistory.isEmpty() || !messageHistory.get(messageHistory.size() - 1).equals(msg)) {
+            messageHistory.add(msg);
+            if (messageHistory.size() > 50) {
+                messageHistory.remove(0);
+            }
+        }
+    }
 
     // History tracking
     public static final List<String> messageHistory = new ArrayList<>();
@@ -112,6 +338,61 @@ public class TupenterModClient implements ClientModInitializer {
                                     .then(argument("expression", StringArgumentType.greedyString())
                                             .executes(context -> runCalcCommand(context, "float(" + StringArgumentType.getString(context, "expression") + ")")))));
 
+                    dispatcher.register(literal("tupenter")
+                            .then(literal("abort")
+                                    .executes(context -> {
+                                        int aborted = SCRIPT_EXECUTOR.runningCount();
+                                        SCRIPT_EXECUTOR.abortAll();
+                                        pendingQueue.clear();
+                                        delayTimer = 0;
+                                        // panic switch: aborting while tick scripts keep
+                                        // resubmitting every tick would be futile
+                                        if (TupenterConfig.INSTANCE.tickScriptsEnabled) {
+                                            TupenterConfig.INSTANCE.tickScriptsEnabled = false;
+                                            TupenterConfig.save();
+                                            context.getSource().sendFeedback(Component.literal(
+                                                    "Tick scripts disabled (re-enable in Mod Menu → Tupenter → Scripts).")
+                                                    .withStyle(ChatFormatting.YELLOW));
+                                        }
+                                        context.getSource().sendFeedback(Component.literal(
+                                                aborted > 0 ? "Aborted " + aborted + " running script(s)." : "Nothing to abort.")
+                                                .withStyle(ChatFormatting.YELLOW));
+                                        return 1;
+                                    }))
+                            .then(literal("vars")
+                                    .executes(context -> runVarsCommand(context, null))
+                                    .then(argument("group", StringArgumentType.word())
+                                            .suggests((context, suggestionsBuilder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(variableGroups(), suggestionsBuilder))
+                                            .executes(context -> runVarsCommand(context, StringArgumentType.getString(context, "group")))))
+                            .then(literal("dump")
+                                    .executes(context -> runDumpCommand(context, "client", ""))
+                                    .then(argument("target", StringArgumentType.word())
+                                            .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(new String[]{"client", "target"}, b))
+                                            .executes(context -> runDumpCommand(context, StringArgumentType.getString(context, "target"), ""))
+                                            .then(argument("path", StringArgumentType.greedyString())
+                                                    .executes(context -> runDumpCommand(context, StringArgumentType.getString(context, "target"), StringArgumentType.getString(context, "path"))))))
+                            .then(literal("var")
+                                    .then(literal("save")
+                                            .then(argument("name", StringArgumentType.word())
+                                                    .suggests((context, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(SESSION_VARIABLES.names(), builder))
+                                                    .executes(TupenterModClient::runVarSaveCommand)))
+                                    .then(literal("delete")
+                                            .then(argument("name", StringArgumentType.word())
+                                                    .suggests((context, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(PERSISTENT_VARIABLES.names(), builder))
+                                                    .executes(TupenterModClient::runVarDeleteCommand))))
+                            .then(literal("help")
+                                    .executes(context -> runHelpCommand(context, "index"))
+                                    .then(literal("expressions").executes(context -> runHelpCommand(context, "expressions")))
+                                    .then(literal("variables").executes(context -> runHelpCommand(context, "variables")))
+                                    .then(literal("flow").executes(context -> runHelpCommand(context, "flow")))
+                                    .then(literal("prefixes").executes(context -> runHelpCommand(context, "prefixes")))
+                                    .then(literal("scripts").executes(context -> runHelpCommand(context, "scripts")))
+                                    .then(literal("commands").executes(context -> runHelpCommand(context, "commands")))));
+
+                    dispatcher.register(literal("echo")
+                            .then(argument("message", StringArgumentType.greedyString())
+                                    .executes(TupenterModClient::runEchoCommand)));
+
                     dispatcher.register(literal("customcommand")
                             .then(literal("add")
                                     .then(argument("name", StringArgumentType.word())
@@ -121,15 +402,18 @@ public class TupenterModClient implements ClientModInitializer {
                                     .then(argument("name", StringArgumentType.word())
                                             .executes(TupenterModClient::runAliasRemoveCommand)))
                             .then(literal("list")
-                                    .executes(TupenterModClient::runAliasListCommand)));
+                                    .executes(context -> runAliasListCommand(context, false))
+                                    .then(literal("verbose")
+                                            .executes(context -> runAliasListCommand(context, true))))
+                            .then(literal("help")
+                                    .executes(TupenterModClient::runCustomCommandHelp))
+                            .then(argument("name", StringArgumentType.word())
+                                    .suggests((context, suggestionsBuilder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
+                                            CommandAliasManager.getAliasMap().keySet(), suggestionsBuilder))
+                                    .executes(TupenterModClient::runAliasDetailCommand)));
 
-                    for (CommandAliasManager.ParsedAlias alias : CommandAliasManager.getAliasMap().entrySet().stream()
-                            .map(entry -> new CommandAliasManager.ParsedAlias(entry.getKey(), entry.getValue()))
-                            .toList()) {
-                        dispatcher.register(literal(alias.name())
-                                .executes(context -> runRegisteredAliasCommand(context, alias.name()))
-                                .then(argument("args", StringArgumentType.greedyString())
-                                        .executes(context -> runRegisteredAliasCommand(context, alias.name()))));
+                    for (Map.Entry<String, AliasDefinition> alias : CommandAliasManager.getAliasMap().entrySet()) {
+                        dispatcher.register(ClientCommandRegistrar.buildAliasNode(alias.getKey(), alias.getValue()));
                     }
                 });
 
@@ -139,15 +423,25 @@ public class TupenterModClient implements ClientModInitializer {
                 messageHistory.clear();
                 pendingQueue.clear();
                 delayTimer = 0;
+                SESSION_VARIABLES.clear();
             }
+            SCRIPT_EXECUTOR.abortAll();
+            TICK_SCRIPTS.reset();
         });
 
 		// Load Config
 		TupenterConfig.load();
+		PERSISTENT_VARIABLES.load(TupenterConfig.INSTANCE.persistentVariables);
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
-            
+
+            // Drain any scripts still holding statements (budget-stretched ones)
+            SCRIPT_EXECUTOR.tick();
+
+            // Mod Menu "Scripts" list — runs every tick while enabled
+            TICK_SCRIPTS.tick(SCRIPT_EXECUTOR);
+
             // =========================================================
             // 0. GLOBAL INPUT HANDLING (Always runs)
             // =========================================================
@@ -379,7 +673,7 @@ public class TupenterModClient implements ClientModInitializer {
                 while (!pendingQueue.isEmpty()) {
                     String msg = pendingQueue.poll();
                     if (msg.startsWith("/")) {
-                        client.player.connection.sendCommand(msg.substring(1));
+                        dispatchStoredCommand(client, msg.substring(1));
                     } else {
                          client.player.connection.sendChat(msg);
                     }
@@ -422,7 +716,12 @@ public class TupenterModClient implements ClientModInitializer {
 
         try {
             String savedName = CommandAliasManager.addAlias(name, command);
-            context.getSource().sendFeedback(Component.literal("Saved custom command /" + savedName).withStyle(ChatFormatting.GREEN));
+            AliasDefinition definition = CommandAliasManager.getAliasMap().get(savedName);
+            if (definition != null) {
+                ClientCommandRegistrar.registerDynamic(savedName, definition);
+            }
+            context.getSource().sendFeedback(Component.literal("Saved custom command /" + savedName + " — available now.").withStyle(ChatFormatting.GREEN));
+            warnUnknownNamespacedVariables(context, command);
             return 1;
         } catch (IllegalArgumentException ex) {
             context.getSource().sendError(Component.literal(ex.getMessage()));
@@ -430,9 +729,39 @@ public class TupenterModClient implements ClientModInitializer {
         }
     }
 
+    /**
+     * Save-time sanity check: namespaced variables (client.*, world.*,
+     * target.*) either exist now or never will, so a typo like
+     * $world.difficolty$ can be flagged immediately — unlike plain names,
+     * which may legitimately be #set later.
+     */
+    private static void warnUnknownNamespacedVariables(CommandContext<FabricClientCommandSource> context, String body) {
+        java.util.Set<String> known = knownDottedVariableNames();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("\\b(client|world|target)\\.[A-Za-z0-9_.]+")
+                .matcher(body);
+        java.util.Set<String> flagged = new java.util.LinkedHashSet<>();
+        while (matcher.find()) {
+            String candidate = matcher.group().toLowerCase(java.util.Locale.ROOT);
+            if (candidate.startsWith("client.nbt.") || candidate.startsWith("target.nbt.")) {
+                continue; // dynamic paths — checked at run time
+            }
+            if (!known.contains(candidate)) {
+                flagged.add(candidate);
+            }
+        }
+        if (!flagged.isEmpty()) {
+            context.getSource().sendFeedback(Component.literal(
+                    "Heads up: unknown variable" + (flagged.size() == 1 ? "" : "s") + " " +
+                    String.join(", ", flagged.stream().map(v -> "$" + v + "$").toList()) +
+                    " — the command will error when run. See /tupenter vars.").withStyle(ChatFormatting.YELLOW));
+        }
+    }
+
     private static int runAliasRemoveCommand(CommandContext<FabricClientCommandSource> context) {
         String name = StringArgumentType.getString(context, "name");
         if (CommandAliasManager.removeAlias(name)) {
+            ClientCommandRegistrar.unregisterDynamic(CommandAliasManager.normalizeName(name));
             context.getSource().sendFeedback(Component.literal("Removed custom command /" + CommandAliasManager.normalizeName(name)).withStyle(ChatFormatting.GREEN));
             return 1;
         }
@@ -441,41 +770,307 @@ public class TupenterModClient implements ClientModInitializer {
         return 0;
     }
 
-    private static int runAliasListCommand(CommandContext<FabricClientCommandSource> context) {
+    /** Group names for /tupenter vars <group> suggestions: built-in + user-made. */
+    private static java.util.Set<String> variableGroups() {
+        java.util.Set<String> groups = new java.util.TreeSet<>();
+        for (String name : knownDottedVariableNames()) {
+            groups.add(name.substring(0, name.indexOf('.')));
+        }
+        for (String name : SESSION_VARIABLES.names()) {
+            if (name.contains(".")) groups.add(name.substring(0, name.indexOf('.')));
+        }
+        for (String name : PERSISTENT_VARIABLES.names()) {
+            if (name.contains(".")) groups.add(name.substring(0, name.indexOf('.')));
+        }
+        return groups;
+    }
+
+    private static int runVarsCommand(CommandContext<FabricClientCommandSource> context, String group) {
+        if (group != null) {
+            String prefix = group.toLowerCase(java.util.Locale.ROOT) + ".";
+            java.util.Set<String> names = new java.util.TreeSet<>();
+            knownDottedVariableNames().stream().filter(n -> n.startsWith(prefix)).forEach(names::add);
+            SESSION_VARIABLES.names().stream().filter(n -> n.startsWith(prefix)).forEach(names::add);
+            PERSISTENT_VARIABLES.names().stream().filter(n -> n.startsWith(prefix)).forEach(names::add);
+
+            if (names.isEmpty()) {
+                context.getSource().sendError(Component.literal("No variables in group '" + group + "'. Groups: " + String.join(", ", variableGroups())));
+                return 0;
+            }
+            context.getSource().sendFeedback(Component.literal("$" + group + ".*$ variables:").withStyle(ChatFormatting.AQUA));
+            for (String name : names) {
+                String value;
+                try {
+                    value = VARIABLE_REGISTRY.resolve(name).map(Value::displayString).orElse("—");
+                } catch (IllegalArgumentException ex) {
+                    value = "—";
+                }
+                context.getSource().sendFeedback(Component.literal(" $" + name + "$ = " + value));
+            }
+            return 1;
+        }
+
+        Map<String, Value> vars = SESSION_VARIABLES.snapshot();
+        if (vars.isEmpty()) {
+            context.getSource().sendFeedback(Component.literal("No session variables set. Use #set $name$ = value.").withStyle(ChatFormatting.YELLOW));
+        } else {
+            context.getSource().sendFeedback(Component.literal("Session variables:").withStyle(ChatFormatting.AQUA));
+            vars.forEach((name, value) ->
+                    context.getSource().sendFeedback(Component.literal(" $" + name + "$ = " + value.displayString())));
+        }
+        Map<String, Value> persistent = PERSISTENT_VARIABLES.snapshot();
+        if (!persistent.isEmpty()) {
+            context.getSource().sendFeedback(Component.literal("Persistent variables:").withStyle(ChatFormatting.AQUA));
+            persistent.forEach((name, value) ->
+                    context.getSource().sendFeedback(Component.literal(" $" + name + "$ = " + value.displayString())));
+        }
+
+        java.util.Map<String, Integer> groupCounts = new java.util.TreeMap<>();
+        for (String name : knownDottedVariableNames()) {
+            groupCounts.merge(name.substring(0, name.indexOf('.')), 1, Integer::sum);
+        }
+        StringBuilder summary = new StringBuilder("Built-in groups: ");
+        groupCounts.forEach((g, count) -> summary.append("$").append(g).append(".*$ (").append(count).append(") · "));
+        summary.append("$client.nbt.*$ / $target.nbt.*$ (browse: /tupenter dump)");
+        context.getSource().sendFeedback(Component.literal(summary.toString()).withStyle(ChatFormatting.GRAY));
+        context.getSource().sendFeedback(Component.literal("Details: /tupenter vars <group>").withStyle(ChatFormatting.DARK_GRAY));
+        return 1;
+    }
+
+    private static int runVarSaveCommand(CommandContext<FabricClientCommandSource> context) {
+        String name = StringArgumentType.getString(context, "name").toLowerCase(java.util.Locale.ROOT);
+        var value = SESSION_VARIABLES.resolve(name);
+        if (value.isEmpty()) {
+            context.getSource().sendError(Component.literal("No session variable $" + name + "$ — set it first with #set $" + name + "$ = ..."));
+            return 0;
+        }
+        try {
+            PERSISTENT_VARIABLES.set(name, value.get());
+        } catch (IllegalArgumentException ex) {
+            context.getSource().sendError(Component.literal(ex.getMessage()));
+            return 0;
+        }
+        savePersistentVariables();
+        context.getSource().sendFeedback(Component.literal("Saved $" + name + "$ = " + value.get().displayString() + " (persists across sessions)").withStyle(ChatFormatting.GREEN));
+        return 1;
+    }
+
+    private static int runVarDeleteCommand(CommandContext<FabricClientCommandSource> context) {
+        String name = StringArgumentType.getString(context, "name").toLowerCase(java.util.Locale.ROOT);
+        if (!PERSISTENT_VARIABLES.remove(name)) {
+            context.getSource().sendError(Component.literal("No persistent variable $" + name + "$"));
+            return 0;
+        }
+        savePersistentVariables();
+        context.getSource().sendFeedback(Component.literal("Deleted persistent variable $" + name + "$").withStyle(ChatFormatting.GREEN));
+        return 1;
+    }
+
+    private static int runHelpCommand(CommandContext<FabricClientCommandSource> context, String topic) {
+        String[] lines = switch (topic) {
+            case "expressions" -> new String[]{
+                    "§bExpressions — $...$ evaluates before sending:",
+                    "§7Math:§r /give @s stick $32+5$ · exact fractions, no float drift · $3s$ = 3 stacks (×64)",
+                    "§7Text:§r \"quoted\" · + joins: $\"lvl \" + 5$ · comparisons: == != < <= > >=",
+                    "§7Conditions:§r $client.y > 60 ? 10 : 0$ · true/false · && \\|\\| !",
+                    "§7Functions:§r rand(1,64) randf pick(a | b | c) range(1,10) int float abs floor ceil round min max len sqrt sin cos tan (degrees)",
+                    "§7Implicit math:§r with Inline Expressions = Auto-detect (the default), bare math evaluates WITHOUT markers: /give @s stick 64*5 → 320. Numbers-and-operators only (no variables/functions beyond int/float), skipped inside {NBT braces}, and unparseable text is sent as-is (never errors). $...$ is the full language and works everywhere, in every mode except Disabled.",
+                    "§7Gotchas:§r \\$ = literal dollar · write 2*sin(x), not 2sin(x) (bare s = stack suffix)",
+                    "§7Errors:§r a bad $...$ shows a local error and sends NOTHING.",
+                    "§7Try it:§r /calc <expr> or /$ expr $ evaluates locally.",
+            };
+            case "variables" -> new String[]{
+                    "§bVariables — use anywhere as $name$:",
+                    "§7Yours:§r #set $x$ = 5 (session, cleared on join) · #local $x$ = 5 (this line only, silent) · dotted groups allowed: #set $hitlist.bob$ = \"wanted\"",
+                    "§7Persistent:§r /tupenter var save <name> keeps it forever · /tupenter var delete <name>",
+                    "§7Built-in:§r $client.x/y/z/health/held_item/target_block...$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$",
+                    "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · browse with /tupenter dump",
+                    "§7Discover:§r /tupenter vars — groups overview · /tupenter vars <group> — live values",
+                    "§7In custom commands:§r declared params bind as $name$ or $1$..$n$",
+            };
+            case "flow" -> new String[]{
+                    "§bChains, loops & conditions:",
+                    "§7Chain:§r /time set day && /weather clear — one line, sent in order",
+                    "§7Repeat:§r #repeat 5 (/say Tick $i$!) — $i$ counts 1..5",
+                    "§7For:§r #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~) — inclusive, counts down automatically",
+                    "§7Foreach:§r #foreach $m$ in (zombie | skeleton) (/summon $m$) — or in range(1, 10)",
+                    "§7If:§r #if ($client.y$ > 60) (/say high) #elseif ($client.y$ > 30) (/say mid) #else (/say low)",
+                    "§7Groups (...) nest and can hold chains. Parens elsewhere are literal text.",
+                    "§7Caps:§r loops ≤ Max Loop Iterations · scripts ≤ Max Commands Per Script · sends spread over ticks past Max Commands Per Tick",
+            };
+            case "prefixes" -> new String[]{
+                    "§bLine prefixes & local output:",
+                    "§7#silent§r — hide command feedback on your screen: whole line (#silent /time set day) or part of it (#silent (/give @s stick) && /say hi). Also mutes #set notices.",
+                    "§7#norecord§r — run the line but keep it out of resend history",
+                    "§7#record§r — the inverse: records even when message tracking is OFF (and bypasses the filter)",
+                    "§7#stage§r — put the line INTO resend history without running it — press R when you want it",
+                    "§7#echo§r / §7/echo§r — show text only to yourself, sends nothing: /echo y is $client.y$",
+                    "§7Prefixes combine: #norecord #silent /say hi",
+            };
+            case "scripts" -> new String[]{
+                    "§bTick scripts (Mod Menu → Tupenter → Scripts):",
+                    "§7One-line scripts that run EVERY TICK (20x/s) while the master toggle is on — a walking mcfunction file.",
+                    "§7Guard them:§r #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying) — unguarded commands flood multiplayer chat.",
+                    "§7Live tuning:§r reference $maxy$ in a script, change it anytime with #set $maxy$ = 80",
+                    "§7Disable one script with its toggle (or // prefix) · errors report once and pause that script until edited",
+                    "§7Tick scripts never touch resend history and never print #set notices.",
+                    "§7Panic:§r /tupenter abort — also flips the master toggle off",
+            };
+            case "commands" -> new String[]{
+                    "§bCommands Tupenter adds (all client-side):",
+                    "§7/tupenter abort§r — stop scripts + resend queue (+ disables tick scripts)",
+                    "§7/tupenter vars [group]§r — variables overview / one group with live values",
+                    "§7/tupenter var save|delete <name>§r — persist / remove a variable",
+                    "§7/tupenter dump [client|target] [path]§r — browse entity NBT",
+                    "§7/tupenter help <topic>§r — this help",
+                    "§7/customcommand add|remove|list [verbose]|help§r · /customcommand <name> — inspect one",
+                    "§7/echo <text>§r — local-only output, evaluates $...$",
+                    "§7/calc <expr>§r — local calculator (also /$ expr $)",
+                    "§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking",
+            };
+            default -> new String[]{
+                    "§bTupenter help — pick a topic:",
+                    "§7/tupenter help expressions§r — $...$ math, text, conditions, functions",
+                    "§7/tupenter help variables§r — #set, #local, client.*/world.*/nbt paths, groups",
+                    "§7/tupenter help flow§r — && chains, #repeat, #for, #foreach, #if/#elseif",
+                    "§7/tupenter help prefixes§r — #silent, #norecord, #stage, #echo",
+                    "§7/tupenter help scripts§r — the every-tick Scripts tab",
+                    "§7/tupenter help commands§r — every command the mod adds",
+                    "§7/customcommand help§r — make your own commands (typed params, autocomplete)",
+                    "§7Quick taste:§r #set $x$ = rand(1,10) && /give @s stick $x$ && /echo got $x$!",
+            };
+        };
+        for (String line : lines) {
+            context.getSource().sendFeedback(Component.literal(line));
+        }
+        return 1;
+    }
+
+    private static int runDumpCommand(CommandContext<FabricClientCommandSource> context, String which, String path) {
+        if (!which.equals("client") && !which.equals("target")) {
+            context.getSource().sendError(Component.literal("Usage: /tupenter dump [client|target] [path]"));
+            return 0;
+        }
+        try {
+            var entity = which.equals("target") ? EntityNbtVariableProvider.targetEntity() : EntityNbtVariableProvider.clientEntity();
+            var root = EntityNbtVariableProvider.snapshot(entity);
+            String cleanPath = path.trim().replaceAll("^\\.|\\.$", "");
+            String fullName = which + ".nbt" + (cleanPath.isEmpty() ? "" : "." + cleanPath);
+            var tag = EntityNbtVariableProvider.walk(root, cleanPath, fullName);
+
+            context.getSource().sendFeedback(Component.literal("$" + fullName + "$:").withStyle(ChatFormatting.AQUA));
+            if (tag instanceof net.minecraft.nbt.CompoundTag compound) {
+                compound.keySet().stream().sorted().forEach(key ->
+                        context.getSource().sendFeedback(Component.literal(" " + key + ": ").withStyle(ChatFormatting.YELLOW)
+                                .append(Component.literal(summarizeTag(compound.get(key))).withStyle(ChatFormatting.WHITE))));
+            } else if (tag instanceof net.minecraft.nbt.CollectionTag list) {
+                int shown = Math.min(list.size(), 16);
+                for (int i = 0; i < shown; i++) {
+                    context.getSource().sendFeedback(Component.literal(" " + i + ": ").withStyle(ChatFormatting.YELLOW)
+                            .append(Component.literal(summarizeTag(list.get(i))).withStyle(ChatFormatting.WHITE)));
+                }
+                if (list.size() > shown) {
+                    context.getSource().sendFeedback(Component.literal(" … " + (list.size() - shown) + " more").withStyle(ChatFormatting.GRAY));
+                }
+            } else {
+                context.getSource().sendFeedback(Component.literal(" " + summarizeTag(tag)));
+            }
+            return 1;
+        } catch (IllegalArgumentException ex) {
+            context.getSource().sendError(Component.literal(ex.getMessage()));
+            return 0;
+        }
+    }
+
+    private static String summarizeTag(net.minecraft.nbt.Tag tag) {
+        if (tag instanceof net.minecraft.nbt.CompoundTag compound) {
+            return "{…} " + compound.size() + " key" + (compound.size() == 1 ? "" : "s");
+        }
+        if (tag instanceof net.minecraft.nbt.CollectionTag list) {
+            return "[…] " + list.size() + " entr" + (list.size() == 1 ? "y" : "ies");
+        }
+        return tag.toString();
+    }
+
+    private static int runAliasListCommand(CommandContext<FabricClientCommandSource> context, boolean verbose) {
         List<String> definitions = CommandAliasManager.getAliasDefinitions();
         if (definitions.isEmpty()) {
-            context.getSource().sendFeedback(Component.literal("No custom commands saved.").withStyle(ChatFormatting.YELLOW));
+            context.getSource().sendFeedback(Component.literal("No custom commands saved. Try /customcommand help").withStyle(ChatFormatting.YELLOW));
             return 1;
         }
 
         context.getSource().sendFeedback(Component.literal("Saved custom commands:").withStyle(ChatFormatting.AQUA));
         for (String definition : definitions) {
-            context.getSource().sendFeedback(Component.literal(" - " + definition));
+            CommandAliasManager.ParsedAlias parsed = CommandAliasManager.parseDefinition(definition);
+            if (parsed == null) {
+                context.getSource().sendFeedback(Component.literal(" - " + definition + " (invalid)").withStyle(ChatFormatting.RED));
+                continue;
+            }
+            context.getSource().sendFeedback(aliasLine(parsed, verbose));
+        }
+        if (!verbose) {
+            context.getSource().sendFeedback(Component.literal("Full bodies: /customcommand list verbose · one command: /customcommand <name>").withStyle(ChatFormatting.DARK_GRAY));
         }
         return 1;
     }
 
-    private static int runRegisteredAliasCommand(CommandContext<FabricClientCommandSource> context, String aliasName) {
-        Minecraft client = Minecraft.getInstance();
-        if (client.player == null) {
+    private static Component aliasLine(CommandAliasManager.ParsedAlias parsed, boolean fullBody) {
+        String body = parsed.definition().body();
+        if (!fullBody && body.length() > 40) {
+            body = body.substring(0, 40) + "…";
+        }
+        return Component.literal(" /").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(parsed.name()).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(parsed.definition().params().isEmpty()
+                        ? " " : " " + parsed.definition().declarationPrefix()).withStyle(ChatFormatting.YELLOW))
+                .append(Component.literal("→ ").withStyle(ChatFormatting.DARK_GRAY))
+                .append(Component.literal(body).withStyle(fullBody ? ChatFormatting.WHITE : ChatFormatting.GRAY));
+    }
+
+    private static int runAliasDetailCommand(CommandContext<FabricClientCommandSource> context) {
+        String name = CommandAliasManager.normalizeName(StringArgumentType.getString(context, "name"));
+        AliasDefinition definition = CommandAliasManager.getAliasMap().get(name);
+        if (definition == null) {
+            context.getSource().sendError(Component.literal("No custom command /" + name + " — see /customcommand list"));
             return 0;
         }
+        context.getSource().sendFeedback(Component.literal("/").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(name).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(definition.params().isEmpty() ? "" : " " + definition.declarationPrefix().trim()).withStyle(ChatFormatting.YELLOW)));
+        context.getSource().sendFeedback(Component.literal(" body: ").withStyle(ChatFormatting.DARK_GRAY)
+                .append(Component.literal(definition.body()).withStyle(ChatFormatting.WHITE)));
+        return 1;
+    }
 
-        if (!CommandAliasManager.getAliasMap().containsKey(aliasName)) {
-            context.getSource().sendError(Component.literal("Custom command not found. It may have been removed and will disappear after you relaunch."));
-            return 0;
-        }
-
-        String command = aliasName;
-        try {
-            String extraArgs = StringArgumentType.getString(context, "args");
-            if (extraArgs != null && !extraArgs.isBlank()) {
-                command = command + " " + extraArgs;
+    private static int runEchoCommand(CommandContext<FabricClientCommandSource> context) {
+        String text = StringArgumentType.getString(context, "message");
+        if (TupenterConfig.INSTANCE.enhancedCommandParsingEnabled
+                && TupenterConfig.INSTANCE.numberMathMode != net.tupenter.script.NumberMathMode.DISABLED) {
+            try {
+                text = MathEvaluator.applyNumberMath(text, net.tupenter.script.NumberMathMode.EXPLICIT_ONLY,
+                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY));
+            } catch (IllegalArgumentException ex) {
+                context.getSource().sendError(Component.literal(ex.getMessage()));
+                return 0;
             }
-        } catch (IllegalArgumentException ignored) {
         }
+        context.getSource().sendFeedback(Component.literal(text).withStyle(ChatFormatting.GRAY));
+        return 1;
+    }
 
-        client.player.connection.getConnection().send(new ServerboundChatCommandPacket(command));
+    private static int runCustomCommandHelp(CommandContext<FabricClientCommandSource> context) {
+        String[] lines = {
+                "§bCustom commands:",
+                "§7Create:§r /customcommand add <name> <body>  ·  Remove:§r /customcommand remove <name>  ·  List:§r /customcommand list",
+                "§7Bodies§r can hold commands, chat, && chains, $...$ expressions, directives (#repeat, #if, #silent, ...), and other custom commands. Commands need their /: sunny = /weather clear && Have fun!",
+                "§7Parameters§r go before the body: /customcommand add smite <target:player> /execute at $target$ run summon lightning_bolt — then /smite Steve. Use as $target$ or $1$.",
+                "§7Types:§r <name> or <name:string> = a word or \"anything quoted\" · <n:int> / <n:float> = numbers · <n:word> = one plain token (letters/digits/_-.+ only — no selectors!) · <n:selector> = @e[...] with tab-complete · <n:player> = player name · <n:text> = rest of the line (must be last) · <n:opt1,opt2,...> = one of a fixed list, tab-completed",
+                "§7Selectors:§r use <name:selector>, or quote them into a plain <name>: /cmd \"@e[type=!player,limit=1]\"",
+                "§7Example:§r /customcommand add waves <count:int> <mob:word> #repeat $count$ (/summon $mob$ ~ ~ ~)  →  /waves 3 zombie",
+        };
+        for (String line : lines) {
+            context.getSource().sendFeedback(Component.literal(line));
+        }
         return 1;
     }
 
@@ -502,7 +1097,7 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static int evaluateLocalCalcExpression(String expression, java.util.function.Consumer<Component> feedback, java.util.function.Consumer<Component> error) {
         try {
-            String result = CommandMathParser.evaluateExpressionAsCommandValue(expression);
+            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY));
             feedback.accept(Component.literal(result).withStyle(ChatFormatting.AQUA));
             return 1;
         } catch (IllegalArgumentException ex) {

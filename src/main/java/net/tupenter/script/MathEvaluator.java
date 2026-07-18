@@ -1,20 +1,28 @@
-package net.tupenter.command;
+package net.tupenter.script;
 
-import java.math.BigDecimal;
-import net.tupenter.TupenterMod;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.math.BigInteger;
-import java.math.RoundingMode;
-import net.tupenter.config.TupenterConfig;
-
-public final class CommandMathParser {
+/**
+ * Rewrites expressions inside a command before it is sent.
+ *
+ * Two tiers (docs/SCRIPTING_DESIGN.md §1, §3):
+ * - Explicit $...$ markers: full {@link ExpressionEvaluator} syntax. The user
+ *   opted in, so failures are HARD errors — the script is rejected and
+ *   nothing is sent. A literal dollar sign is written {@code \$}.
+ * - Auto-detected bare spans (AUTO_DETECT mode only): legacy numeric-only
+ *   grammar, soft-fail — an unparseable span is sent unchanged. Skips
+ *   anything inside {...} NBT braces.
+ */
+public final class MathEvaluator {
+    private static final Logger LOGGER = LoggerFactory.getLogger("Tupenter");
     private static final char MARKER = '$';
 
-    private CommandMathParser() {
+    private MathEvaluator() {
     }
 
-    public static String applyNumberMath(String command, TupenterConfig.NumberMathMode mode) {
-        if (mode == TupenterConfig.NumberMathMode.DISABLED) {
+    public static String applyNumberMath(String command, NumberMathMode mode, EvalContext context) {
+        if (mode == NumberMathMode.DISABLED) {
             return command;
         }
 
@@ -22,13 +30,13 @@ public final class CommandMathParser {
         int index = 0;
 
         while (index < command.length()) {
-            int start = command.indexOf(MARKER, index);
+            int start = indexOfUnescapedMarker(command, index);
             if (start < 0) {
                 appendUnmarkedSegment(result, command.substring(index), mode);
                 break;
             }
 
-            int end = command.indexOf(MARKER, start + 1);
+            int end = indexOfUnescapedMarker(command, start + 1);
             if (end < 0) {
                 appendUnmarkedSegment(result, command.substring(index), mode);
                 break;
@@ -38,7 +46,7 @@ public final class CommandMathParser {
 
             String markedSegment = command.substring(start, end + 1);
             String expression = command.substring(start + 1, end);
-            result.append(evaluateMarkedSegment(markedSegment, expression));
+            result.append(evaluateMarkedSegment(markedSegment, expression, context));
 
             index = end + 1;
         }
@@ -46,29 +54,60 @@ public final class CommandMathParser {
         return result.toString();
     }
 
-    private static void appendUnmarkedSegment(StringBuilder result, String segment, TupenterConfig.NumberMathMode mode) {
-        if (mode == TupenterConfig.NumberMathMode.AUTO_DETECT) {
-            result.append(applyAutoDetectMath(segment));
-        } else {
-            result.append(segment);
+    private static int indexOfUnescapedMarker(String command, int from) {
+        for (int i = from; i < command.length(); i++) {
+            char current = command.charAt(i);
+            if (current == '\\') {
+                i++; // skip the escaped character
+                continue;
+            }
+            if (current == MARKER) {
+                return i;
+            }
         }
+        return -1;
     }
 
-    public static int evaluateExpression(String expression) {
-        return parseExpression(expression).toIntExact();
+    private static void appendUnmarkedSegment(StringBuilder result, String segment, NumberMathMode mode) {
+        String processed = mode == NumberMathMode.AUTO_DETECT ? applyAutoDetectMath(segment) : segment;
+        result.append(unescapeDollars(processed));
     }
 
-    public static String evaluateExpressionAsCommandValue(String expression) {
-        return parseExpression(expression).toCommandString();
+    private static String unescapeDollars(String text) {
+        return text.replace("\\$", "$");
     }
 
-    private static String evaluateMarkedSegment(String originalSegment, String expression) {
+    private static String evaluateMarkedSegment(String originalSegment, String expression, EvalContext context) {
         try {
-            return evaluateExpressionAsCommandValue(expression);
+            // "$1$" style positional parameters: pure-digit content is a
+            // variable reference when one is bound, else a number literal
+            String trimmed = expression.trim();
+            if (!trimmed.isEmpty() && trimmed.chars().allMatch(Character::isDigit)) {
+                var bound = context.variables().resolve(trimmed);
+                if (bound.isPresent()) {
+                    return bound.get().substitutionString();
+                }
+            }
+            return ExpressionEvaluator.evaluate(expression, context).substitutionString();
         } catch (IllegalArgumentException ex) {
-            TupenterMod.LOGGER.debug("Skipping number math for segment '{}': {}", originalSegment, ex.getMessage());
-            return originalSegment;
+            throw new ExpressionException("Invalid expression " + originalSegment + " — " + ex.getMessage()
+                    + " (write \\$ for a literal dollar sign)");
         }
+    }
+
+    /** Legacy numeric-only evaluation, used by the auto-detect path. */
+    public static int evaluateExpression(String expression) {
+        return parseNumericExpression(expression).toIntExact();
+    }
+
+    /** Legacy numeric-only evaluation, used by the auto-detect path. */
+    public static String evaluateExpressionAsCommandValue(String expression) {
+        return parseNumericExpression(expression).toCommandString();
+    }
+
+    /** Full expression engine, for /calc and the /$ ... $ local calculator. */
+    public static String evaluateForDisplay(String expression, EvalContext context) {
+        return ExpressionEvaluator.evaluate(expression, context).displayString();
     }
 
     private static boolean containsOnlyAllowedMathCharacters(String expression) {
@@ -231,7 +270,7 @@ public final class CommandMathParser {
                     + evaluateExpressionAsCommandValue(expression)
                     + span.substring(trailingWhitespace);
         } catch (IllegalArgumentException ex) {
-            TupenterMod.LOGGER.debug("Skipping auto-detected number math for span '{}': {}", span, ex.getMessage());
+            LOGGER.debug("Skipping auto-detected number math for span '{}': {}", span, ex.getMessage());
             return span;
         }
     }
@@ -277,19 +316,20 @@ public final class CommandMathParser {
         return hasDigit && hasOperator;
     }
 
-    private static Rational parseExpression(String expression) {
+    private static Rational parseNumericExpression(String expression) {
         if (!containsOnlyAllowedMathCharacters(expression)) {
-            throw new IllegalArgumentException("Expression contains unsupported characters");
+            throw new ExpressionException("Expression contains unsupported characters");
         }
 
-        return new Parser(expression).parse();
+        return new NumericParser(expression).parse();
     }
 
-    private static final class Parser {
+    /** The original numeric-only grammar, kept for auto-detect spans. */
+    private static final class NumericParser {
         private final String input;
         private int index;
 
-        private Parser(String input) {
+        private NumericParser(String input) {
             this.input = input;
         }
 
@@ -297,7 +337,7 @@ public final class CommandMathParser {
             Rational value = parseExpression();
             skipWhitespace();
             if (index != input.length()) {
-                throw new IllegalArgumentException("Unexpected trailing characters");
+                throw new ExpressionException("Unexpected trailing characters");
             }
             return value;
         }
@@ -355,7 +395,7 @@ public final class CommandMathParser {
                 skipWhitespace();
                 if (index < input.length() && isStackSuffix(input.charAt(index))) {
                     index++;
-                    value = value.multiply(Rational.of(BigInteger.valueOf(64)));
+                    value = value.multiply(Rational.of(64));
                     continue;
                 }
                 return value;
@@ -365,7 +405,7 @@ public final class CommandMathParser {
         private Rational parsePrimary() {
             skipWhitespace();
             if (index >= input.length()) {
-                throw new IllegalArgumentException("Unexpected end of expression");
+                throw new ExpressionException("Unexpected end of expression");
             }
 
             char current = input.charAt(index);
@@ -379,7 +419,7 @@ public final class CommandMathParser {
                 Rational value = parseExpression();
                 skipWhitespace();
                 if (index >= input.length() || input.charAt(index) != ')') {
-                    throw new IllegalArgumentException("Missing closing parenthesis");
+                    throw new ExpressionException("Missing closing parenthesis");
                 }
                 index++;
                 return value;
@@ -396,21 +436,21 @@ public final class CommandMathParser {
             String identifier = parseIdentifier();
             skipWhitespace();
             if (index >= input.length() || input.charAt(index) != '(') {
-                throw new IllegalArgumentException("Expected '(' after function name");
+                throw new ExpressionException("Expected '(' after function name");
             }
 
             index++;
             Rational value = parseExpression();
             skipWhitespace();
             if (index >= input.length() || input.charAt(index) != ')') {
-                throw new IllegalArgumentException("Missing closing parenthesis");
+                throw new ExpressionException("Missing closing parenthesis");
             }
             index++;
 
             return switch (identifier.toLowerCase()) {
                 case "int" -> value.truncate();
                 case "float" -> value;
-                default -> throw new IllegalArgumentException("Unsupported function: " + identifier);
+                default -> throw new ExpressionException("Unsupported function: " + identifier);
             };
         }
 
@@ -421,7 +461,7 @@ public final class CommandMathParser {
             }
 
             if (start == index) {
-                throw new IllegalArgumentException("Expected a function name");
+                throw new ExpressionException("Expected a function name");
             }
 
             return input.substring(start, index);
@@ -462,10 +502,10 @@ public final class CommandMathParser {
                 }
 
                 if (!hasDigitsBeforeDecimal && decimalStart == index) {
-                    throw new IllegalArgumentException("Expected a number");
+                    throw new ExpressionException("Expected a number");
                 }
             } else if (!hasDigitsBeforeDecimal) {
-                throw new IllegalArgumentException("Expected a number");
+                throw new ExpressionException("Expected a number");
             }
 
             String token = input.substring(start, index);
@@ -476,103 +516,6 @@ public final class CommandMathParser {
             while (index < input.length() && Character.isWhitespace(input.charAt(index))) {
                 index++;
             }
-        }
-    }
-
-    private static final class Rational {
-        private final BigInteger numerator;
-        private final BigInteger denominator;
-
-        private Rational(BigInteger numerator, BigInteger denominator) {
-            if (denominator.signum() == 0) {
-                throw new IllegalArgumentException("Division by zero");
-            }
-
-            if (denominator.signum() < 0) {
-                numerator = numerator.negate();
-                denominator = denominator.negate();
-            }
-
-            BigInteger gcd = numerator.gcd(denominator);
-            this.numerator = numerator.divide(gcd);
-            this.denominator = denominator.divide(gcd);
-        }
-
-        private static Rational of(BigInteger value) {
-            return new Rational(value, BigInteger.ONE);
-        }
-
-        private Rational add(Rational other) {
-            return new Rational(
-                    numerator.multiply(other.denominator).add(other.numerator.multiply(denominator)),
-                    denominator.multiply(other.denominator)
-            );
-        }
-
-        private Rational subtract(Rational other) {
-            return new Rational(
-                    numerator.multiply(other.denominator).subtract(other.numerator.multiply(denominator)),
-                    denominator.multiply(other.denominator)
-            );
-        }
-
-        private Rational multiply(Rational other) {
-            return new Rational(numerator.multiply(other.numerator), denominator.multiply(other.denominator));
-        }
-
-        private Rational divide(Rational other) {
-            if (other.numerator.signum() == 0) {
-                throw new IllegalArgumentException("Division by zero");
-            }
-            return new Rational(numerator.multiply(other.denominator), denominator.multiply(other.numerator));
-        }
-
-        private Rational negate() {
-            return new Rational(numerator.negate(), denominator);
-        }
-
-        private Rational truncate() {
-            return Rational.of(numerator.divide(denominator));
-        }
-
-        private int toIntExact() {
-            BigInteger truncated = numerator.divide(denominator);
-            if (truncated.compareTo(BigInteger.valueOf(Integer.MIN_VALUE)) < 0
-                    || truncated.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0) {
-                throw new IllegalArgumentException("Result out of int range");
-            }
-            return truncated.intValue();
-        }
-
-        private String toCommandString() {
-            BigDecimal numeratorDecimal = new BigDecimal(numerator);
-            BigDecimal denominatorDecimal = new BigDecimal(denominator);
-            BigDecimal decimal = numeratorDecimal.divide(denominatorDecimal, 16, RoundingMode.HALF_UP)
-                    .stripTrailingZeros();
-
-            if (decimal.scale() < 0) {
-                decimal = decimal.setScale(0);
-            }
-
-            return decimal.toPlainString();
-        }
-
-        private static Rational parse(String token) {
-            int decimalIndex = token.indexOf('.');
-            if (decimalIndex < 0) {
-                return Rational.of(new BigInteger(token));
-            }
-
-            String wholePart = token.substring(0, decimalIndex);
-            String fractionalPart = token.substring(decimalIndex + 1);
-            String digits = wholePart + fractionalPart;
-            if (digits.isEmpty()) {
-                throw new IllegalArgumentException("Expected a number");
-            }
-
-            BigInteger numerator = new BigInteger(digits);
-            BigInteger denominator = BigInteger.TEN.pow(fractionalPart.length());
-            return new Rational(numerator, denominator);
         }
     }
 }

@@ -13,20 +13,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class MixinClientPacketListener {
     @Inject(method = "handleSystemChat", at = @At("HEAD"), cancellable = true)
     private void onHandleSystemChat(ClientboundSystemChatPacket packet, CallbackInfo ci) {
-        boolean shouldSuppress = false;
-        if (TupenterModClient.isFiring) {
-            switch (TupenterConfig.INSTANCE.suppressFeedback) {
-                case ON:
-                    shouldSuppress = true;
-                    break;
-                case DYNAMIC:
-                    shouldSuppress = TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE;
-                    break;
-                case OFF:
-                default:
-                    shouldSuppress = false;
-                    break;
-            }
+        // #silent scripts suppress feedback for their whole run (plus grace)
+        boolean shouldSuppress = TupenterModClient.isScriptSilenceActive();
+
+        if (!shouldSuppress && TupenterModClient.isFiring) {
+            shouldSuppress = switch (TupenterConfig.INSTANCE.suppressFeedback) {
+                case ON -> true;
+                case DYNAMIC -> TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.TOGGLE;
+                case OFF -> false;
+            };
         }
 
         if (shouldSuppress) {

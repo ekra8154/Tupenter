@@ -1,6 +1,7 @@
 package net.tupenter.command;
 
 import net.tupenter.config.TupenterConfig;
+import net.tupenter.script.AliasDefinition;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -12,12 +13,13 @@ public final class CommandAliasManager {
     private CommandAliasManager() {
     }
 
-    public static Map<String, String> getAliasMap() {
-        LinkedHashMap<String, String> aliases = new LinkedHashMap<>();
+    /** Name → parsed definition (body + typed params). Invalid entries are skipped. */
+    public static Map<String, AliasDefinition> getAliasMap() {
+        LinkedHashMap<String, AliasDefinition> aliases = new LinkedHashMap<>();
         for (String definition : TupenterConfig.INSTANCE.aliases) {
             ParsedAlias parsed = parseDefinition(definition);
             if (parsed != null) {
-                aliases.put(parsed.name(), parsed.command());
+                aliases.put(parsed.name(), parsed.definition());
             }
         }
         return aliases;
@@ -31,7 +33,12 @@ public final class CommandAliasManager {
         String name = normalizeName(rawName);
         validateName(name);
 
-        String command = normalizeBody(rawCommand);
+        String command = rawCommand.trim();
+        if (command.isEmpty()) {
+            throw new IllegalArgumentException("Custom command body cannot be empty");
+        }
+        AliasDefinition.parse(command); // validates param declarations + body
+
         List<String> updated = new ArrayList<>();
         boolean replaced = false;
 
@@ -97,16 +104,10 @@ public final class CommandAliasManager {
             return null;
         }
 
-        String name;
         try {
-            name = normalizeName(rawName);
+            String name = normalizeName(rawName);
             validateName(name);
-        } catch (IllegalArgumentException ex) {
-            return null;
-        }
-
-        try {
-            return new ParsedAlias(name, normalizeBody(rawCommand));
+            return new ParsedAlias(name, AliasDefinition.parse(rawCommand));
         } catch (IllegalArgumentException ex) {
             return null;
         }
@@ -120,20 +121,13 @@ public final class CommandAliasManager {
         return name;
     }
 
-    public static String normalizeBody(String rawCommand) {
-        String command = rawCommand.trim();
-        if (command.isEmpty()) {
-            throw new IllegalArgumentException("Custom command body cannot be empty");
-        }
-        return command;
-    }
-
     private static void validateName(String name) {
         if (name.isEmpty()) {
             throw new IllegalArgumentException("Custom command name cannot be empty");
         }
 
-        if ("alias".equals(name) || "calc".equals(name) || "customcommand".equals(name)) {
+        if ("alias".equals(name) || "calc".equals(name) || "customcommand".equals(name) || "tupenter".equals(name) || "echo".equals(name)
+                || "list".equals(name) || "verbose".equals(name) || "help".equals(name) || "add".equals(name) || "remove".equals(name)) {
             throw new IllegalArgumentException("That custom command name is reserved");
         }
 
@@ -146,6 +140,6 @@ public final class CommandAliasManager {
         }
     }
 
-    public record ParsedAlias(String name, String command) {
+    public record ParsedAlias(String name, AliasDefinition definition) {
     }
 }
