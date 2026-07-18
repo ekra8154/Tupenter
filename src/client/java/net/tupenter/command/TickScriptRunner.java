@@ -14,7 +14,9 @@ import java.util.Set;
  * Runs the Mod Menu "Scripts" list every client tick — the walking
  * .mcfunction file. Semantics:
  *
- * - one line per script; lines starting with // are disabled
+ * - one line per script, armed PER WORLD (TupenterConfig.armedScriptLines):
+ *   enabled globals + the current world's own enabled scripts; an
+ *   unconfigured world runs nothing. // still comments a line out.
  * - a script is submitted each tick unless the concurrency cap refuses it
  *   (quietly — it just tries again next tick)
  * - tick scripts never touch resend history, and their #set notices are
@@ -34,7 +36,8 @@ public final class TickScriptRunner {
             return;
         }
 
-        List<String> scripts = TupenterConfig.INSTANCE.tickScripts;
+        // per-world arming: a world with no saved state runs NOTHING
+        List<String> scripts = TupenterConfig.INSTANCE.armedScriptLines(TupenterModClient.currentWorldKey());
         if (scripts.isEmpty()) {
             return;
         }

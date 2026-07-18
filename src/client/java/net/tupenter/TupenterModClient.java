@@ -195,6 +195,86 @@ public class TupenterModClient implements ClientModInitializer {
         return names;
     }
 
+    /**
+     * Identity of the world you're standing in, for per-world script states:
+     * "server:<address>" on multiplayer, "world:<level folder>" in
+     * singleplayer, null when not in a world.
+     */
+    public static String currentWorldKey() {
+        Minecraft client = Minecraft.getInstance();
+        if (client.getConnection() == null) {
+            return null;
+        }
+        net.minecraft.client.multiplayer.ServerData server = client.getCurrentServer();
+        if (server != null) {
+            return "server:" + server.ip.toLowerCase(java.util.Locale.ROOT);
+        }
+        net.minecraft.client.server.IntegratedServer integrated = client.getSingleplayerServer();
+        if (integrated != null) {
+            java.nio.file.Path root = integrated.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).normalize();
+            java.nio.file.Path folder = root.getFileName();
+            return "world:" + (folder != null ? folder.toString() : "unknown");
+        }
+        return null;
+    }
+
+    /** /tupenter scripts — what would run right here, right now. */
+    private static int runScriptsStatusCommand(CommandContext<FabricClientCommandSource> context) {
+        TupenterConfig config = TupenterConfig.INSTANCE;
+        String key = currentWorldKey();
+        TupenterConfig.WorldScriptState state = config.worldState(key);
+
+        context.getSource().sendFeedback(Component.literal(
+                "Tick scripts: master " + (config.tickScriptsEnabled ? "ON" : "OFF")
+                + " · world: " + (key != null ? key : "none")).withStyle(ChatFormatting.AQUA));
+
+        if (config.globalScripts.isEmpty()) {
+            context.getSource().sendFeedback(Component.literal(" (no global scripts defined)").withStyle(ChatFormatting.DARK_GRAY));
+        }
+        for (TupenterConfig.GlobalScript script : config.globalScripts) {
+            boolean armed = state != null && state.enabledGlobalIds.contains(script.id);
+            context.getSource().sendFeedback(Component.literal(
+                    (armed ? " ✔ " : " ✘ ") + scriptPreview(script.text) + " §8(global)")
+                    .withStyle(armed ? ChatFormatting.GREEN : ChatFormatting.DARK_GRAY));
+        }
+        if (state != null) {
+            for (TupenterConfig.WorldScript script : state.scripts) {
+                context.getSource().sendFeedback(Component.literal(
+                        (script.enabled ? " ✔ " : " ✘ ") + scriptPreview(script.text) + " §8(this world)")
+                        .withStyle(script.enabled ? ChatFormatting.GREEN : ChatFormatting.DARK_GRAY));
+            }
+        }
+
+        int armedCount = key == null ? 0 : config.armedScriptLines(key).size();
+        String verdict;
+        if (key == null) {
+            verdict = "Not in a world — nothing runs.";
+        } else if (!config.tickScriptsEnabled) {
+            verdict = armedCount + " armed here, but the master switch is OFF. /tupenter scripts on";
+        } else {
+            verdict = armedCount + " running here, 20x/second." + (armedCount == 0 ? " This world is safe." : "");
+        }
+        context.getSource().sendFeedback(Component.literal(verdict).withStyle(ChatFormatting.YELLOW));
+        return 1;
+    }
+
+    /** /tupenter scripts on|off — the master switch (arming stays per-world, in Mod Menu). */
+    private static int runScriptsMasterCommand(CommandContext<FabricClientCommandSource> context, boolean on) {
+        TupenterConfig.INSTANCE.tickScriptsEnabled = on;
+        TupenterConfig.save();
+        String key = currentWorldKey();
+        int armed = key == null ? 0 : TupenterConfig.INSTANCE.armedScriptLines(key).size();
+        context.getSource().sendFeedback(Component.literal(on
+                ? "Tick scripts master ON — " + armed + " script(s) armed in this world."
+                : "Tick scripts master OFF.").withStyle(ChatFormatting.YELLOW));
+        return 1;
+    }
+
+    private static String scriptPreview(String line) {
+        String single = line.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();
+        return single.length() > 50 ? single.substring(0, 50) + "…" : single;
+    }
+
     public static ScriptParser.Options parserOptions() {
         return new ScriptParser.Options(
                 TupenterConfig.INSTANCE.commandChainingEnabled,
@@ -450,6 +530,10 @@ public class TupenterModClient implements ClientModInitializer {
                                                 .withStyle(ChatFormatting.YELLOW));
                                         return 1;
                                     }))
+                            .then(literal("scripts")
+                                    .executes(TupenterModClient::runScriptsStatusCommand)
+                                    .then(literal("on").executes(context -> runScriptsMasterCommand(context, true)))
+                                    .then(literal("off").executes(context -> runScriptsMasterCommand(context, false))))
                             .then(literal("vars")
                                     .executes(context -> runVarsCommand(context, null))
                                     .then(argument("group", StringArgumentType.word())
@@ -538,6 +622,14 @@ public class TupenterModClient implements ClientModInitializer {
             }
             SCRIPT_EXECUTOR.abortAll();
             TICK_SCRIPTS.reset();
+
+            if (TupenterConfig.INSTANCE.tickScriptsMigrationNoticePending) {
+                TupenterConfig.INSTANCE.tickScriptsMigrationNoticePending = false;
+                TupenterConfig.save();
+                sendEnhancedParsingInfo("Tupenter: tick scripts are now armed per world — your scripts moved to the "
+                        + "Global section (all off everywhere, the safe default). Flip them on for this world in "
+                        + "Mod Menu → Tupenter → Scripts, or check /tupenter scripts.");
+            }
         });
 
 		// Load Config
@@ -1154,8 +1246,9 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7One-line scripts that run EVERY TICK (20x/s) while the master toggle is on — a walking mcfunction file.",
                     "§7Guard them:§r #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying) — unguarded commands flood multiplayer chat.",
                     "§7Live tuning:§r reference $maxy$ in a script, change it anytime with #set $maxy$ = 80",
-                    "§7Disable one script with its toggle (or // prefix) · errors report once and pause that script until edited",
-                    "§7Tick scripts never touch resend history and never print #set notices.",
+                    "§7Arming is PER WORLD:§r Global scripts are shared definitions you arm world-by-world; This World's scripts exist only in the world you're in. A world you never configured runs NOTHING — nukeOnDeath stays off on your survival server.",
+                    "§7Status:§r /tupenter scripts — what's armed right here · /tupenter scripts on|off — master switch",
+                    "§7Errors report once and pause that script until edited · tick scripts never touch resend history and never print #set notices.",
                     "§7Panic:§r /tupenter abort — also flips the master toggle off",
             };
             default -> new String[]{
@@ -1195,6 +1288,7 @@ public class TupenterModClient implements ClientModInitializer {
             case "tupenter" -> new String[]{
                     "§b/tupenter — mod control:",
                     "§7abort§r — stop all running scripts + the resend queue, and disable tick scripts (panic switch)",
+                    "§7scripts§r — what's armed in THIS world · §7scripts on|off§r — tick-script master switch",
                     "§7vars [group]§r — variables overview, or one group with live values",
                     "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
                     "§7dump [client|target] [path]§r — browse entity NBT (the data behind client.nbt.* / target.nbt.*)",

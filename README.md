@@ -166,8 +166,16 @@ body forwards to a command that accepts tags.
 Mod Menu → Tupenter → **Scripts**: one-line scripts that run **every tick**
 while the master toggle is on. They never touch resend history, `#set`
 notices are muted, and a broken script errors once and is skipped until
-edited. Prefix a line with `//` to disable it. `/tupenter abort` is the
-panic switch (it also flips the master toggle off).
+edited. `/tupenter abort` is the panic switch (it also flips the master
+toggle off).
+
+**Arming is per world.** The tab has two sections: **Global Scripts** are
+shared definitions whose On/Off toggle arms them *for the world you're in*
+(write nukeOnDeath once, arm it only where it's funny), and **This World's
+Scripts** belong to the current world/server alone — switch worlds and the
+section shows a different list. A world you never configured runs *nothing*,
+so joining your survival server with op is safe by default. `/tupenter
+scripts` shows what's armed where you stand.
 
 ```
 #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying)

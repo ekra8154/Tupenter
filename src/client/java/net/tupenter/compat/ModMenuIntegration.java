@@ -288,7 +288,9 @@ public class ModMenuIntegration implements ModMenuApi {
                 .build());
 
         // =====================================================================
-        // SCRIPTS TAB — tick scripts (the walking mcfunction file)
+        // SCRIPTS TAB — tick scripts, armed PER WORLD. Two sections:
+        // Global (shared definitions, per-world On/Off) and This world
+        // (definitions that exist only here). Unconfigured world = nothing runs.
         // =====================================================================
 
         scripts.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.tick_scripts_enabled"), TupenterConfig.INSTANCE.tickScriptsEnabled)
@@ -297,34 +299,71 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.tickScriptsEnabled = newValue)
                 .build());
 
+        scriptsWorldKey = TupenterModClient.currentWorldKey();
+        scripts.addEntry(entryBuilder.startTextDescription(scriptsWorldKey != null
+                ? Component.translatable("text.tupenter.scripts_world", scriptsWorldKey)
+                : Component.translatable("text.tupenter.scripts_no_world")).build());
         scripts.addEntry(entryBuilder.startTextDescription(Component.translatable("tooltip.tupenter.tick_scripts")).build());
 
-        // One row per script: [On/Off] [editable text] [✕]
-        tickScriptRows.clear();
-        for (String line : TupenterConfig.INSTANCE.tickScripts) {
-            String stripped = stripDisabledPrefix(line);
-            if (stripped.isEmpty()) {
-                continue;
-            }
-            TickScriptEntry row = new TickScriptEntry(stripped, !line.trim().startsWith("//"));
-            tickScriptRows.add(row);
-            scripts.addEntry(row);
-        }
+        TupenterConfig.WorldScriptState worldState = TupenterConfig.INSTANCE.worldState(scriptsWorldKey);
 
-        scripts.addEntry(new ImportButtonEntry(
+        // --- Global scripts: [On/Off for THIS world] [wrap] [text] [✕] ---
+        globalScriptRows.clear();
+        List<AbstractConfigListEntry> globalEntries = new ArrayList<>();
+        for (TupenterConfig.GlobalScript definition : TupenterConfig.INSTANCE.globalScripts) {
+            boolean enabledHere = worldState != null && worldState.enabledGlobalIds.contains(definition.id);
+            GlobalScriptEntry row = new GlobalScriptEntry(definition.id, definition.text, enabledHere, scriptsWorldKey == null);
+            globalScriptRows.add(row);
+            globalEntries.add(row);
+        }
+        globalEntries.add(new ImportButtonEntry(
                 Component.translatable("text.tupenter.add_script"),
                 Component.translatable("tooltip.tupenter.add_script"),
                 () -> {
-                    List<String> updated = collectTickScriptRows();
-                    updated.add("// /echo new script");
-                    TupenterConfig.INSTANCE.tickScripts = updated;
+                    commitScriptEdits();
+                    TupenterConfig.INSTANCE.globalScripts.add(new TupenterConfig.GlobalScript(
+                            TupenterConfig.GlobalScript.newId(), "/echo new script"));
                     Minecraft.getInstance().setScreen(createScreen(cachedParent));
                 }
         ));
+        scripts.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.global_scripts"), globalEntries)
+                .setExpanded(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.global_scripts"))
+                .build());
+
+        // --- This world's scripts: visible set swaps with the world ---
+        worldScriptRows.clear();
+        List<AbstractConfigListEntry> worldEntries = new ArrayList<>();
+        if (scriptsWorldKey == null) {
+            worldEntries.add(entryBuilder.startTextDescription(Component.translatable("text.tupenter.world_scripts_no_world")).build());
+        } else {
+            if (worldState != null) {
+                for (TupenterConfig.WorldScript script : worldState.scripts) {
+                    WorldScriptEntry row = new WorldScriptEntry(script.text, script.enabled);
+                    worldScriptRows.add(row);
+                    worldEntries.add(row);
+                }
+            }
+            worldEntries.add(new ImportButtonEntry(
+                    Component.translatable("text.tupenter.add_world_script"),
+                    Component.translatable("tooltip.tupenter.add_world_script"),
+                    () -> {
+                        commitScriptEdits();
+                        TupenterConfig.INSTANCE.worldStateOrCreate(scriptsWorldKey).scripts
+                                .add(new TupenterConfig.WorldScript("/echo new script", false));
+                        Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                    }
+            ));
+        }
+        scripts.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.world_scripts"), worldEntries)
+                .setExpanded(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.world_scripts"))
+                .build());
 
         java.util.Set<String> namesBeforeEdit = new java.util.HashSet<>(CommandAliasManager.getAliasMap().keySet());
         builder.setSavingRunnable(() -> {
-            TupenterConfig.INSTANCE.tickScripts = collectTickScriptRows();
+            commitScriptEdits();
+            TupenterConfig.INSTANCE.pruneWorldScriptStates();
             TupenterConfig.INSTANCE.aliases = collectCommandRows();
             TupenterConfig.save();
             TupenterModClient.resetTickScriptFaults(); // edited scripts get a fresh chance
@@ -342,8 +381,47 @@ public class ModMenuIntegration implements ModMenuApi {
         return builder.build();
     }
 
-    private static final List<TickScriptEntry> tickScriptRows = new ArrayList<>();
+    private static final List<GlobalScriptEntry> globalScriptRows = new ArrayList<>();
+    private static final List<WorldScriptEntry> worldScriptRows = new ArrayList<>();
     private static final List<CommandRowEntry> commandRows = new ArrayList<>();
+    /** World the Scripts tab was built for (null = opened outside a world). */
+    private static String scriptsWorldKey;
+
+    /**
+     * Pushes the current script rows into the live config: global definitions,
+     * plus — when the screen was opened in a world — that world's enable set
+     * and its own script list. Called on save and before any row-list rebuild.
+     */
+    private static void commitScriptEdits() {
+        List<TupenterConfig.GlobalScript> globals = new ArrayList<>();
+        for (GlobalScriptEntry row : globalScriptRows) {
+            if (row.deleted || row.text().isEmpty()) {
+                continue;
+            }
+            globals.add(new TupenterConfig.GlobalScript(row.id, row.text()));
+        }
+        TupenterConfig.INSTANCE.globalScripts = globals;
+
+        if (scriptsWorldKey == null) {
+            return; // arming is locked without a world; nothing per-world to write
+        }
+        TupenterConfig.WorldScriptState state = TupenterConfig.INSTANCE.worldStateOrCreate(scriptsWorldKey);
+        List<String> enabledIds = new ArrayList<>();
+        for (GlobalScriptEntry row : globalScriptRows) {
+            if (!row.deleted && !row.text().isEmpty() && row.enabled) {
+                enabledIds.add(row.id);
+            }
+        }
+        state.enabledGlobalIds = enabledIds;
+
+        List<TupenterConfig.WorldScript> worldScripts = new ArrayList<>();
+        for (WorldScriptEntry row : worldScriptRows) {
+            if (!row.deleted && !row.text().isEmpty()) {
+                worldScripts.add(new TupenterConfig.WorldScript(row.text(), row.enabled));
+            }
+        }
+        state.scripts = worldScripts;
+    }
 
     private static List<String> collectCommandRows() {
         List<String> lines = new ArrayList<>();
@@ -550,50 +628,41 @@ public class ModMenuIntegration implements ModMenuApi {
         }
     }
 
-    private static List<String> collectTickScriptRows() {
-        List<String> lines = new ArrayList<>();
-        for (TickScriptEntry row : tickScriptRows) {
-            if (row.deleted) {
-                continue;
-            }
-            String text = row.text();
-            if (text.isEmpty()) {
-                continue;
-            }
-            lines.add(row.enabled ? text : "// " + text);
-        }
-        return lines;
-    }
-
-    private static String stripDisabledPrefix(String line) {
-        String trimmed = line.trim();
-        return trimmed.startsWith("//") ? trimmed.substring(2).trim() : trimmed;
-    }
-
-    /** One tick script as a row: On/Off toggle, wrap toggle, edit box, delete. */
-    private static class TickScriptEntry extends WrapRowEntry {
+    /**
+     * A tick-script row: [On/Off] [wrap] [edit box] [✕]. The On/Off arms the
+     * script for the world the screen was opened in; outside a world the
+     * toggle locks ("—") — text edits still work, arming doesn't.
+     */
+    private abstract static class ScriptRowEntry extends WrapRowEntry {
         private final Button toggleButton;
         private final boolean initialEnabled;
-        private boolean enabled;
+        private final boolean toggleLocked;
+        boolean enabled;
 
-        TickScriptEntry(String text, boolean enabled) {
+        ScriptRowEntry(String text, boolean enabled, boolean toggleLocked) {
             super(text, Component.translatable("tooltip.tupenter.delete_script"), () -> {
-                TupenterConfig.INSTANCE.tickScripts = collectTickScriptRows();
+                commitScriptEdits();
                 Minecraft.getInstance().setScreen(createScreen(cachedParent));
             });
             this.initialEnabled = enabled;
             this.enabled = enabled;
+            this.toggleLocked = toggleLocked;
 
             this.toggleButton = Button.builder(toggleLabel(), button -> {
                         this.enabled = !this.enabled;
                         button.setMessage(toggleLabel());
                     })
                     .bounds(0, 0, 40, 20)
-                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.tick_script_toggle")))
+                    .tooltip(Tooltip.create(Component.translatable(
+                            toggleLocked ? "tooltip.tupenter.tick_script_toggle_locked" : "tooltip.tupenter.tick_script_toggle")))
                     .build();
+            this.toggleButton.active = !toggleLocked;
         }
 
         private Component toggleLabel() {
+            if (toggleLocked) {
+                return Component.literal("—").withStyle(net.minecraft.ChatFormatting.DARK_GRAY);
+            }
             return enabled
                     ? Component.literal("On").withStyle(net.minecraft.ChatFormatting.GREEN)
                     : Component.literal("Off").withStyle(net.minecraft.ChatFormatting.RED);
@@ -607,6 +676,23 @@ public class ModMenuIntegration implements ModMenuApi {
         @Override
         public boolean isEdited() {
             return super.isEdited() || enabled != initialEnabled;
+        }
+    }
+
+    /** Shared definition; the toggle is this world's arming state for it. */
+    private static class GlobalScriptEntry extends ScriptRowEntry {
+        final String id;
+
+        GlobalScriptEntry(String id, String text, boolean enabledHere, boolean toggleLocked) {
+            super(text, enabledHere, toggleLocked);
+            this.id = id;
+        }
+    }
+
+    /** A script that exists only in the world the screen was opened in. */
+    private static class WorldScriptEntry extends ScriptRowEntry {
+        WorldScriptEntry(String text, boolean enabled) {
+            super(text, enabled, false);
         }
     }
 

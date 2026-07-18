@@ -39,7 +39,15 @@ public class TupenterConfig {
     public int maxLoopIterations = 100;
     public List<String> persistentVariables = new ArrayList<>();
     public boolean tickScriptsEnabled = false; // deliberately opt-in: tick scripts can spam chat hard
+    /** Pre-per-world flat list; migrated into globalScripts on load. */
+    @Deprecated
     public List<String> tickScripts = new ArrayList<>();
+    /** Script definitions shared across worlds; ARMED per world via WorldScriptState.enabledGlobalIds. */
+    public List<GlobalScript> globalScripts = new ArrayList<>();
+    /** worldKey ("server:<ip>" / "world:<folder>") -> that world's script state. Unknown world = nothing runs. */
+    public java.util.Map<String, WorldScriptState> worldScripts = new java.util.LinkedHashMap<>();
+    /** One-time chat notice after the tickScripts -> per-world migration. */
+    public boolean tickScriptsMigrationNoticePending = false;
     public NumberMathMode numberMathMode = NumberMathMode.AUTO_DETECT;
     public List<String> aliases = new ArrayList<>();
 
@@ -81,6 +89,87 @@ public class TupenterConfig {
         INTERRUPT
     }
 
+    /** A tick-script definition shared across worlds; the id is what per-world enable states point at. */
+    public static class GlobalScript {
+        public String id = "";
+        public String text = "";
+
+        public GlobalScript() {
+        }
+
+        public GlobalScript(String id, String text) {
+            this.id = id;
+            this.text = text;
+        }
+
+        public static String newId() {
+            return java.util.UUID.randomUUID().toString().substring(0, 8);
+        }
+    }
+
+    /** Everything script-related that belongs to one world/server. */
+    public static class WorldScriptState {
+        public List<String> enabledGlobalIds = new ArrayList<>();
+        public List<WorldScript> scripts = new ArrayList<>();
+
+        public boolean isEmpty() {
+            return enabledGlobalIds.isEmpty() && scripts.isEmpty();
+        }
+    }
+
+    /** A tick script that exists only in one world. */
+    public static class WorldScript {
+        public String text = "";
+        public boolean enabled = false;
+
+        public WorldScript() {
+        }
+
+        public WorldScript(String text, boolean enabled) {
+            this.text = text;
+            this.enabled = enabled;
+        }
+    }
+
+    /** Read-only view; null-safe for worlds with no saved state. */
+    public WorldScriptState worldState(String worldKey) {
+        return worldKey == null ? null : worldScripts.get(worldKey);
+    }
+
+    public WorldScriptState worldStateOrCreate(String worldKey) {
+        return worldScripts.computeIfAbsent(worldKey, key -> new WorldScriptState());
+    }
+
+    /** The script lines armed for this world: enabled globals + the world's own enabled scripts. */
+    public List<String> armedScriptLines(String worldKey) {
+        List<String> lines = new ArrayList<>();
+        WorldScriptState state = worldState(worldKey);
+        if (state == null) {
+            return lines;
+        }
+        for (GlobalScript script : globalScripts) {
+            if (state.enabledGlobalIds.contains(script.id)) {
+                lines.add(script.text);
+            }
+        }
+        for (WorldScript script : state.scripts) {
+            if (script.enabled) {
+                lines.add(script.text);
+            }
+        }
+        return lines;
+    }
+
+    /** Drops enable pointers to deleted globals and empty world states. */
+    public void pruneWorldScriptStates() {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (GlobalScript script : globalScripts) {
+            ids.add(script.id);
+        }
+        worldScripts.values().forEach(state -> state.enabledGlobalIds.retainAll(ids));
+        worldScripts.values().removeIf(WorldScriptState::isEmpty);
+    }
+
     public static void load() {
         File configFile = new File(FabricLoader.getInstance().getConfigDir().toFile(), "tupenter.json");
         if (configFile.exists()) {
@@ -109,6 +198,10 @@ public class TupenterConfig {
                     INSTANCE.persistentVariables = loaded.persistentVariables != null ? loaded.persistentVariables : new ArrayList<>();
                     INSTANCE.tickScriptsEnabled = loaded.tickScriptsEnabled;
                     INSTANCE.tickScripts = loaded.tickScripts != null ? loaded.tickScripts : new ArrayList<>();
+                    INSTANCE.globalScripts = loaded.globalScripts != null ? loaded.globalScripts : new ArrayList<>();
+                    INSTANCE.worldScripts = loaded.worldScripts != null ? loaded.worldScripts : new java.util.LinkedHashMap<>();
+                    INSTANCE.tickScriptsMigrationNoticePending = loaded.tickScriptsMigrationNoticePending;
+                    migrateTickScripts();
                     INSTANCE.numberMathMode = loaded.numberMathMode != null ? loaded.numberMathMode : NumberMathMode.AUTO_DETECT;
                     INSTANCE.aliases = loaded.aliases != null ? loaded.aliases : new ArrayList<>();
                     INSTANCE.maxCommandsPerTick = clamp(loaded.maxCommandsPerTick, 1, 512, 16);
@@ -123,6 +216,47 @@ public class TupenterConfig {
             }
         } else {
             save();
+        }
+    }
+
+    /**
+     * Pre-per-world configs stored scripts as a flat list ("//"-prefixed =
+     * disabled). They become global definitions armed in NO world — the safe
+     * default — and a one-time notice explains where they went. Also repairs
+     * missing ids and null state fields from hand-edited files.
+     */
+    private static void migrateTickScripts() {
+        if (!INSTANCE.tickScripts.isEmpty()) {
+            for (String line : INSTANCE.tickScripts) {
+                String text = line.trim();
+                if (text.startsWith("//")) {
+                    text = text.substring(2).trim();
+                }
+                if (!text.isEmpty()) {
+                    INSTANCE.globalScripts.add(new GlobalScript(GlobalScript.newId(), text));
+                }
+            }
+            INSTANCE.tickScripts = new ArrayList<>();
+            INSTANCE.tickScriptsMigrationNoticePending = true;
+            save();
+        }
+        for (GlobalScript script : INSTANCE.globalScripts) {
+            if (script.id == null || script.id.isEmpty()) {
+                script.id = GlobalScript.newId();
+            }
+            if (script.text == null) {
+                script.text = "";
+            }
+        }
+        INSTANCE.worldScripts.values().removeIf(java.util.Objects::isNull);
+        for (WorldScriptState state : INSTANCE.worldScripts.values()) {
+            if (state.enabledGlobalIds == null) {
+                state.enabledGlobalIds = new ArrayList<>();
+            }
+            if (state.scripts == null) {
+                state.scripts = new ArrayList<>();
+            }
+            state.scripts.removeIf(script -> script == null || script.text == null || script.text.trim().isEmpty());
         }
     }
 
