@@ -25,6 +25,8 @@
   "text.tupenter.scripts_world": "Editing script states for: %s",
   "text.tupenter.scripts_no_world": "Not in a world — arming toggles are locked (each world keeps its own). Global script text can still be edited.",
   "text.tupenter.world_scripts_no_world": "Join a world or server to see and edit its scripts.",
+  "option.tupenter.chat_highlighting": "Chat Input Highlighting",
+  "tooltip.tupenter.chat_highlighting": "Colors Tupenter syntax as you type: each && segment is styled by its statement form (commands get vanilla-style argument colors from a per-segment parse, #directives go gold with dimmed group parens, bare chat is yellow), $...$ markers are aqua, && separators gold. Also re-roots autocomplete so tab-completion works INSIDE later chain segments: /time set day && /weather cl<tab>. Commands containing $...$ markers no longer show as red errors.",
   "option.tupenter.tick_scripts": "Tick Scripts",
   "tooltip.tupenter.tick_scripts": "One script per row — statement forms apply like custom command bodies: /command, #directive, bare text = chat (20x/second — you have been warned). Arming is PER WORLD: Global scripts are shared definitions armed world-by-world, This World's scripts exist only here, and a world you never configured runs nothing. Tick scripts never touch your resend history and never print #set notices. A script with an error reports once and is skipped until you edit the list. Examples: #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying) — or — #if ($client.y$ > $maxy$) (/tp @s ~ $maxy$ ~) with $maxy$ set via #set.",
 

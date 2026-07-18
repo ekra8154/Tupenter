@@ -166,6 +166,12 @@ public final class ScriptParser {
         return parseSequence(work, originalLine, prefixes.silent(), prefixes.history(), options, true);
     }
 
+    /** True when a chat line starts with a word Tupenter treats as a directive ("#silent /...", "#repeat ..."). */
+    public static boolean isDirectiveLine(String line) {
+        String trimmed = line.trim();
+        return trimmed.startsWith("#") && isKnownStatementWord(firstWord(trimmed).toLowerCase(Locale.ROOT));
+    }
+
     private static boolean isKnownStatementWord(String word) {
         return STATEMENT_DIRECTIVES.contains(word)
                 || SCANNER_DIRECTIVES.contains(word)

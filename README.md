@@ -94,6 +94,16 @@ Groups nest and can contain `&&` chains. Every loop is capped
 `Max Commands Per Tick`, default 16, as kick protection). `/tupenter abort`
 stops everything.
 
+### Chat-bar highlighting
+
+The chat input understands Tupenter while you type (toggle: *Chat Input
+Highlighting*): every `&&` segment is styled by its statement form — commands
+get vanilla-style per-argument colors from their own parse, `#directives`
+turn gold with dimmed group parens, bare chat goes yellow — `$...$` markers
+are aqua, and `&&` separators gold. Autocomplete is chain-aware too:
+`/time set day && /weather cl<tab>` completes the *second* command, and
+commands containing `$...$` markers no longer light up as errors.
+
 ### Silence, privacy, local output
 
 ```
