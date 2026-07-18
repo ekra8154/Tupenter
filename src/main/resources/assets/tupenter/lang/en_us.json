@@ -106,7 +106,11 @@
   "option.tupenter.silent_directive": "#silent Directive",
   "tooltip.tupenter.silent_directive": "Hides command feedback on your own screen. Start a line with #silent to silence all of it, or wrap part of a chain: #repeat 5 (#silent (/give @s stick) && /say here!). Also suppresses #set notices. Works in chat, as a command, and inside custom command bodies. The server still processes commands normally — other players are unaffected. Related: #norecord at line start keeps a line out of the resend history; #echo shows text only to you.",
   "option.tupenter.aliases": "Saved Custom Commands",
-  "tooltip.tupenter.aliases": "Add custom commands in the format name = body. Bodies can include commands, chat messages, && chains, $...$ expressions, directives (#repeat, #if, #silent, ...), or other custom commands. Declare typed parameters before the body to get real autocomplete: smite = <target:player> /execute at $target$ run summon lightning_bolt — then /smite Steve. Types: int, float, word, text (greedy, last only), player. Reference params as $name$ or $1$..$n$. Commands added via /customcommand work immediately; entries edited here need a relaunch to update autocomplete.",
+  "tooltip.tupenter.aliases": "Custom commands in the format name = body. Bodies can include commands, chat messages, && chains, $...$ expressions, directives (#repeat, #if, #silent, ...), or other custom commands. Declare typed parameters before the body for real autocomplete — see /customcommand help for the full type list, optional =default params, and examples. Reference params as $name$ or $1$..$n$. Edits here and via /customcommand both take effect immediately.",
+  "text.tupenter.add_command": "+ Add Command",
+  "tooltip.tupenter.add_command": "Adds a new command row. WARNING: this reloads the screen — command text edits are kept, but unsaved changes in other tabs are discarded.",
+  "tooltip.tupenter.delete_command": "Delete this custom command (takes effect immediately).",
+  "tooltip.tupenter.wrap_toggle": "Toggle a larger editor with word wrap. You can use newlines to format long commands — they're kept here as formatting, but the command still runs as a single line. Collapsing turns newlines into spaces.",
 
   "title.tupenter.import_confirm": "Import History?",
   "message.tupenter.import_confirm": "This will reload the screen and discard any other unsaved changes. Are you sure?",

@@ -108,10 +108,32 @@ public final class CommandAliasManager {
         return name + " = " + command;
     }
 
+    /**
+     * The raw body text of an alias as a single chat-safe line, or null if it
+     * doesn't exist. Newlines (Mod Menu formatting) collapse to spaces.
+     */
+    public static String getRawCommand(String rawName) {
+        String name = normalizeName(rawName);
+        for (String definition : TupenterConfig.INSTANCE.aliases) {
+            ParsedAlias parsed = parseDefinition(definition);
+            if (parsed != null && parsed.name().equals(name)) {
+                int separator = definition.indexOf('=');
+                return toSingleLine(definition.substring(separator + 1)).trim();
+            }
+        }
+        return null;
+    }
+
+    /** Newlines in stored definitions are formatting only — runtime always sees one line. */
+    private static String toSingleLine(String text) {
+        return text.replaceAll("\\s*[\\r\\n]+\\s*", " ");
+    }
+
     public static ParsedAlias parseDefinition(String definition) {
         if (definition == null) {
             return null;
         }
+        definition = toSingleLine(definition);
 
         int separator = definition.indexOf('=');
         if (separator < 0) {

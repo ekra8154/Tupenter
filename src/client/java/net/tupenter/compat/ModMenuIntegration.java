@@ -169,12 +169,6 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.permanentMessages = newValue)
                 .build();
 
-        StringListListEntry aliasesEntry = entryBuilder.startStrList(Component.translatable("option.tupenter.aliases"), CommandAliasManager.getAliasDefinitions())
-                .setDefaultValue(new ArrayList<>())
-                .setTooltip(Component.translatable("tooltip.tupenter.aliases"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.aliases = newValue)
-                .build();
-
         AbstractConfigListEntry<?> enhancedCommandParsingEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.enhanced_command_parsing"), TupenterConfig.INSTANCE.enhancedCommandParsingEnabled)
                 .setDefaultValue(true)
                 .setTooltip(Component.translatable("tooltip.tupenter.enhanced_command_parsing"))
@@ -261,7 +255,32 @@ public class ModMenuIntegration implements ModMenuApi {
                 List.of(maxCommandsPerTickEntry, maxCommandsPerScriptEntry, maxConcurrentScriptsEntry, maxLoopIterationsEntry))
                 .setExpanded(false)
                 .build());
-        aliases.addEntry(aliasesEntry);
+        // =====================================================================
+        // CUSTOM COMMANDS TAB — one row per definition: [wrap] [name = body] [✕]
+        // =====================================================================
+
+        aliases.addEntry(entryBuilder.startTextDescription(Component.translatable("tooltip.tupenter.aliases")).build());
+
+        commandRows.clear();
+        for (String definition : CommandAliasManager.getAliasDefinitions()) {
+            if (definition.trim().isEmpty()) {
+                continue;
+            }
+            CommandRowEntry row = new CommandRowEntry(definition);
+            commandRows.add(row);
+            aliases.addEntry(row);
+        }
+
+        aliases.addEntry(new ImportButtonEntry(
+                Component.translatable("text.tupenter.add_command"),
+                Component.translatable("tooltip.tupenter.add_command"),
+                () -> {
+                    List<String> updated = collectCommandRows();
+                    updated.add("newcommand = /echo edit me");
+                    TupenterConfig.INSTANCE.aliases = updated;
+                    Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                }
+        ));
 
         general.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.advanced"),
                 List.of(historyDepthEntry, resendDelayEntry, batchModeEntry, resendAmountEntry, resendOrderEntry))
@@ -303,16 +322,183 @@ public class ModMenuIntegration implements ModMenuApi {
                 }
         ));
 
+        java.util.Set<String> namesBeforeEdit = new java.util.HashSet<>(CommandAliasManager.getAliasMap().keySet());
         builder.setSavingRunnable(() -> {
             TupenterConfig.INSTANCE.tickScripts = collectTickScriptRows();
+            TupenterConfig.INSTANCE.aliases = collectCommandRows();
             TupenterConfig.save();
             TupenterModClient.resetTickScriptFaults(); // edited scripts get a fresh chance
+
+            // keep the live Brigadier trees in sync with the edited list
+            java.util.Map<String, net.tupenter.script.AliasDefinition> after = CommandAliasManager.getAliasMap();
+            for (String old : namesBeforeEdit) {
+                if (!after.containsKey(old)) {
+                    net.tupenter.command.ClientCommandRegistrar.unregisterDynamic(old);
+                }
+            }
+            after.forEach(net.tupenter.command.ClientCommandRegistrar::registerDynamic);
         });
 
         return builder.build();
     }
 
     private static final List<TickScriptEntry> tickScriptRows = new ArrayList<>();
+    private static final List<CommandRowEntry> commandRows = new ArrayList<>();
+
+    private static List<String> collectCommandRows() {
+        List<String> lines = new ArrayList<>();
+        for (CommandRowEntry row : commandRows) {
+            if (row.deleted) {
+                continue;
+            }
+            String text = row.text();
+            if (!text.isEmpty()) {
+                lines.add(text);
+            }
+        }
+        return lines;
+    }
+
+    /**
+     * One custom command as a row: wrap toggle, definition box, delete button.
+     * Expanded rows use a wrapping multi-line editor; newlines are stored as
+     * formatting but the command always runs as a single line.
+     */
+    private static class CommandRowEntry extends AbstractConfigListEntry<String> {
+        private static final int BOX_HEIGHT_EXPANDED = 62;
+        private final Button wrapButton;
+        private final Button deleteButton;
+        private final net.minecraft.client.gui.components.EditBox singleBox;
+        private net.minecraft.client.gui.components.MultiLineEditBox multiBox; // built lazily at the rendered width
+        private String multiValue; // survives width-rebuilds of multiBox
+        private final String initialText;
+        private boolean expanded;
+        private boolean deleted;
+
+        CommandRowEntry(String definition) {
+            super(Component.empty(), false);
+            this.initialText = definition.trim();
+            this.expanded = definition.contains("\n");
+            this.multiValue = definition;
+
+            this.singleBox = new net.minecraft.client.gui.components.EditBox(
+                    Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty());
+            this.singleBox.setMaxLength(4000);
+            if (!expanded) {
+                this.singleBox.setValue(definition);
+            }
+
+            this.wrapButton = Button.builder(wrapLabel(), button -> toggleWrap())
+                    .bounds(0, 0, 20, 20)
+                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.wrap_toggle")))
+                    .build();
+
+            this.deleteButton = Button.builder(Component.literal("✕").withStyle(net.minecraft.ChatFormatting.RED), button -> {
+                        this.deleted = true;
+                        TupenterConfig.INSTANCE.aliases = collectCommandRows();
+                        Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                    })
+                    .bounds(0, 0, 20, 20)
+                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.delete_command")))
+                    .build();
+        }
+
+        private Component wrapLabel() {
+            return Component.literal(expanded ? "▾" : "▸");
+        }
+
+        private void toggleWrap() {
+            if (expanded) {
+                singleBox.setValue(currentMultiValue().replaceAll("\\s*[\\r\\n]+\\s*", " ").trim());
+            } else {
+                multiValue = singleBox.getValue();
+                if (multiBox != null) {
+                    multiBox.setValue(multiValue);
+                }
+            }
+            expanded = !expanded;
+            wrapButton.setMessage(wrapLabel());
+        }
+
+        private String currentMultiValue() {
+            return multiBox != null ? multiBox.getValue() : multiValue;
+        }
+
+        /** The multi-line editor wraps at build width, so rebuild when the row width changes. */
+        private net.minecraft.client.gui.components.MultiLineEditBox ensureMultiBox(int width) {
+            if (multiBox == null || multiBox.getWidth() != width) {
+                String value = currentMultiValue();
+                multiBox = net.minecraft.client.gui.components.MultiLineEditBox.builder()
+                        .build(Minecraft.getInstance().font, width, BOX_HEIGHT_EXPANDED, Component.empty());
+                multiBox.setCharacterLimit(4000);
+                multiBox.setValue(value);
+                multiValue = value;
+            }
+            return multiBox;
+        }
+
+        String text() {
+            return (expanded ? currentMultiValue() : singleBox.getValue()).trim();
+        }
+
+        @Override
+        public int getItemHeight() {
+            return expanded ? BOX_HEIGHT_EXPANDED + 6 : 24;
+        }
+
+        @Override
+        public void render(GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
+            wrapButton.setX(x);
+            wrapButton.setY(y);
+            wrapButton.render(graphics, mouseX, mouseY, partialTick);
+
+            int boxWidth = entryWidth - 24 - 24;
+            if (expanded) {
+                net.minecraft.client.gui.components.MultiLineEditBox box = ensureMultiBox(boxWidth);
+                box.setX(x + 24);
+                box.setY(y);
+                box.render(graphics, mouseX, mouseY, partialTick);
+            } else {
+                singleBox.setX(x + 24);
+                singleBox.setY(y + 1);
+                singleBox.setWidth(boxWidth);
+                singleBox.render(graphics, mouseX, mouseY, partialTick);
+            }
+
+            deleteButton.setX(x + entryWidth - 20);
+            deleteButton.setY(y);
+            deleteButton.render(graphics, mouseX, mouseY, partialTick);
+        }
+
+        @Override
+        public boolean isEdited() {
+            return deleted || !text().equals(initialText);
+        }
+
+        @Override
+        public List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children() {
+            return List.of(wrapButton, expanded && multiBox != null ? multiBox : singleBox, deleteButton);
+        }
+
+        @Override
+        public List<? extends net.minecraft.client.gui.narration.NarratableEntry> narratables() {
+            return List.of(wrapButton, expanded && multiBox != null ? multiBox : singleBox, deleteButton);
+        }
+
+        @Override
+        public String getValue() {
+            return text();
+        }
+
+        @Override
+        public Optional<String> getDefaultValue() {
+            return Optional.empty();
+        }
+
+        @Override
+        public void save() {
+        }
+    }
 
     private static List<String> collectTickScriptRows() {
         List<String> lines = new ArrayList<>();

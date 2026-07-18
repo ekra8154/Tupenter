@@ -396,12 +396,14 @@ public class TupenterModClient implements ClientModInitializer {
                     dispatcher.register(literal("customcommand")
                             .then(literal("add")
                                     .then(argument("name", StringArgumentType.word())
+                                            .executes(context -> runAliasPrefillCommand(context, true))
                                             .then(argument("command", StringArgumentType.greedyString())
                                                     .executes(TupenterModClient::runAliasAddCommand))))
                             .then(literal("update")
                                     .then(argument("name", StringArgumentType.word())
                                             .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                                                     CommandAliasManager.getAliasMap().keySet(), b))
+                                            .executes(context -> runAliasPrefillCommand(context, false))
                                             .then(argument("command", StringArgumentType.greedyString())
                                                     .executes(TupenterModClient::runAliasUpdateCommand))))
                             .then(literal("remove")
@@ -766,6 +768,33 @@ public class TupenterModClient implements ClientModInitializer {
         }
     }
 
+    /** /customcommand add|update <name> with no body: offer the existing definition for editing. */
+    private static int runAliasPrefillCommand(CommandContext<FabricClientCommandSource> context, boolean fromAdd) {
+        String normalized = CommandAliasManager.normalizeName(StringArgumentType.getString(context, "name"));
+        String raw = CommandAliasManager.getRawCommand(normalized);
+        if (raw == null) {
+            if (fromAdd) {
+                context.getSource().sendError(Component.literal("/customcommand add needs a body: /customcommand add " + normalized + " <body> — see /customcommand help"));
+            } else {
+                context.getSource().sendError(Component.literal("/" + normalized + " doesn't exist — create it with /customcommand add " + normalized + " <body>"));
+            }
+            return 0;
+        }
+
+        String suggested = "/customcommand update " + normalized + " " + raw;
+        net.minecraft.network.chat.MutableComponent message = fromAdd
+                ? Component.literal("/" + normalized + " already exists. ").withStyle(ChatFormatting.RED)
+                        .append(suggestLink("[edit it]", suggested))
+                : Component.literal("Edit /" + normalized + ": ").withStyle(ChatFormatting.YELLOW)
+                        .append(suggestLink("[put it in your chat bar]", suggested));
+        if (suggested.length() > 256) {
+            message.append(Component.literal(" (over 256 chars — the chat bar will cut it off; edit long commands in Mod Menu)")
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        context.getSource().sendFeedback(message);
+        return 1;
+    }
+
     /** Clickable chat link that puts the given command into the chat bar. */
     private static Component suggestLink(String label, String suggestedCommand) {
         return Component.literal(label).withStyle(style -> style
@@ -1082,7 +1111,9 @@ public class TupenterModClient implements ClientModInitializer {
         }
         context.getSource().sendFeedback(Component.literal("/").withStyle(ChatFormatting.GRAY)
                 .append(Component.literal(name).withStyle(ChatFormatting.AQUA))
-                .append(Component.literal(definition.params().isEmpty() ? "" : " " + definition.declarationPrefix().trim()).withStyle(ChatFormatting.YELLOW)));
+                .append(Component.literal(definition.params().isEmpty() ? "" : " " + definition.declarationPrefix().trim()).withStyle(ChatFormatting.YELLOW))
+                .append(Component.literal("  "))
+                .append(suggestLink("[edit]", "/customcommand update " + name + " " + CommandAliasManager.getRawCommand(name))));
         context.getSource().sendFeedback(Component.literal(" body: ").withStyle(ChatFormatting.DARK_GRAY)
                 .append(Component.literal(definition.body()).withStyle(ChatFormatting.WHITE)));
         return 1;
