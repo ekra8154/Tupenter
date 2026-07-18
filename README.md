@@ -48,6 +48,16 @@ Exact rational math (no float drift), `int(...)`/`float(...)` casts,
 sign. **Auto-detect mode** also solves bare math like `32+4` outside NBT
 braces. A bad `$...$` expression shows a local error and sends nothing.
 
+Tag sets: `blockset("#minecraft:logs")` / `itemset("#c:ores")` resolve a
+block/item tag to its member list through the live connection's registries
+(the leading `#` is optional, Fabric `c:` convention tags included), and
+`rand(list)` picks one member:
+
+```
+/setblock ~ ~-1 ~ $rand(blockset("#minecraft:logs"))$
+#foreach $b$ in blockset("#minecraft:wool") (/give @s $b$)
+```
+
 ### Variables
 
 ```

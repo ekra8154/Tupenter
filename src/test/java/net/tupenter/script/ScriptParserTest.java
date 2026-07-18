@@ -40,6 +40,12 @@ class ScriptParserTest {
                 maxLoopIterations, 1000, new Random(42), store, store);
     }
 
+    private static ScriptParser.Options optionsWithTags(TagResolver tags) {
+        SessionVariableStore store = new SessionVariableStore();
+        return new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, aliasMap(Map.of()),
+                true, true, true, true, 100, 1000, new Random(42), store, store, tags);
+    }
+
     private static ScriptParser.ParseResult parse(String command) {
         return ScriptParser.parse(command, options(Map.of()));
     }
@@ -458,6 +464,28 @@ class ScriptParserTest {
         ScriptParser.ParseResult result = parse("giveme minecraft:stone[custom_name='\"hi there\"'] 3", aliases);
         assertNull(result.error());
         assertEquals(List.of("give @s minecraft:stone[custom_name='\"hi there\"'] 3"), contents(result));
+    }
+
+    @Test
+    void tagSetsWorkInMarkersAndForeach() {
+        TagResolver tags = (kind, tagId) -> kind == TagResolver.TagKind.BLOCK && tagId.equals("minecraft:logs")
+                ? List.of("minecraft:oak_log", "minecraft:birch_log")
+                : List.of();
+
+        ScriptParser.ParseResult picked = ScriptParser.parse(
+                "setblock ~ ~ ~ $rand(blockset(\"#minecraft:logs\"))$", optionsWithTags(tags));
+        assertNull(picked.error());
+        String content = contents(picked).get(0);
+        assertTrue(content.equals("setblock ~ ~ ~ minecraft:oak_log")
+                || content.equals("setblock ~ ~ ~ minecraft:birch_log"), content);
+
+        ScriptParser.ParseResult looped = ScriptParser.parse(
+                "#foreach $b$ in blockset(\"#minecraft:logs\") (/say $b$)", optionsWithTags(tags));
+        assertNull(looped.error());
+        assertEquals(List.of("say minecraft:oak_log", "say minecraft:birch_log"), contents(looped));
+
+        // without a live world the functions fail with a clear error, not silently
+        assertNotNull(ScriptParser.parse("say $rand(blockset(\"#minecraft:logs\"))$", options(Map.of())).error());
     }
 
     @Test

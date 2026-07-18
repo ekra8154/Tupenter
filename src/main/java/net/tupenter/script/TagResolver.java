@@ -1,0 +1,28 @@
+package net.tupenter.script;
+
+import java.util.List;
+
+/**
+ * Resolves a registry tag (e.g. {@code minecraft:logs}, {@code c:ores}) to
+ * its member ids for the {@code blockset(...)} / {@code itemset(...)}
+ * expression functions. The client backs this with the live connection's
+ * synced registries; tests stub it; {@link #NONE} means no lookup available.
+ */
+@FunctionalInterface
+public interface TagResolver {
+
+    /** Tag lookup unavailable (no live world). */
+    TagResolver NONE = (kind, tagId) -> null;
+
+    enum TagKind {
+        ITEM,
+        BLOCK
+    }
+
+    /**
+     * @param tagId namespaced tag id, without the leading '#'
+     * @return member ids; empty when the tag is unknown or empty; null when
+     *         tag lookup is unavailable (not in-game)
+     */
+    List<String> resolve(TagKind kind, String tagId);
+}

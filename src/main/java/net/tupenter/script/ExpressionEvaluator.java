@@ -350,6 +350,8 @@ final class ExpressionEvaluator {
                 case "sqrt" -> sqrt(args);
                 case "rand" -> rand(args);
                 case "range" -> range(args);
+                case "itemset" -> tagMembers("itemset", TagResolver.TagKind.ITEM, args);
+                case "blockset" -> tagMembers("blockset", TagResolver.TagKind.BLOCK, args);
                 default -> throw new ExpressionException("Unknown function: " + identifier);
             };
         }
@@ -472,8 +474,18 @@ final class ExpressionEvaluator {
         }
 
         private Value rand(List<Value> args) {
+            // rand(list) — uniform pick, composes with blockset()/itemset()/range()
+            if (args.size() == 1) {
+                if (!(args.get(0) instanceof Value.ListValue list)) {
+                    throw new ExpressionException("rand(x) with one argument takes a list, e.g. rand(blockset(\"#minecraft:logs\"))");
+                }
+                if (list.values().isEmpty()) {
+                    throw new ExpressionException("rand(list): the list is empty");
+                }
+                return list.values().get(context.random().nextInt(list.values().size()));
+            }
             if (args.size() != 2) {
-                throw new ExpressionException("rand(min, max) takes exactly two arguments");
+                throw new ExpressionException("rand(min, max) or rand(list)");
             }
             BigInteger min = asNumber(args.get(0), "rand min").wholeValue();
             BigInteger max = asNumber(args.get(1), "rand max").wholeValue();
@@ -491,6 +503,38 @@ final class ExpressionEvaluator {
 
             BigInteger result = min.add(BigInteger.valueOf(context.random().nextLong(rangeLong)));
             return new Value.NumberValue(Rational.of(result));
+        }
+
+        /**
+         * itemset("#minecraft:logs") / blockset("#c:ores") — the tag's member
+         * ids as a list (leading # optional). Registry lookup comes from the
+         * EvalContext's TagResolver, so this needs a live world.
+         */
+        private Value tagMembers(String name, TagResolver.TagKind kind, List<Value> args) {
+            Value arg = single(args, name);
+            if (!(arg instanceof Value.StringValue string)) {
+                throw new ExpressionException(name + "(...) takes a tag id string, e.g. " + name + "(\"#minecraft:logs\")");
+            }
+            String tag = string.value().trim();
+            if (tag.startsWith("#")) {
+                tag = tag.substring(1);
+            }
+            if (tag.isEmpty()) {
+                throw new ExpressionException(name + "(...) needs a tag id, e.g. " + name + "(\"#minecraft:logs\")");
+            }
+            List<String> ids = context.tags().resolve(kind, tag);
+            if (ids == null) {
+                throw new ExpressionException(name + "(...) needs a live world to look up tags");
+            }
+            if (ids.isEmpty()) {
+                throw new ExpressionException("Unknown or empty "
+                        + (kind == TagResolver.TagKind.ITEM ? "item" : "block") + " tag: #" + tag);
+            }
+            List<Value> values = new ArrayList<>(ids.size());
+            for (String id : ids) {
+                values.add(Value.of(id));
+            }
+            return new Value.ListValue(values);
         }
 
         /**
@@ -560,7 +604,7 @@ final class ExpressionEvaluator {
             String best = null;
             int bestDistance = 3; // suggest only within edit distance 2
             List<String> candidates = new ArrayList<>(context.variables().names());
-            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false"));
+            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset"));
             for (String candidate : candidates) {
                 int distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
                 if (distance < bestDistance) {

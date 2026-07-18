@@ -51,7 +51,8 @@ public final class ScriptParser {
     private static final Set<String> STATEMENT_DIRECTIVES = Set.of(SET, LOCAL);
     private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
             "rand", "randf", "pick", "int", "float", "range", "true", "false",
-            "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len");
+            "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len",
+            "itemset", "blockset");
 
     private ScriptParser() {
     }
@@ -68,8 +69,18 @@ public final class ScriptParser {
             int maxCommandsPerScript,
             Random random,
             VariableProvider variables,
-            SessionVariableStore sessionVariables
+            SessionVariableStore sessionVariables,
+            TagResolver tags
     ) {
+        /** Convenience without tag lookup (tests, contexts with no live world). */
+        public Options(boolean chainingEnabled, NumberMathMode mathMode, Map<String, AliasDefinition> aliases,
+                       boolean silentDirectiveEnabled, boolean variablesEnabled, boolean loopsEnabled,
+                       boolean conditionalsEnabled, int maxLoopIterations, int maxCommandsPerScript,
+                       Random random, VariableProvider variables, SessionVariableStore sessionVariables) {
+            this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
+                    conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
+                    TagResolver.NONE);
+        }
     }
 
     /** Parses a command-packet line (leading slash already stripped by vanilla). */
@@ -288,7 +299,7 @@ public final class ScriptParser {
                     return options.variables().resolve(name);
                 }
             };
-            this.context = new EvalContext(options.random(), lookup);
+            this.context = new EvalContext(options.random(), lookup, options.tags());
         }
 
         private void processStatements(String text) {

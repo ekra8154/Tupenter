@@ -208,9 +208,39 @@ public class TupenterModClient implements ClientModInitializer {
                 TupenterConfig.INSTANCE.maxCommandsPerScript,
                 SCRIPT_RANDOM,
                 VARIABLE_REGISTRY,
-                SESSION_VARIABLES
+                SESSION_VARIABLES,
+                TAG_RESOLVER
         );
     }
+
+    /**
+     * Backs blockset("#...")/itemset("#...") with the connection's synced
+     * registries. Null when not in-game (the functions error clearly then);
+     * an unknown tag resolves to an empty list.
+     */
+    public static final net.tupenter.script.TagResolver TAG_RESOLVER = (kind, tagId) -> {
+        net.minecraft.client.multiplayer.ClientPacketListener connection = Minecraft.getInstance().getConnection();
+        if (connection == null) {
+            return null;
+        }
+        net.minecraft.resources.ResourceLocation location = net.minecraft.resources.ResourceLocation.tryParse(tagId);
+        if (location == null) {
+            return java.util.List.of();
+        }
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        if (kind == net.tupenter.script.TagResolver.TagKind.ITEM) {
+            var registry = connection.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ITEM);
+            for (var holder : registry.getTagOrEmpty(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, location))) {
+                holder.unwrapKey().ifPresent(key -> ids.add(key.location().toString()));
+            }
+        } else {
+            var registry = connection.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BLOCK);
+            for (var holder : registry.getTagOrEmpty(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.BLOCK, location))) {
+                holder.unwrapKey().ifPresent(key -> ids.add(key.location().toString()));
+            }
+        }
+        return ids;
+    };
 
     public static void savePersistentVariables() {
         TupenterConfig.INSTANCE.persistentVariables = PERSISTENT_VARIABLES.serialize();
@@ -857,7 +887,7 @@ public class TupenterModClient implements ClientModInitializer {
                 base.chainingEnabled(), base.mathMode(), base.aliases(), base.silentDirectiveEnabled(),
                 base.variablesEnabled(), base.loopsEnabled(), base.conditionalsEnabled(),
                 base.maxLoopIterations(), base.maxCommandsPerScript(), base.random(), base.variables(),
-                null); // dry run — #set writes stay out of the session
+                null, base.tags()); // dry run — #set writes stay out of the session
 
         ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(line, line, options);
         if (result.error() != null) {
@@ -1084,6 +1114,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Text:§r \"quoted\" · + joins: $\"lvl \" + 5$ · comparisons: == != < <= > >=",
                     "§7Conditions:§r $client.y > 60 ? 10 : 0$ · true/false · && \\|\\| !",
                     "§7Functions:§r rand(1,64) randf pick(a | b | c) range(1,10) int float abs floor ceil round min max len sqrt sin cos tan (degrees). pick options are expressions and nest — quote literal text: pick(\"say hi\" | \"say nah\")",
+                    "§7Tag sets:§r blockset(\"#minecraft:logs\") / itemset(\"#c:ores\") = the tag's members as a list (needs a live world) · rand(list) picks one: /setblock ~ ~ ~ $rand(blockset(\"#minecraft:logs\"))$ · loops too: #foreach $b$ in blockset(\"#minecraft:logs\") (/say $b$)",
                     "§7Implicit math:§r with Inline Expressions = Auto-detect (the default), bare math evaluates WITHOUT markers: /give @s stick 64*5 → 320. Numbers-and-operators only (no variables/functions beyond int/float), skipped inside {NBT braces}, and unparseable text is sent as-is (never errors). $...$ is the full language and works everywhere, in every mode except Disabled.",
                     "§7Gotchas:§r \\$ = literal dollar · write 2*sin(x), not 2sin(x) (bare s = stack suffix)",
                     "§7Errors:§r a bad $...$ shows a local error and sends NOTHING.",
@@ -1315,7 +1346,7 @@ public class TupenterModClient implements ClientModInitializer {
                 && TupenterConfig.INSTANCE.numberMathMode != net.tupenter.script.NumberMathMode.DISABLED) {
             try {
                 text = MathEvaluator.applyNumberMath(text, net.tupenter.script.NumberMathMode.EXPLICIT_ONLY,
-                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY));
+                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER));
             } catch (IllegalArgumentException ex) {
                 context.getSource().sendError(Component.literal(ex.getMessage()));
                 return 0;
@@ -1381,7 +1412,7 @@ public class TupenterModClient implements ClientModInitializer {
         String expression = input.substring(0, input.length() - 1).trim();
         net.tupenter.script.Value value;
         try {
-            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY));
+            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER));
         } catch (IllegalArgumentException ex) {
             sendLocalCalcError(Component.literal("Invalid math expression: " + ex.getMessage()));
             return true;
@@ -1430,7 +1461,7 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static int evaluateLocalCalcExpression(String expression, java.util.function.Consumer<Component> feedback, java.util.function.Consumer<Component> error) {
         try {
-            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY));
+            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER));
             feedback.accept(Component.literal(result).withStyle(ChatFormatting.AQUA));
             return 1;
         } catch (IllegalArgumentException ex) {

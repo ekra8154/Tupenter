@@ -222,6 +222,14 @@ and compute; quote literal text — `pick("say hi" | "say nah")`),
 `range(start, stop[, step])` (inclusive). Phase 2: `floor` `ceil` `round`
 `abs` `min` `max` `randf` `len`.
 
+Tag sets: `blockset("#tag")` / `itemset("#tag")` resolve a registry tag to
+its member-id list via a `TagResolver` hook on `EvalContext` (the client
+backs it with the connection's synced registries; the script package stays
+MC-free and tests stub it). `rand(list)` picks a uniform member, so
+`rand(blockset("#minecraft:logs"))` composes, as does `#foreach ... in
+blockset(...)`. Unavailable resolver (no live world) and unknown tags are
+loud errors, not empty picks.
+
 ### 5.3 The variable registry (nothing hardcoded in the parser)
 
 The parser knows only "this token is a variable reference." What names exist

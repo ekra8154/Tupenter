@@ -118,6 +118,59 @@ class ExpressionEvaluatorTest {
         }
     }
 
+    // --- tag sets ---
+
+    private static final TagResolver STUB_TAGS = (kind, tagId) -> {
+        if (kind == TagResolver.TagKind.BLOCK && tagId.equals("minecraft:logs")) {
+            return java.util.List.of("minecraft:oak_log", "minecraft:birch_log");
+        }
+        if (kind == TagResolver.TagKind.ITEM && tagId.equals("c:ores")) {
+            return java.util.List.of("minecraft:iron_ore");
+        }
+        return java.util.List.of();
+    };
+
+    private static EvalContext tagContext() {
+        return new EvalContext(new Random(7), VariableProvider.EMPTY, STUB_TAGS);
+    }
+
+    @Test
+    void tagSetsResolveToListsAndLeadingHashIsOptional() {
+        assertEquals("2", ExpressionEvaluator.evaluate("len(blockset(\"#minecraft:logs\"))", tagContext()).displayString());
+        // single-member set: rand() is deterministic, and the # prefix is optional
+        assertEquals("minecraft:iron_ore", ExpressionEvaluator.evaluate("rand(itemset(\"c:ores\"))", tagContext()).displayString());
+    }
+
+    @Test
+    void randPicksFromLists() {
+        EvalContext context = tagContext();
+        Set<String> logs = Set.of("minecraft:oak_log", "minecraft:birch_log");
+        Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < 50; i++) {
+            String result = ExpressionEvaluator.evaluate("rand(blockset(\"#minecraft:logs\"))", context).displayString();
+            assertTrue(logs.contains(result), "unexpected member: " + result);
+            seen.add(result);
+        }
+        assertEquals(logs, seen);
+        // rand(list) works on any list, not just tag sets
+        int fromRange = Integer.parseInt(ExpressionEvaluator.evaluate("rand(range(1, 5))", context).displayString());
+        assertTrue(fromRange >= 1 && fromRange <= 5);
+    }
+
+    @Test
+    void tagSetErrors() {
+        // unknown tag
+        assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("blockset(\"#minecraft:nope\")", tagContext()));
+        // no resolver available (not in-game)
+        assertThrows(ExpressionException.class, () -> eval("blockset(\"#minecraft:logs\")"));
+        // not a string
+        assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("blockset(5)", tagContext()));
+        // rand of a non-list single arg still errors
+        assertThrows(ExpressionException.class, () -> eval("rand(1)"));
+    }
+
     // --- pick ---
 
     @Test
