@@ -443,6 +443,20 @@ class ScriptParserTest {
     }
 
     @Test
+    void argumentsEvaluateBeforeBinding() {
+        Map<String, String> aliases = Map.of(
+                "cube", "<r:int> /say r=$r$",
+                "wrap", "<n:int> /cube $n * 2$");
+        // an expression argument feeds a typed param
+        assertEquals(List.of("say r=6"), contents(parse("cube $2+4$", aliases)));
+        assertNull(parse("cube $rand(1,15)$", aliases).error());
+        // nested custom commands can pass computed params through
+        assertEquals(List.of("say r=10"), contents(parse("wrap 5", aliases)));
+        // a marker that evaluates to the wrong type still errors clearly
+        assertNotNull(parse("cube $\"abc\"$", aliases).error());
+    }
+
+    @Test
     void paramsCanDriveLoops() {
         Map<String, String> aliases = Map.of("spam", "<count:int> #repeat $count$ (/say hi $i$)");
         ScriptParser.ParseResult result = parse("spam 3", aliases);

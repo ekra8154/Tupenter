@@ -462,7 +462,15 @@ public final class ScriptParser {
 
         private void bindParams(String aliasName, AliasDefinition definition, String remainder, Map<String, Value> bindings) {
             String usage = "Usage: /" + aliasName + " " + definition.declarationPrefix().trim();
-            String rest = remainder;
+
+            // arguments evaluate before they bind, so /cube $rand(1,15)$ can
+            // feed an int param and outer-scope variables can pass through
+            String rest;
+            try {
+                rest = MathEvaluator.applyNumberMath(remainder, NumberMathMode.EXPLICIT_ONLY, context);
+            } catch (IllegalArgumentException ex) {
+                throw new ParseAbort("/" + aliasName + " arguments: " + ex.getMessage());
+            }
 
             List<AliasDefinition.Param> params = definition.params();
             for (int i = 0; i < params.size(); i++) {
