@@ -27,6 +27,8 @@
   "text.tupenter.world_scripts_no_world": "Join a world or server to see and edit its scripts.",
   "option.tupenter.chat_selection": "Selectable Chat Text",
   "tooltip.tupenter.chat_selection": "Click and drag over chat messages (with chat open) to select text, then Ctrl+C to copy it. Selections span multiple messages — soft-wrapped lines join with a space, message boundaries become newlines. Plain clicks still trigger chat links and click-events; only an actual drag selects.",
+  "option.tupenter.lazy_execution": "Lazy Execution",
+  "tooltip.tupenter.lazy_execution": "Evaluate each statement WHEN IT RUNS instead of all at once when you press Enter. This is what makes #wait useful: /attribute @s jump_strength base set 30 && #wait 2t && /tp @s $client.target_block$ reads the target block AFTER the attribute landed. Re-running the same line cancels its still-running previous instance (resend = restart, not stack); different lines run concurrently; /tupenter abort stops everything. Turn this OFF to restore evaluate-everything-at-Enter (an escape hatch — #wait then still delays, but with stale values).",
   "option.tupenter.chat_highlighting": "Chat Input Highlighting",
   "tooltip.tupenter.chat_highlighting": "Colors Tupenter syntax as you type: each && segment is styled by its statement form (commands get vanilla-style argument colors from a per-segment parse, #directives go gold with dimmed group parens, bare chat is yellow), $...$ markers are aqua, && separators gold. Also re-roots autocomplete so tab-completion works INSIDE later chain segments: /time set day && /weather cl<tab>. Commands containing $...$ markers no longer show as red errors.",
   "option.tupenter.tick_scripts": "Tick Scripts",

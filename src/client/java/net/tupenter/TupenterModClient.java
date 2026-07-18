@@ -98,6 +98,11 @@ public class TupenterModClient implements ClientModInitializer {
                 public void error(String message) {
                     sendLocalCalcError(Component.literal(message));
                 }
+
+                @Override
+                public void info(String message) {
+                    sendEnhancedParsingInfo(message);
+                }
             },
             ScriptExecutor.limits(
                     () -> TupenterConfig.INSTANCE.maxCommandsPerTick,
@@ -289,7 +294,8 @@ public class TupenterModClient implements ClientModInitializer {
                 SCRIPT_RANDOM,
                 VARIABLE_REGISTRY,
                 SESSION_VARIABLES,
-                TAG_RESOLVER
+                TAG_RESOLVER,
+                TupenterConfig.INSTANCE.lazyExecutionEnabled
         );
     }
 
@@ -1010,13 +1016,17 @@ public class TupenterModClient implements ClientModInitializer {
             ChatFormatting color = switch (statement.kind()) {
                 case COMMAND -> ChatFormatting.AQUA;
                 case CHAT -> ChatFormatting.YELLOW;
+                case WAIT -> ChatFormatting.LIGHT_PURPLE;
+                case NOTICE -> ChatFormatting.GRAY;
             };
             String label = switch (statement.kind()) {
-                case COMMAND -> "/";
-                case CHAT -> "chat: ";
+                case COMMAND -> "/" + statement.content();
+                case CHAT -> "chat: " + statement.content();
+                case WAIT -> "wait " + statement.waitTicks() + "t (later statements evaluate then — this dry run baked them now)";
+                case NOTICE -> "note: " + statement.content();
             };
             net.minecraft.network.chat.MutableComponent entry = Component.literal(" " + shown + ". ").withStyle(ChatFormatting.DARK_GRAY)
-                    .append(Component.literal(label + statement.content()).withStyle(color));
+                    .append(Component.literal(label).withStyle(color));
             if (statement.silent()) {
                 entry.append(Component.literal("  (silent)").withStyle(ChatFormatting.DARK_GRAY));
             }
@@ -1228,6 +1238,8 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7For:§r #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~) — inclusive, counts down automatically",
                     "§7Foreach:§r #foreach $m$ in (zombie | skeleton) (/summon $m$) — or in range(1, 10)",
                     "§7If:§r #if ($client.y$ > 60) (/say high) #elseif ($client.y$ > 30) (/say mid) #else (/say low)",
+                    "§7Wait:§r #wait 10t / 1.5s / 3d — pause the script mid-line without freezing anything else. Scripts run LAZILY: $...$ evaluates when its statement runs, so /attribute ... && #wait 2t && /tp @s $client.target_block$ reads the target AFTER the boost landed. Works in chains, groups, loops, and custom command bodies. Max 72000t.",
+                    "§7Overlap:§r re-running the same line restarts it (resend = restart, not stack) · different lines run concurrently · /tupenter abort stops all",
                     "§7Groups (...) nest and can hold chains. Parens elsewhere are literal text.",
                     "§7Caps:§r loops ≤ Max Loop Iterations · scripts ≤ Max Commands Per Script · sends spread over ticks past Max Commands Per Tick",
             };

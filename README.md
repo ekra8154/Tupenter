@@ -32,6 +32,20 @@ A line is a command (`/...`), a directive (`#...`), or plain chat.
 /time set day && /weather clear
 ```
 
+### `#wait` — pause mid-line
+
+```
+/attribute @s minecraft:jump_strength base set 30 && #wait 2t && /tp @s $client.target_block$
+```
+
+`#wait 10t / 1.5s / 3d` (ticks/seconds/days, or bare ticks) pauses the
+script without freezing anything else. Scripts run **lazily**: each
+statement's `$...$` markers evaluate *when it runs*, so the `/tp` above
+reads your target block *after* the jump boost landed — not at Enter-press.
+Re-running a line cancels its still-running previous instance (resend =
+restart, not stack); different lines run concurrently; `/tupenter abort`
+stops everything.
+
 ### Expressions — `$...$`
 
 ```

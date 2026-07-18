@@ -467,6 +467,23 @@ class ScriptParserTest {
     }
 
     @Test
+    void waitEmitsAWaitStatement() {
+        ScriptParser.ParseResult result = parse("say hi && #wait 1.5s && /say later");
+        assertNull(result.error());
+        List<Script.SendStatement> statements = result.script().statements();
+        assertEquals(3, statements.size());
+        assertEquals(Script.Kind.WAIT, statements.get(1).kind());
+        assertEquals(30, statements.get(1).waitTicks());
+
+        // #wait 0 is a no-op, negative and over-cap durations are errors
+        assertEquals(2, contents(parse("say a && #wait 0t && /say b")).size());
+        assertNotNull(parse("say a && #wait -5t").error());
+        assertNotNull(parse("say a && #wait 99999999t").error());
+        assertNotNull(parse("say a && #wait soon").error());
+        assertNotNull(parse("say a && #wait").error());
+    }
+
+    @Test
     void tagSetsWorkInMarkersAndForeach() {
         TagResolver tags = (kind, tagId) -> kind == TagResolver.TagKind.BLOCK && tagId.equals("minecraft:logs")
                 ? List.of("minecraft:oak_log", "minecraft:birch_log")

@@ -25,9 +25,11 @@ import java.util.Set;
  * writes a script-scope overlay, and $...$ markers are evaluated per emitted
  * command. The output is a flat list of sends.
  *
- * Everything evaluates at Enter-press time. Without #wait that is observably
- * identical to send-time evaluation (scripts drain within a tick unless the
- * send budget stretches them); the interpreter migration is tied to #wait.
+ * Evaluation timing (§2.5): with lazy execution (the default), any
+ * non-trivial line walks lazily — the same Walker runs as a coroutine
+ * (LazyWalk) and each statement's markers evaluate when the executor pulls
+ * it, which is what makes #wait meaningful. Trivial lines, /unroll dry
+ * runs, tick scripts, and tests keep the eager collect-everything walk.
  *
  * Two entry points, matching the two ways a line leaves the client:
  * - {@link #parse}: command packets ("/..." lines, slash already stripped)
@@ -46,9 +48,12 @@ public final class ScriptParser {
     private static final String RECORD = "#record";
     private static final String SET = "#set";
     private static final String LOCAL = "#local";
+    private static final String WAIT = "#wait";
+    /** Longest single #wait; loops are bounded separately by the iteration cap. */
+    public static final int MAX_WAIT_TICKS = 72000; // one real-time hour
     /** Directives handled by the statement scanner (own a (...) group). */
     private static final Set<String> SCANNER_DIRECTIVES = Set.of("#repeat", "#if", "#foreach", "#for", "#silent");
-    private static final Set<String> STATEMENT_DIRECTIVES = Set.of(SET, LOCAL);
+    private static final Set<String> STATEMENT_DIRECTIVES = Set.of(SET, LOCAL, WAIT);
     private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
             "rand", "randf", "pick", "int", "float", "range", "true", "false",
             "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len",
@@ -70,7 +75,8 @@ public final class ScriptParser {
             Random random,
             VariableProvider variables,
             SessionVariableStore sessionVariables,
-            TagResolver tags
+            TagResolver tags,
+            boolean lazyExecution
     ) {
         /** Convenience without tag lookup (tests, contexts with no live world). */
         public Options(boolean chainingEnabled, NumberMathMode mathMode, Map<String, AliasDefinition> aliases,
@@ -79,7 +85,24 @@ public final class ScriptParser {
                        Random random, VariableProvider variables, SessionVariableStore sessionVariables) {
             this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
                     conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
-                    TagResolver.NONE);
+                    TagResolver.NONE, false);
+        }
+
+        /** Convenience with tag lookup but eager execution (unroll, tick scripts, tests). */
+        public Options(boolean chainingEnabled, NumberMathMode mathMode, Map<String, AliasDefinition> aliases,
+                       boolean silentDirectiveEnabled, boolean variablesEnabled, boolean loopsEnabled,
+                       boolean conditionalsEnabled, int maxLoopIterations, int maxCommandsPerScript,
+                       Random random, VariableProvider variables, SessionVariableStore sessionVariables,
+                       TagResolver tags) {
+            this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
+                    conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
+                    tags, false);
+        }
+
+        public Options withLazyExecution(boolean lazy) {
+            return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
+                    loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
+                    sessionVariables, tags, lazy);
         }
     }
 
@@ -227,6 +250,17 @@ public final class ScriptParser {
     }
 
     private static ParseResult parseSequence(String input, String originalLine, boolean silent, Script.HistoryMode history, Options options, boolean alwaysScript) {
+        // Lazy path (§2.5): anything non-trivial defers evaluation to run
+        // time — each statement's markers evaluate when the executor pulls
+        // it, which is what gives #wait meaning. Trivial lines (one plain
+        // statement, no markers/aliases) keep the eager path below so they
+        // behave byte-identically to before.
+        if (options.lazyExecution() && (silent || history != Script.HistoryMode.NORMAL || alwaysScript
+                || needsLazyWalk(input, options))) {
+            return ParseResult.script(
+                    Script.lazy(originalLine, new LazyWalk(input, silent, options), history), List.of());
+        }
+
         Walker walker = new Walker(options);
         walker.silentDepth = silent ? 1 : 0;
         walker.history = history;
@@ -247,15 +281,157 @@ public final class ScriptParser {
 
         // whole line parsed cleanly — commit #set writes to the session
         // (#local names stay script-only)
-        if (options.sessionVariables() != null) {
-            walker.scriptScope.forEach((name, value) -> {
-                if (!walker.localNames.contains(name)) {
-                    options.sessionVariables().set(name, value);
+        walker.commitSession();
+
+        return ParseResult.script(Script.ofStatements(originalLine, walker.sends, walker.history), walker.notices);
+    }
+
+    /**
+     * Does this line need run-time (lazy) evaluation? True for chains,
+     * directives, markers, and alias invocations. A scan failure returns
+     * false so the eager walker produces its usual error message.
+     */
+    private static boolean needsLazyWalk(String input, Options options) {
+        List<Stmt> statements;
+        try {
+            statements = scanStatements(input, options.chainingEnabled());
+        } catch (ParseAbort abort) {
+            return false;
+        }
+        if (statements.size() > 1) {
+            return true;
+        }
+        if (statements.isEmpty() || statements.get(0) instanceof DirectiveStmt) {
+            return true;
+        }
+        String text = ((RawStmt) statements.get(0)).text().trim();
+        if (text.startsWith("#")) {
+            return true;
+        }
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '$') {
+                return true;
+            }
+        }
+        return isAlias(text, options.aliases());
+    }
+
+    /**
+     * The lazy coroutine: the ordinary Walker runs on a virtual thread, but
+     * a strict request/response rendezvous means it only ever computes the
+     * statement being pulled — no lookahead, so evaluation happens exactly
+     * at send time. Interrupting the thread (close/abort) unwinds it.
+     */
+    private static final class LazyWalk implements Script.StatementSource {
+        private static final Object TOKEN = new Object();
+        private static final Object END = new Object();
+
+        private record ErrorBox(String message) {
+        }
+
+        private static final class WalkerInterrupted extends RuntimeException {
+        }
+
+        private final String input;
+        private final boolean silent;
+        private final Options options;
+        private final java.util.concurrent.SynchronousQueue<Object> requests = new java.util.concurrent.SynchronousQueue<>();
+        private final java.util.concurrent.SynchronousQueue<Object> results = new java.util.concurrent.SynchronousQueue<>();
+        private Thread thread;
+        private boolean finished;
+
+        private LazyWalk(String input, boolean silent, Options options) {
+            this.input = input;
+            this.silent = silent;
+            this.options = options;
+        }
+
+        @Override
+        public Script.SendStatement next() {
+            if (finished) {
+                return null;
+            }
+            if (thread == null) {
+                start();
+            }
+            try {
+                requests.put(TOKEN);
+                Object item = results.poll(5, java.util.concurrent.TimeUnit.SECONDS);
+                if (item == null) {
+                    close();
+                    throw new Script.RuntimeError("script evaluation timed out");
+                }
+                if (item == END) {
+                    finished = true;
+                    return null;
+                }
+                if (item instanceof ErrorBox error) {
+                    finished = true;
+                    return abortWith(error.message());
+                }
+                return (Script.SendStatement) item;
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                close();
+                throw new Script.RuntimeError("script interrupted");
+            }
+        }
+
+        private Script.SendStatement abortWith(String message) {
+            throw new Script.RuntimeError(message);
+        }
+
+        @Override
+        public boolean drained() {
+            return finished;
+        }
+
+        @Override
+        public void close() {
+            finished = true;
+            if (thread != null) {
+                thread.interrupt();
+            }
+        }
+
+        private void start() {
+            thread = Thread.ofVirtual().name("tupenter-script").start(() -> {
+                try {
+                    requests.take(); // nothing evaluates before the first pull
+                    Walker walker = new Walker(options, this::deliver);
+                    walker.silentDepth = silent ? 1 : 0;
+                    walker.processStatements(input);
+                    walker.commitSession();
+                    results.put(END);
+                } catch (ParseAbort abort) {
+                    quietPut(new ErrorBox(abort.getMessage()));
+                } catch (InterruptedException | WalkerInterrupted stopped) {
+                    // closed/aborted — just exit
+                } catch (RuntimeException unexpected) {
+                    quietPut(new ErrorBox("script failed: " + unexpected.getMessage()));
                 }
             });
         }
 
-        return ParseResult.script(new Script(originalLine, walker.sends, walker.history), walker.notices);
+        private void quietPut(Object item) {
+            try {
+                results.put(item);
+            } catch (InterruptedException ignored) {
+            }
+        }
+
+        /** Walker-side handoff: deliver one statement, then block until the next pull. */
+        private void deliver(Script.SendStatement statement) {
+            try {
+                results.put(statement);
+                requests.take();
+            } catch (InterruptedException ex) {
+                throw new WalkerInterrupted();
+            }
+        }
     }
 
     // =====================================================================
@@ -266,6 +442,9 @@ public final class ScriptParser {
         private final Options options;
         private final List<Script.SendStatement> sends = new ArrayList<>();
         private final List<String> notices = new ArrayList<>();
+        /** Non-null in lazy mode: statements (and inline notices) stream here instead of the lists. */
+        private final java.util.function.Consumer<Script.SendStatement> sink;
+        private int sendCount;
         private final Map<String, Value> scriptScope = new LinkedHashMap<>();
         private final Set<String> localNames = new HashSet<>();
         private final Deque<Map<String, Value>> scopes = new ArrayDeque<>();
@@ -277,6 +456,11 @@ public final class ScriptParser {
         private int depth;
 
         private Walker(Options options) {
+            this(options, null);
+        }
+
+        private Walker(Options options, java.util.function.Consumer<Script.SendStatement> sink) {
+            this.sink = sink;
             this.options = options;
             VariableProvider lookup = new VariableProvider() {
                 @Override
@@ -346,6 +530,10 @@ public final class ScriptParser {
                     handleSet(content, LOCAL, false);
                     return;
                 }
+                if (word.equals(WAIT)) {
+                    handleWait(content);
+                    return;
+                }
                 if (word.equals(SILENT) || word.equals(NORECORD)) {
                     throw new ParseAbort(word + " goes at the start of the line" + (word.equals(SILENT) ? ", or wrap statements: #silent (/cmd && /cmd)" : ""));
                 }
@@ -405,10 +593,93 @@ public final class ScriptParser {
             if (silent) {
                 changed = true;
             }
-            sends.add(new Script.SendStatement(rewritten, isCommand ? Script.Kind.COMMAND : Script.Kind.CHAT, silent));
-            if (sends.size() > options.maxCommandsPerScript()) {
+            sendCount++;
+            if (sendCount > options.maxCommandsPerScript()) {
                 throw new ParseAbort("Script would send more than " + options.maxCommandsPerScript()
                         + " commands (Max Commands Per Script in the config)");
+            }
+            emit(new Script.SendStatement(rewritten, isCommand ? Script.Kind.COMMAND : Script.Kind.CHAT, silent));
+        }
+
+        /** Every statement leaves the walker through here: sink when lazy, list when eager. */
+        private void emit(Script.SendStatement statement) {
+            if (sink != null) {
+                sink.accept(statement);
+            } else {
+                sends.add(statement);
+            }
+        }
+
+        private void notice(String text) {
+            if (sink != null) {
+                sink.accept(Script.SendStatement.notice(text));
+            } else {
+                notices.add(text);
+            }
+        }
+
+        /** Commits #set writes to the session store (#local names stay script-only). */
+        private void commitSession() {
+            if (options.sessionVariables() != null) {
+                scriptScope.forEach((name, value) -> {
+                    if (!localNames.contains(name)) {
+                        options.sessionVariables().set(name, value);
+                    }
+                });
+            }
+        }
+
+        /**
+         * #wait 10t / 1.5s / 3d (or bare ticks) — pauses the script. Only
+         * meaningful with lazy execution (later statements then evaluate
+         * after the wait); with eager execution the delay still happens but
+         * markers were already evaluated at Enter-press.
+         */
+        private void handleWait(String content) {
+            String header = content.substring(WAIT.length()).trim();
+            if (header.isEmpty()) {
+                throw new ParseAbort("#wait needs a duration, e.g. #wait 10t / 0.5s (ticks/seconds/days)");
+            }
+            if (options.mathMode() != NumberMathMode.DISABLED) {
+                try {
+                    header = MathEvaluator.applyNumberMath(header, NumberMathMode.EXPLICIT_ONLY, context);
+                } catch (ExpressionException ex) {
+                    throw new ParseAbort("#wait: " + ex.getMessage());
+                }
+            }
+            long ticks = parseWaitTicks(header.trim());
+            if (ticks > MAX_WAIT_TICKS) {
+                throw new ParseAbort("#wait is capped at " + MAX_WAIT_TICKS + " ticks (one hour)");
+            }
+            changed = true;
+            if (ticks > 0) {
+                emit(Script.SendStatement.waitFor((int) ticks));
+            }
+        }
+
+        private static long parseWaitTicks(String token) {
+            long unit = 1;
+            String text = token;
+            if (!text.isEmpty()) {
+                char suffix = Character.toLowerCase(text.charAt(text.length() - 1));
+                if (suffix == 't' || suffix == 's' || suffix == 'd') {
+                    unit = suffix == 't' ? 1 : suffix == 's' ? 20 : 24000;
+                    text = text.substring(0, text.length() - 1);
+                }
+            }
+            Rational amount;
+            try {
+                amount = Rational.parse(text);
+            } catch (IllegalArgumentException | ArithmeticException ex) {
+                throw new ParseAbort("#wait needs a duration like 10t, 1.5s, or 3d — got '" + token + "'");
+            }
+            if (amount.signum() < 0) {
+                throw new ParseAbort("#wait can't be negative");
+            }
+            try {
+                return amount.multiply(Rational.of(unit)).round().wholeValue().longValueExact();
+            } catch (ArithmeticException ex) {
+                throw new ParseAbort("#wait duration is too large");
             }
         }
 
@@ -436,7 +707,7 @@ public final class ScriptParser {
             if (commitToSession) {
                 localNames.remove(setVar.name()); // an explicit #set wins over an earlier #local
                 if (silentDepth == 0) {
-                    notices.add("$" + setVar.name() + "$ = " + value.displayString());
+                    notice("$" + setVar.name() + "$ = " + value.displayString());
                 }
             } else {
                 localNames.add(setVar.name());

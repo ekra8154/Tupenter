@@ -222,6 +222,45 @@ and compute; quote literal text — `pick("say hi" | "say nah")`),
 `range(start, stop[, step])` (inclusive). Phase 2: `floor` `ceil` `round`
 `abs` `min` `max` `randf` `len`.
 
+### 2.5 Lazy execution and `#wait`
+
+The original engine evaluated everything at Enter-press ("eager unroll").
+That made `#wait` meaningless — a state read after a wait would still see
+the pre-wait world (the /blink failure). The fix is **send-time
+evaluation**, implemented without rewriting the walker:
+
+- The unchanged Walker runs on a **virtual thread** (`LazyWalk`) with a
+  strict request/response rendezvous (two SynchronousQueues). The walker
+  blocks before computing each statement until the executor pulls, so there
+  is **no lookahead**: a statement's `$...$` markers evaluate at the moment
+  it is sent. From the render thread's perspective the walk is synchronous —
+  it waits on the handoff while the walker computes one statement.
+- `#wait 10t | 1.5s | 3d` (or bare ticks, capped at 72000 = one hour) emits
+  a WAIT stream item; the executor parks that script for N ticks without
+  blocking others. Works anywhere a statement works — chains, groups,
+  loops, custom command bodies.
+- **What stays eager**: trivial lines (single plain statement — byte-
+  identical fast path), `/unroll` dry runs (which label waits and note that
+  the dry run baked later values), tick scripts (they re-parse every tick
+  anyway, and eager parse errors feed the report-once fault tracking), and
+  the whole test suite's eager options.
+- **Overlap policy**: submitting a line cancels a still-running instance of
+  the *same source line* (rapid-fire resend = restart, not stack);
+  different lines run concurrently under `maxConcurrentScripts`;
+  `/tupenter abort` interrupts everything, including parked walkers.
+  Tick-script resubmission treats a running same-source instance as success
+  (a waiting tick script doesn't stack 20×/s).
+- **Error timing**: statement-scan (structure) errors still surface at
+  Enter; evaluation errors surface when the failing statement is reached,
+  and sends already made stay sent — like a dying mcfunction.
+- `#set` notices travel the stream as NOTICE items; session commits happen
+  when the script finishes.
+- Escape hatch: the Lazy Execution toggle restores full eager evaluation
+  (#wait then still delays, but with Enter-press values).
+- Known edge: `#record`/`#norecord` written *inside an alias body* no
+  longer retro-applies under lazy execution (history is recorded at
+  submit); put the prefix on the typed line instead.
+
 Tag sets: `blockset("#tag")` / `itemset("#tag")` resolve a registry tag to
 its member-id list via a `TagResolver` hook on `EvalContext` (the client
 backs it with the connection's synced registries; the script package stays

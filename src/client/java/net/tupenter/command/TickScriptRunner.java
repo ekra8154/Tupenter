@@ -42,7 +42,9 @@ public final class TickScriptRunner {
             return;
         }
 
-        ScriptParser.Options options = TupenterModClient.parserOptions();
+        // eager on purpose: a tick script re-parses fresh every tick anyway,
+        // and eager parse errors feed the report-once fault tracking below
+        ScriptParser.Options options = TupenterModClient.parserOptions().withLazyExecution(false);
         for (String line : scripts) {
             // newlines are Mod Menu formatting only — a script runs as one line
             String trimmed = line.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();

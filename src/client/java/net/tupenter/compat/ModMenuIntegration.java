@@ -187,6 +187,12 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.chatHighlightingEnabled = newValue)
                 .build();
 
+        AbstractConfigListEntry<?> lazyExecutionEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.lazy_execution"), TupenterConfig.INSTANCE.lazyExecutionEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.lazy_execution"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.lazyExecutionEnabled = newValue)
+                .build();
+
         AbstractConfigListEntry<?> numberMathEntry = entryBuilder.startEnumSelector(Component.translatable("option.tupenter.number_math"), NumberMathMode.class, TupenterConfig.INSTANCE.numberMathMode)
                 .setDefaultValue(NumberMathMode.AUTO_DETECT)
                 .setTooltip(Component.translatable("tooltip.tupenter.number_math"))
@@ -253,6 +259,7 @@ public class ModMenuIntegration implements ModMenuApi {
         scripting.addEntry(enhancedCommandParsingEntry);
         scripting.addEntry(commandChainingEntry);
         scripting.addEntry(chatHighlightingEntry);
+        scripting.addEntry(lazyExecutionEntry);
         scripting.addEntry(numberMathEntry);
         scripting.addEntry(silentDirectiveEntry);
         scripting.addEntry(variablesEntry);
