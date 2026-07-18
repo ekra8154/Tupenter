@@ -166,9 +166,12 @@ play where `sendCommandFeedback` is off.
 `/calc <expr>` evaluates anything the expression engine supports and prints
 the result without sending anything. The `/$ expr $` shorthand is top-down:
 numbers, booleans, and lists print locally like `/calc`, but a **string**
-result runs as a command — `/$pick("say hi" | "replacenear 5 grass_block ice")$`
-picks one and executes it. Resending the line re-rolls (history keeps the
-original `/$...$` form). pick options are expressions, so picks nest:
+result runs as a fresh line using the three statement forms — `"/..."` is a
+command, `"#..."` a directive, anything else plain chat. So
+`/$pick("hi" | "bye")$` chats one of them, and
+`/$pick("/tp ~ ~1 ~" | "/tp ~ ~-1 ~")$` teleports. (The `/` in `/$...$`
+just marks the line as script.) Resending re-rolls — history keeps the
+original `/$...$` form. pick options are expressions, so picks nest:
 `/$pick(pick("say hi" | "say yo") | "say nah")$`.
 
 ## Reference

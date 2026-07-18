@@ -952,7 +952,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Implicit math:§r with Inline Expressions = Auto-detect (the default), bare math evaluates WITHOUT markers: /give @s stick 64*5 → 320. Numbers-and-operators only (no variables/functions beyond int/float), skipped inside {NBT braces}, and unparseable text is sent as-is (never errors). $...$ is the full language and works everywhere, in every mode except Disabled.",
                     "§7Gotchas:§r \\$ = literal dollar · write 2*sin(x), not 2sin(x) (bare s = stack suffix)",
                     "§7Errors:§r a bad $...$ shows a local error and sends NOTHING.",
-                    "§7Try it:§r /calc <expr> evaluates locally. /$ expr $ is top-down: numbers display, but a string result RUNS as a command — /$pick(\"say hi\" | \"time set day\")$",
+                    "§7Try it:§r /calc <expr> evaluates locally. /$ expr $ is top-down: numbers display, but a string result RUNS as a fresh line — \"/...\" = command, \"#...\" = directive, else chat. /$pick(\"hi\" | \"/time set day\")$",
             };
             case "variables" -> new String[]{
                     "§bVariables — use anywhere as $name$:",
@@ -1000,7 +1000,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7/tupenter help <topic>§r — this help",
                     "§7/customcommand add|remove|list [verbose]|help§r · /customcommand <name> — inspect one",
                     "§7/echo <text>§r — local-only output, evaluates $...$",
-                    "§7/calc <expr>§r — local calculator · /$ expr $ — like /calc for numbers, but a string result runs as a command",
+                    "§7/calc <expr>§r — local calculator · /$ expr $ — like /calc for numbers, but a string result runs as a fresh line (\"/...\" command, \"#...\" directive, else chat)",
                     "§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking",
             };
             default -> new String[]{
@@ -1179,10 +1179,10 @@ public class TupenterModClient implements ClientModInitializer {
             return true;
         }
 
-        // top-down: a string result is a command line to run; numbers,
+        // top-down: a string result runs as a fresh statement line; numbers,
         // booleans, and lists display locally like /calc
         if (value instanceof net.tupenter.script.Value.StringValue string) {
-            runEvaluatedCommandLine(string.value(), "/" + command);
+            runEvaluatedLine(string.value(), "/" + command);
         } else {
             sendLocalCalcFeedback(Component.literal(value.displayString()).withStyle(ChatFormatting.AQUA));
         }
@@ -1190,30 +1190,40 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /**
-     * Runs the string a /$...$ line evaluated to as a command, through the
-     * full script pipeline (alias expansion included). History records the
-     * ORIGINAL /$...$ line, so resending re-rolls things like pick().
+     * Runs the string a /$...$ line evaluated to, using the language's three
+     * statement forms: "/..." is a command (full pipeline, alias expansion
+     * included), "#..." a directive, anything else a plain chat message.
+     * The leading / of /$...$ only marks the line as script, not chat.
+     * History records the ORIGINAL /$...$ line, so resending re-rolls pick().
      */
-    private static void runEvaluatedCommandLine(String evaluated, String historyLine) {
+    private static void runEvaluatedLine(String evaluated, String historyLine) {
         String content = evaluated.trim();
-        if (content.startsWith("/")) {
-            content = content.substring(1).trim();
-        }
         if (content.isEmpty()) {
-            sendLocalCalcError(Component.literal("The expression evaluated to an empty command"));
+            sendLocalCalcError(Component.literal("The expression evaluated to nothing"));
             return;
         }
 
-        ScriptParser.ParseResult result = ScriptParser.parse(content, parserOptions());
+        ScriptParser.ParseResult result;
+        Script fallback;
+        if (content.startsWith("/")) {
+            String command = content.substring(1).trim();
+            if (command.isEmpty()) {
+                sendLocalCalcError(Component.literal("The expression evaluated to an empty command"));
+                return;
+            }
+            result = ScriptParser.parse(command, parserOptions());
+            fallback = new Script(historyLine, List.of(new Script.SendStatement(command, Script.Kind.COMMAND, false)), Script.HistoryMode.NORMAL);
+        } else {
+            result = ScriptParser.parseChatLine(content, parserOptions());
+            fallback = new Script(historyLine, List.of(new Script.SendStatement(content, Script.Kind.CHAT, false)), Script.HistoryMode.NORMAL);
+        }
+
         if (result.error() != null) {
             sendEnhancedParsingError(result.error());
             return;
         }
 
-        Script script = result.changed()
-                ? result.script()
-                : new Script(historyLine, List.of(new Script.SendStatement(content, Script.Kind.COMMAND, false)), Script.HistoryMode.NORMAL);
-
+        Script script = result.changed() ? result.script() : fallback;
         switch (script.history()) {
             case NORMAL -> updateLastMessage(historyLine);
             case FORCE -> forceAddToHistory(historyLine);
