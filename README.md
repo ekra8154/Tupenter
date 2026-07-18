@@ -110,11 +110,28 @@ and inside custom command bodies.
 /waves 3 zombie
 ```
 
-Typed parameters (`int`, `float`, `word`, `text`, `player`) get real
-autocomplete prompts, bind as `$name$` or `$1$..$n$`, and commands added via
-`/customcommand` register immediately — no relaunch. Bodies can contain
-anything: chains, expressions, directives, other custom commands (recursion
-capped at 50 expansions).
+Typed parameters get real autocomplete prompts, bind as `$name$` or
+`$1$..$n$`, and commands added via `/customcommand` register immediately —
+no relaunch. Bodies can contain anything: chains, expressions, directives,
+other custom commands (recursion capped at 50 expansions).
+
+Available types: `int`, `float`, `string` (the default — a word or
+`"anything quoted"`), `word`, `text` (greedy, must be last), `player`,
+`selector`, a comma list like `<dim:to_overworld,to_nether>`, plus:
+
+| Type | Input | Binds |
+|------|-------|-------|
+| `pos` | whole `x y z`, `~` ok, targeted-block tab-complete | `$p$` = `"x y z"` + `$p.x$ $p.y$ $p.z$` |
+| `vec3` | decimal `x y z`, `~` ok | same shape as `pos` |
+| `column_pos` | whole `x z`, `~` ok | `$c$` + `$c.x$ $c.z$` |
+| `rotation` | `yaw pitch`, `~` ok | `$r$` + `$r.yaw$ $r.pitch$` |
+| `angle` | one yaw, `~` ok | a number |
+| `time` | `10t` / `1.5s` / `3d` or plain ticks | ticks as a number |
+| `dimension` | dimension id, tab-completed | the id string |
+| `color` | one of the 16 chat colors, tab-completed | the color name |
+| `id` | any namespaced id | the id string |
+| `item` | item id + optional `[components]`, full registry tab-complete | verbatim text |
+| `block` | block id + optional `[states]`, full registry tab-complete | verbatim text |
 
 ### Tick scripts — the walking mcfunction file
 

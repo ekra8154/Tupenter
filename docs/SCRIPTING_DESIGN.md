@@ -314,8 +314,14 @@ The interpreter architecture supports adding it later if a real use case shows u
 /customcommand add panic <level:int> <type:word> #repeat $level$ (/summon $type$ ~ ~ ~)
 ```
 
-- Types: `int`, `float`, `word`, `text` (greedy, last only), `player` (word +
-  online-player suggestions).
+- Types: `int`, `float`, `string` (default — word or quoted), `word`, `text`
+  (greedy, last only), `player` (word + online-player suggestions),
+  `selector`, `<name:a,b,c>` choice lists, coordinate tuples (`pos`, `vec3`,
+  `column_pos`, `rotation`, `angle` — `~` resolved at parse time against
+  `client.*`, tuples also bind per-component `$p.x$` etc.), `time`
+  (`10t/1.5s/3d` → ticks), `dimension`, `color`, `id`, and registry-backed
+  `item` / `block` (need a `CommandBuildContext`; built per-connection, so
+  their trees fall back to plain strings only if no registries exist).
 - Body references params by name (`$target$`) or position (`$1$`).
 - No declared params → current behavior (extra args appended verbatim).
 - Each alias gets a real Brigadier tree → vanilla autocomplete.
