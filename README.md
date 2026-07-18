@@ -104,6 +104,14 @@ are aqua, and `&&` separators gold. Autocomplete is chain-aware too:
 `/time set day && /weather cl<tab>` completes the *second* command, and
 commands containing `$...$` markers no longer light up as errors.
 
+### Selectable chat
+
+Click and drag across chat messages (chat open) to select text — something
+vanilla never had — then **Ctrl+C** to copy. Selections span messages
+(newlines at message boundaries, spaces at soft wraps), follow their lines
+as new messages push things up, and plain clicks still fire chat
+click-events. Toggle: *Selectable Chat Text*.
+
 ### Silence, privacy, local output
 
 ```

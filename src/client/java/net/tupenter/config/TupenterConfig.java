@@ -33,6 +33,7 @@ public class TupenterConfig {
     public boolean enhancedCommandParsingEnabled = true;
     public boolean commandChainingEnabled = true;
     public boolean chatHighlightingEnabled = true;
+    public boolean chatSelectionEnabled = true;
     public boolean silentDirectiveEnabled = true;
     public boolean variablesEnabled = true;
     public boolean loopsEnabled = true;
@@ -192,6 +193,7 @@ public class TupenterConfig {
                     INSTANCE.enhancedCommandParsingEnabled = loaded.enhancedCommandParsingEnabled;
                     INSTANCE.commandChainingEnabled = loaded.commandChainingEnabled;
                     INSTANCE.chatHighlightingEnabled = loaded.chatHighlightingEnabled;
+                    INSTANCE.chatSelectionEnabled = loaded.chatSelectionEnabled;
                     INSTANCE.silentDirectiveEnabled = loaded.silentDirectiveEnabled;
                     INSTANCE.variablesEnabled = loaded.variablesEnabled;
                     INSTANCE.loopsEnabled = loaded.loopsEnabled;

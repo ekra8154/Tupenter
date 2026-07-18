@@ -289,6 +289,12 @@ public class ModMenuIntegration implements ModMenuApi {
                 }
         ));
 
+        general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.chat_selection"), TupenterConfig.INSTANCE.chatSelectionEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.chat_selection"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.chatSelectionEnabled = newValue)
+                .build());
+
         general.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.advanced"),
                 List.of(historyDepthEntry, resendDelayEntry, batchModeEntry, resendAmountEntry, resendOrderEntry))
                 .setExpanded(false)

@@ -6,7 +6,9 @@
 		"ExampleClientMixin",
 		"MixinConnection",
 		"MixinClientPacketListener",
-		"MixinCommandSuggestions"
+		"MixinCommandSuggestions",
+		"ChatComponentAccessor",
+		"MixinChatScreen"
 	],
 	"injectors": {
 		"defaultRequire": 1
