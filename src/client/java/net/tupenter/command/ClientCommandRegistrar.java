@@ -18,8 +18,16 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.ClientSuggestionProvider;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.commands.arguments.AngleArgument;
+import net.minecraft.commands.arguments.ColorArgument;
+import net.minecraft.commands.arguments.DimensionArgument;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
+import net.minecraft.commands.arguments.TimeArgument;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
+import net.minecraft.commands.arguments.coordinates.ColumnPosArgument;
+import net.minecraft.commands.arguments.coordinates.RotationArgument;
+import net.minecraft.commands.arguments.coordinates.Vec3Argument;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.tupenter.TupenterMod;
 import net.tupenter.script.AliasDefinition;
@@ -81,6 +89,15 @@ public final class ClientCommandRegistrar {
             case WORD, PLAYER, CHOICE -> StringArgumentType.word();
             case SELECTOR -> EntityArgument.entities();
             case POS -> BlockPosArgument.blockPos(); // ~ support + targeted-block suggestions
+            case VEC3 -> Vec3Argument.vec3();
+            case COLUMN_POS -> ColumnPosArgument.columnPos();
+            case ROTATION -> RotationArgument.rotation();
+            case ANGLE -> AngleArgument.angle();
+            case TIME -> TimeArgument.time();
+            case DIMENSION -> DimensionArgument.dimension(); // suggests the dimensions the client knows
+            case COLOR -> ColorArgument.color();
+            case ID -> ResourceLocationArgument.id();
+            case ITEM, BLOCK -> StringArgumentType.string(); // upgraded to registry-aware types when a build context is available
         };
     }
 

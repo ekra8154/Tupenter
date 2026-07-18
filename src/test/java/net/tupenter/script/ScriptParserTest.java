@@ -325,6 +325,84 @@ class ScriptParserTest {
     }
 
     @Test
+    void vec3ParamKeepsDecimalsAndResolvesTildes() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.x", Value.ofNumber("100.5"));
+        store.set("client.y", Value.ofNumber(64));
+        store.set("client.z", Value.ofNumber("-8.25"));
+        Map<String, String> aliases = Map.of("hop", "<p:vec3> /say tp $p$ mid $p.y + 0.5$");
+
+        ScriptParser.ParseResult absolute = ScriptParser.parse("hop 1.5 70 -2", options(aliases, store));
+        assertNull(absolute.error());
+        assertEquals(List.of("say tp 1.5 70 -2 mid 70.5"), contents(absolute));
+
+        ScriptParser.ParseResult relative = ScriptParser.parse("hop ~ ~0.5 ~-1", options(aliases, store));
+        assertNull(relative.error());
+        assertEquals(List.of("say tp 100.5 64.5 -9.25 mid 65"), contents(relative));
+    }
+
+    @Test
+    void rotationAndAngleParamsResolveAgainstFacing() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.yaw", Value.ofNumber("-73.5"));
+        store.set("client.pitch", Value.ofNumber(12));
+        Map<String, String> aliases = Map.of(
+                "face", "<r:rotation> /say rotate $r$ yaw $r.yaw$",
+                "spin", "<a:angle> /say turn $a + 90$");
+
+        assertEquals(List.of("say rotate 90 -45.5 yaw 90"),
+                contents(ScriptParser.parse("face 90 -45.5", options(aliases, store))));
+        assertEquals(List.of("say rotate -73.5 12 yaw -73.5"),
+                contents(ScriptParser.parse("face ~ ~", options(aliases, store))));
+        assertEquals(List.of("say turn 16.5"),
+                contents(ScriptParser.parse("spin ~", options(aliases, store))));
+    }
+
+    @Test
+    void columnPosParamBindsTwoWholeCoordinates() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.bx", Value.ofNumber(100));
+        store.set("client.bz", Value.ofNumber(-8));
+        Map<String, String> aliases = Map.of("chunkat", "<c:column_pos> /say column $c$ x $c.x$ z $c.z$");
+
+        ScriptParser.ParseResult relative = ScriptParser.parse("chunkat ~4 ~", options(aliases, store));
+        assertNull(relative.error());
+        assertEquals(List.of("say column 104 -8 x 104 z -8"), contents(relative));
+
+        // only two coordinates — a third is one argument too many
+        assertNotNull(ScriptParser.parse("chunkat 1 2 3", options(aliases, store)).error());
+    }
+
+    @Test
+    void timeParamConvertsToTicks() {
+        Map<String, String> aliases = Map.of("delay", "<t:time> /say $t$ ticks");
+        assertEquals(List.of("say 30 ticks"), contents(parse("delay 1.5s", aliases)));
+        assertEquals(List.of("say 24000 ticks"), contents(parse("delay 1d", aliases)));
+        assertEquals(List.of("say 10 ticks"), contents(parse("delay 10t", aliases)));
+        assertEquals(List.of("say 8 ticks"), contents(parse("delay 8", aliases)));
+        assertNotNull(parse("delay -5t", aliases).error());
+        assertNotNull(parse("delay soon", aliases).error());
+    }
+
+    @Test
+    void colorDimensionAndIdParamsBind() {
+        Map<String, String> aliases = Map.of("theme", "<c:color> <d:dimension> <i:id> /say $c$ $d$ $i$");
+        ScriptParser.ParseResult result = parse("theme GOLD minecraft:the_nether tupenter:thing", aliases);
+        assertNull(result.error());
+        assertEquals(List.of("say gold minecraft:the_nether tupenter:thing"), contents(result));
+
+        assertNotNull(parse("theme chartreuse minecraft:overworld x", aliases).error());
+    }
+
+    @Test
+    void itemAndBlockParamsBindVerbatim() {
+        Map<String, String> aliases = Map.of("giveme", "<thing:item> <n:int> /give @s $thing$ $n$");
+        ScriptParser.ParseResult result = parse("giveme minecraft:stone[custom_name='\"hi there\"'] 3", aliases);
+        assertNull(result.error());
+        assertEquals(List.of("give @s minecraft:stone[custom_name='\"hi there\"'] 3"), contents(result));
+    }
+
+    @Test
     void paramsCanDriveLoops() {
         Map<String, String> aliases = Map.of("spam", "<count:int> #repeat $count$ (/say hi $i$)");
         ScriptParser.ParseResult result = parse("spam 3", aliases);

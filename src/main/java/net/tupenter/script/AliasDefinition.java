@@ -34,7 +34,17 @@ public record AliasDefinition(String body, List<Param> params) {
         PLAYER,   // word + online-player suggestions in the command UI
         SELECTOR, // entity selector, validated + tab-completed, no quotes needed
         CHOICE,   // fixed set of options: <dim:to_overworld,to_nether>
-        POS;      // block position: three coords, ~ supported, targeted-block autocomplete
+        POS,      // block position: three whole coords, ~ supported, targeted-block autocomplete
+        VEC3,     // precise position: three decimal coords, ~ supported
+        COLUMN_POS, // x z column: two whole coords, ~ supported
+        ROTATION, // yaw pitch: two decimal coords, ~ supported
+        ANGLE,    // single yaw angle, ~ supported
+        TIME,     // duration like 10t / 1.5s / 3d (or plain ticks) — binds as ticks
+        DIMENSION,// dimension id, tab-completed from the worlds the client knows
+        COLOR,    // one of the 16 chat colors, tab-completed
+        ID,       // namespaced id (resource location), e.g. minecraft:stone
+        ITEM,     // item id + optional [components], registry tab-complete
+        BLOCK;    // block id + optional [state], registry tab-complete
 
         public static ParamType fromKeyword(String keyword) {
             return switch (keyword.toLowerCase(Locale.ROOT)) {
@@ -46,7 +56,18 @@ public record AliasDefinition(String body, List<Param> params) {
                 case "player" -> PLAYER;
                 case "selector" -> SELECTOR;
                 case "pos" -> POS;
-                default -> throw new IllegalArgumentException("Unknown parameter type '" + keyword + "' — use int, float, string, word, text, player, selector, or pos");
+                case "vec3" -> VEC3;
+                case "column_pos", "column" -> COLUMN_POS;
+                case "rotation" -> ROTATION;
+                case "angle" -> ANGLE;
+                case "time" -> TIME;
+                case "dimension" -> DIMENSION;
+                case "color" -> COLOR;
+                case "id", "resource" -> ID;
+                case "item" -> ITEM;
+                case "block" -> BLOCK;
+                default -> throw new IllegalArgumentException("Unknown parameter type '" + keyword
+                        + "' — use int, float, string, word, text, player, selector, pos, vec3, column_pos, rotation, angle, time, dimension, color, id, item, or block");
             };
         }
     }

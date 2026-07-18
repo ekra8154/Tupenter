@@ -472,9 +472,38 @@ public final class ScriptParser {
                     throw new ParseAbort("Missing argument <" + param.name() + ">. " + usage);
                 }
 
-                if (param.type() == AliasDefinition.ParamType.POS) {
-                    rest = bindPosParam(param, i, rest, bindings, usage);
-                    continue;
+                switch (param.type()) {
+                    case POS -> {
+                        rest = bindCoordinateParam(param, i, rest, bindings, usage,
+                                new String[]{"x", "y", "z"}, new String[]{"client.bx", "client.by", "client.bz"}, true);
+                        continue;
+                    }
+                    case VEC3 -> {
+                        rest = bindCoordinateParam(param, i, rest, bindings, usage,
+                                new String[]{"x", "y", "z"}, new String[]{"client.x", "client.y", "client.z"}, false);
+                        continue;
+                    }
+                    case COLUMN_POS -> {
+                        rest = bindCoordinateParam(param, i, rest, bindings, usage,
+                                new String[]{"x", "z"}, new String[]{"client.bx", "client.bz"}, true);
+                        continue;
+                    }
+                    case ROTATION -> {
+                        rest = bindCoordinateParam(param, i, rest, bindings, usage,
+                                new String[]{"yaw", "pitch"}, new String[]{"client.yaw", "client.pitch"}, false);
+                        continue;
+                    }
+                    case ANGLE -> {
+                        // single yaw; binds as a number so $a + 90$ works
+                        ArgToken angleToken = readArgToken(rest);
+                        rest = rest.substring(angleToken.consumed());
+                        Value angle = new Value.NumberValue(resolveCoordinate(param, angleToken.value(), "client.yaw", false));
+                        bindings.put(param.name(), angle);
+                        bindings.put(String.valueOf(i + 1), angle);
+                        continue;
+                    }
+                    default -> {
+                    }
                 }
 
                 String token;
@@ -498,37 +527,46 @@ public final class ScriptParser {
         }
 
         /**
-         * A <name:pos> param consumes three coordinate tokens. ~ resolves
-         * against the player's block position (via the variable registry, so
-         * this stays MC-free and testable); ~offset adds and floors like
-         * vanilla block positions. Binds $name$ = "x y z" plus $name.x/.y/.z$.
+         * A coordinate-tuple param (pos, vec3, column_pos, rotation) consumes
+         * one token per component. ~ resolves against the matching client
+         * variable (via the variable registry, so this stays MC-free and
+         * testable); ~offset adds, and whole-number tuples floor like vanilla
+         * block positions. Binds $name$ = the joined tuple plus one
+         * $name.component$ number per component.
          *
          * @return the remaining argument text
          */
-        private String bindPosParam(AliasDefinition.Param param, int index, String rest, Map<String, Value> bindings, String usage) {
-            String[] axes = {"x", "y", "z"};
-            long[] resolved = new long[3];
+        private String bindCoordinateParam(AliasDefinition.Param param, int index, String rest, Map<String, Value> bindings,
+                                           String usage, String[] components, String[] baseVariables, boolean whole) {
+            Rational[] resolved = new Rational[components.length];
 
-            for (int axis = 0; axis < 3; axis++) {
+            for (int c = 0; c < components.length; c++) {
                 rest = rest.trim();
                 if (rest.isEmpty()) {
-                    throw new ParseAbort("<" + param.name() + "> needs three coordinates (x y z, ~ allowed). " + usage);
+                    throw new ParseAbort("<" + param.name() + "> needs " + components.length + " coordinates ("
+                            + String.join(" ", components) + ", ~ allowed). " + usage);
                 }
                 ArgToken token = readArgToken(rest);
                 rest = rest.substring(token.consumed());
-                resolved[axis] = resolveCoordinate(param, token.value(), axes[axis]);
+                resolved[c] = resolveCoordinate(param, token.value(), baseVariables[c], whole);
             }
 
-            String triple = resolved[0] + " " + resolved[1] + " " + resolved[2];
-            bindings.put(param.name(), Value.of(triple));
-            bindings.put(param.name() + ".x", Value.ofNumber(resolved[0]));
-            bindings.put(param.name() + ".y", Value.ofNumber(resolved[1]));
-            bindings.put(param.name() + ".z", Value.ofNumber(resolved[2]));
-            bindings.put(String.valueOf(index + 1), Value.of(triple));
+            StringBuilder joined = new StringBuilder();
+            for (int c = 0; c < components.length; c++) {
+                Value component = new Value.NumberValue(resolved[c]);
+                bindings.put(param.name() + "." + components[c], component);
+                if (c > 0) {
+                    joined.append(' ');
+                }
+                joined.append(component.substitutionString());
+            }
+            Value tuple = Value.of(joined.toString());
+            bindings.put(param.name(), tuple);
+            bindings.put(String.valueOf(index + 1), tuple);
             return rest;
         }
 
-        private long resolveCoordinate(AliasDefinition.Param param, String token, String axis) {
+        private Rational resolveCoordinate(AliasDefinition.Param param, String token, String baseVariable, boolean whole) {
             if (token.startsWith("^")) {
                 throw new ParseAbort("<" + param.name() + ">: ^ caret coordinates aren't supported yet — use ~ or absolute numbers");
             }
@@ -536,10 +574,10 @@ public final class ScriptParser {
             if (token.startsWith("~")) {
                 Rational base;
                 try {
-                    Value baseValue = options.variables().resolve("client.b" + axis)
+                    Value baseValue = options.variables().resolve(baseVariable)
                             .orElseThrow(() -> new ParseAbort("<" + param.name() + ">: ~ needs your position, which is only available in-game"));
                     if (!(baseValue instanceof Value.NumberValue number)) {
-                        throw new ParseAbort("<" + param.name() + ">: client.b" + axis + " is not a number");
+                        throw new ParseAbort("<" + param.name() + ">: " + baseVariable + " is not a number");
                     }
                     base = number.value();
                 } catch (ExpressionException ex) {
@@ -555,17 +593,28 @@ public final class ScriptParser {
                     }
                 }
 
+                Rational result = base.add(offset);
+                if (!whole) {
+                    return result;
+                }
                 try {
-                    return base.add(offset).floor().wholeValue().longValueExact();
+                    return Rational.of(result.floor().wholeValue().longValueExact());
                 } catch (ArithmeticException ex) {
                     throw new ParseAbort("<" + param.name() + ">: coordinate out of range");
                 }
             }
 
+            if (whole) {
+                try {
+                    return Rational.of(new BigInteger(token).longValueExact());
+                } catch (NumberFormatException | ArithmeticException ex) {
+                    throw new ParseAbort("<" + param.name() + "> coordinates must be whole numbers or ~, got '" + token + "'");
+                }
+            }
             try {
-                return new BigInteger(token).longValueExact();
-            } catch (NumberFormatException | ArithmeticException ex) {
-                throw new ParseAbort("<" + param.name() + "> coordinates must be whole numbers or ~, got '" + token + "'");
+                return Rational.parse(token);
+            } catch (IllegalArgumentException | ArithmeticException ex) {
+                throw new ParseAbort("<" + param.name() + "> coordinates must be numbers or ~, got '" + token + "'");
             }
         }
 
@@ -643,9 +692,50 @@ public final class ScriptParser {
                     }
                     throw new ParseAbort("<" + param.name() + "> must be one of: " + String.join(", ", param.options()) + " — got '" + token + "'. " + usage);
                 }
+                case TIME -> {
+                    return Value.ofNumber(parseTimeTicks(param, token, usage));
+                }
+                case COLOR -> {
+                    String color = token.toLowerCase(Locale.ROOT);
+                    if (!CHAT_COLORS.contains(color)) {
+                        throw new ParseAbort("<" + param.name() + "> must be a chat color (" + String.join(", ", CHAT_COLORS) + "), got '" + token + "'. " + usage);
+                    }
+                    return Value.of(color);
+                }
                 default -> {
                     return Value.of(token);
                 }
+            }
+        }
+
+        private static final List<String> CHAT_COLORS = List.of(
+                "black", "dark_blue", "dark_green", "dark_aqua", "dark_red", "dark_purple", "gold", "gray",
+                "dark_gray", "blue", "green", "aqua", "red", "light_purple", "yellow", "white");
+
+        /** Vanilla time syntax: number + optional t (ticks), s (seconds ×20), or d (days ×24000); rounds to whole ticks. */
+        private static long parseTimeTicks(AliasDefinition.Param param, String token, String usage) {
+            long unit = 1;
+            String text = token;
+            if (!text.isEmpty()) {
+                char suffix = Character.toLowerCase(text.charAt(text.length() - 1));
+                if (suffix == 't' || suffix == 's' || suffix == 'd') {
+                    unit = suffix == 't' ? 1 : suffix == 's' ? 20 : 24000;
+                    text = text.substring(0, text.length() - 1);
+                }
+            }
+            Rational amount;
+            try {
+                amount = Rational.parse(text);
+            } catch (IllegalArgumentException | ArithmeticException ex) {
+                throw new ParseAbort("<" + param.name() + "> must be a duration like 10t, 1.5s, or 3d (ticks/seconds/days), got '" + token + "'. " + usage);
+            }
+            if (amount.signum() < 0) {
+                throw new ParseAbort("<" + param.name() + "> can't be a negative duration. " + usage);
+            }
+            try {
+                return amount.multiply(Rational.of(unit)).round().wholeValue().longValueExact();
+            } catch (ArithmeticException ex) {
+                throw new ParseAbort("<" + param.name() + "> is too large. " + usage);
             }
         }
 
