@@ -461,6 +461,18 @@ class ScriptParserTest {
     }
 
     @Test
+    void itemsetAndBlocksetParamsBindTagsVerbatim() {
+        Map<String, String> aliases = Map.of("swap", "<from:blockset> <to:block> /fill ~ ~ ~ ~ ~ ~ $to$ replace $from$");
+        ScriptParser.ParseResult result = parse("swap #minecraft:logs[axis=y] minecraft:stone", aliases);
+        assertNull(result.error());
+        assertEquals(List.of("fill ~ ~ ~ ~ ~ ~ minecraft:stone replace #minecraft:logs[axis=y]"), contents(result));
+
+        // a concrete block is just as valid for a blockset param
+        assertEquals(List.of("fill ~ ~ ~ ~ ~ ~ air replace dirt"),
+                contents(parse("swap dirt air", aliases)));
+    }
+
+    @Test
     void optionalParamsUseDefaultsAndCanBeSkipped() {
         SessionVariableStore store = new SessionVariableStore();
         store.set("client.bx", Value.ofNumber(100));

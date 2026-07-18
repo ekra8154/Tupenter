@@ -144,6 +144,12 @@ Available types: `int`, `float`, `string` (the default — a word or
 | `id` | any namespaced id | the id string |
 | `item` | item id + optional `[components]`, full registry tab-complete | verbatim text |
 | `block` | block id + optional `[states]`, full registry tab-complete | verbatim text |
+| `itemset` | item id **or** `#item_tag`, tab-completes both | verbatim text |
+| `blockset` | block id **or** `#block_tag` + optional `[states]`, tab-completes both | verbatim text |
+
+`blockset`/`itemset` mirror vanilla's block/item *predicate* arguments (the
+filter in `/fill ... replace <filter>`), so they're the right type when the
+body forwards to a command that accepts tags.
 
 ### Tick scripts — the walking mcfunction file
 

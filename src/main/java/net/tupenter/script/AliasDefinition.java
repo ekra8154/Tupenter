@@ -53,7 +53,9 @@ public record AliasDefinition(String body, List<Param> params) {
         COLOR,    // one of the 16 chat colors, tab-completed
         ID,       // namespaced id (resource location), e.g. minecraft:stone
         ITEM,     // item id + optional [components], registry tab-complete
-        BLOCK;    // block id + optional [state], registry tab-complete
+        BLOCK,    // block id + optional [state], registry tab-complete
+        ITEMSET,  // item id OR #item_tag (+ optional [components]), registry tab-complete
+        BLOCKSET; // block id OR #block_tag (+ optional [states]), registry tab-complete
 
         public static ParamType fromKeyword(String keyword) {
             return switch (keyword.toLowerCase(Locale.ROOT)) {
@@ -75,8 +77,10 @@ public record AliasDefinition(String body, List<Param> params) {
                 case "id", "resource" -> ID;
                 case "item" -> ITEM;
                 case "block" -> BLOCK;
+                case "itemset" -> ITEMSET;
+                case "blockset" -> BLOCKSET;
                 default -> throw new IllegalArgumentException("Unknown parameter type '" + keyword
-                        + "' — use int, float, string, word, text, player, selector, pos, vec3, column_pos, rotation, angle, time, dimension, color, id, item, or block");
+                        + "' — use int, float, string, word, text, player, selector, pos, vec3, column_pos, rotation, angle, time, dimension, color, id, item, block, itemset, or blockset");
             };
         }
     }
