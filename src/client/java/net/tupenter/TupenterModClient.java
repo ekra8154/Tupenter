@@ -952,7 +952,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Implicit math:§r with Inline Expressions = Auto-detect (the default), bare math evaluates WITHOUT markers: /give @s stick 64*5 → 320. Numbers-and-operators only (no variables/functions beyond int/float), skipped inside {NBT braces}, and unparseable text is sent as-is (never errors). $...$ is the full language and works everywhere, in every mode except Disabled.",
                     "§7Gotchas:§r \\$ = literal dollar · write 2*sin(x), not 2sin(x) (bare s = stack suffix)",
                     "§7Errors:§r a bad $...$ shows a local error and sends NOTHING.",
-                    "§7Try it:§r /calc <expr> or /$ expr $ evaluates locally.",
+                    "§7Try it:§r /calc <expr> evaluates locally. /$ expr $ is top-down: numbers display, but a string result RUNS as a command — /$pick(say hi | time set day)$",
             };
             case "variables" -> new String[]{
                     "§bVariables — use anywhere as $name$:",
@@ -1000,7 +1000,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7/tupenter help <topic>§r — this help",
                     "§7/customcommand add|remove|list [verbose]|help§r · /customcommand <name> — inspect one",
                     "§7/echo <text>§r — local-only output, evaluates $...$",
-                    "§7/calc <expr>§r — local calculator (also /$ expr $)",
+                    "§7/calc <expr>§r — local calculator · /$ expr $ — like /calc for numbers, but a string result runs as a command",
                     "§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking",
             };
             default -> new String[]{
@@ -1171,8 +1171,56 @@ public class TupenterModClient implements ClientModInitializer {
         }
 
         String expression = input.substring(0, input.length() - 1).trim();
-        evaluateLocalCalcExpression(expression, TupenterModClient::sendLocalCalcFeedback, TupenterModClient::sendLocalCalcError);
+        net.tupenter.script.Value value;
+        try {
+            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY));
+        } catch (IllegalArgumentException ex) {
+            sendLocalCalcError(Component.literal("Invalid math expression: " + ex.getMessage()));
+            return true;
+        }
+
+        // top-down: a string result is a command line to run; numbers,
+        // booleans, and lists display locally like /calc
+        if (value instanceof net.tupenter.script.Value.StringValue string) {
+            runEvaluatedCommandLine(string.value(), "/" + command);
+        } else {
+            sendLocalCalcFeedback(Component.literal(value.displayString()).withStyle(ChatFormatting.AQUA));
+        }
         return true;
+    }
+
+    /**
+     * Runs the string a /$...$ line evaluated to as a command, through the
+     * full script pipeline (alias expansion included). History records the
+     * ORIGINAL /$...$ line, so resending re-rolls things like pick().
+     */
+    private static void runEvaluatedCommandLine(String evaluated, String historyLine) {
+        String content = evaluated.trim();
+        if (content.startsWith("/")) {
+            content = content.substring(1).trim();
+        }
+        if (content.isEmpty()) {
+            sendLocalCalcError(Component.literal("The expression evaluated to an empty command"));
+            return;
+        }
+
+        ScriptParser.ParseResult result = ScriptParser.parse(content, parserOptions());
+        if (result.error() != null) {
+            sendEnhancedParsingError(result.error());
+            return;
+        }
+
+        Script script = result.changed()
+                ? result.script()
+                : new Script(historyLine, List.of(new Script.SendStatement(content, Script.Kind.COMMAND, false)), Script.HistoryMode.NORMAL);
+
+        switch (script.history()) {
+            case NORMAL -> updateLastMessage(historyLine);
+            case FORCE -> forceAddToHistory(historyLine);
+            case SKIP -> { }
+        }
+        result.notices().forEach(TupenterModClient::sendEnhancedParsingInfo);
+        submitScript(script);
     }
 
     private static int evaluateLocalCalcExpression(String expression, java.util.function.Consumer<Component> feedback, java.util.function.Consumer<Component> error) {

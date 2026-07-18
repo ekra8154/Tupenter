@@ -163,8 +163,12 @@ play where `sendCommandFeedback` is off.
 
 ### Local calculator
 
-`/calc <expr>` (or `/$ expr $`) evaluates anything the expression engine
-supports and prints the result without sending anything.
+`/calc <expr>` evaluates anything the expression engine supports and prints
+the result without sending anything. The `/$ expr $` shorthand is top-down:
+numbers, booleans, and lists print locally like `/calc`, but a **string**
+result runs as a command — `/$pick(say hi | replacenear 5 grass_block ice)$`
+picks one and executes it. Resending the line re-rolls (history keeps the
+original `/$...$` form).
 
 ## Reference
 

@@ -110,6 +110,11 @@ public final class MathEvaluator {
         return ExpressionEvaluator.evaluate(expression, context).displayString();
     }
 
+    /** Typed variant for callers that branch on the result kind (the /$ ... $ shorthand). */
+    public static Value evaluateValue(String expression, EvalContext context) {
+        return ExpressionEvaluator.evaluate(expression, context);
+    }
+
     private static boolean containsOnlyAllowedMathCharacters(String expression) {
         for (int i = 0; i < expression.length(); i++) {
             char current = expression.charAt(i);
