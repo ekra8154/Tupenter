@@ -472,6 +472,11 @@ public final class ScriptParser {
                     throw new ParseAbort("Missing argument <" + param.name() + ">. " + usage);
                 }
 
+                if (param.type() == AliasDefinition.ParamType.POS) {
+                    rest = bindPosParam(param, i, rest, bindings, usage);
+                    continue;
+                }
+
                 String token;
                 if (param.type() == AliasDefinition.ParamType.TEXT) {
                     token = rest;
@@ -489,6 +494,78 @@ public final class ScriptParser {
 
             if (!rest.trim().isEmpty()) {
                 throw new ParseAbort("Too many arguments: '" + rest.trim() + "'. " + usage);
+            }
+        }
+
+        /**
+         * A <name:pos> param consumes three coordinate tokens. ~ resolves
+         * against the player's block position (via the variable registry, so
+         * this stays MC-free and testable); ~offset adds and floors like
+         * vanilla block positions. Binds $name$ = "x y z" plus $name.x/.y/.z$.
+         *
+         * @return the remaining argument text
+         */
+        private String bindPosParam(AliasDefinition.Param param, int index, String rest, Map<String, Value> bindings, String usage) {
+            String[] axes = {"x", "y", "z"};
+            long[] resolved = new long[3];
+
+            for (int axis = 0; axis < 3; axis++) {
+                rest = rest.trim();
+                if (rest.isEmpty()) {
+                    throw new ParseAbort("<" + param.name() + "> needs three coordinates (x y z, ~ allowed). " + usage);
+                }
+                ArgToken token = readArgToken(rest);
+                rest = rest.substring(token.consumed());
+                resolved[axis] = resolveCoordinate(param, token.value(), axes[axis]);
+            }
+
+            String triple = resolved[0] + " " + resolved[1] + " " + resolved[2];
+            bindings.put(param.name(), Value.of(triple));
+            bindings.put(param.name() + ".x", Value.ofNumber(resolved[0]));
+            bindings.put(param.name() + ".y", Value.ofNumber(resolved[1]));
+            bindings.put(param.name() + ".z", Value.ofNumber(resolved[2]));
+            bindings.put(String.valueOf(index + 1), Value.of(triple));
+            return rest;
+        }
+
+        private long resolveCoordinate(AliasDefinition.Param param, String token, String axis) {
+            if (token.startsWith("^")) {
+                throw new ParseAbort("<" + param.name() + ">: ^ caret coordinates aren't supported yet — use ~ or absolute numbers");
+            }
+
+            if (token.startsWith("~")) {
+                Rational base;
+                try {
+                    Value baseValue = options.variables().resolve("client.b" + axis)
+                            .orElseThrow(() -> new ParseAbort("<" + param.name() + ">: ~ needs your position, which is only available in-game"));
+                    if (!(baseValue instanceof Value.NumberValue number)) {
+                        throw new ParseAbort("<" + param.name() + ">: client.b" + axis + " is not a number");
+                    }
+                    base = number.value();
+                } catch (ExpressionException ex) {
+                    throw new ParseAbort("<" + param.name() + ">: " + ex.getMessage());
+                }
+
+                Rational offset = Rational.ZERO;
+                if (token.length() > 1) {
+                    try {
+                        offset = Rational.parse(token.substring(1));
+                    } catch (IllegalArgumentException | ArithmeticException ex) {
+                        throw new ParseAbort("<" + param.name() + ">: bad coordinate '" + token + "'");
+                    }
+                }
+
+                try {
+                    return base.add(offset).floor().wholeValue().longValueExact();
+                } catch (ArithmeticException ex) {
+                    throw new ParseAbort("<" + param.name() + ">: coordinate out of range");
+                }
+            }
+
+            try {
+                return new BigInteger(token).longValueExact();
+            } catch (NumberFormatException | ArithmeticException ex) {
+                throw new ParseAbort("<" + param.name() + "> coordinates must be whole numbers or ~, got '" + token + "'");
             }
         }
 

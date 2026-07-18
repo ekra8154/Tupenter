@@ -38,6 +38,10 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.name", player -> Value.of(player.getName().getString()));
         register("client.dimension", player -> Value.of(player.level().dimension().location().toString()));
         register("client.held_item", player -> Value.of(BuiltInRegistries.ITEM.getKey(player.getMainHandItem().getItem()).toString()));
+        register("client.pos", player -> {
+            BlockPos pos = player.blockPosition();
+            return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
+        });
         register("client.target_block", ClientVariableProvider::targetBlock);
     }
 

@@ -19,6 +19,7 @@ import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.ClientSuggestionProvider;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.tupenter.TupenterMod;
 import net.tupenter.script.AliasDefinition;
@@ -79,6 +80,7 @@ public final class ClientCommandRegistrar {
             case TEXT -> StringArgumentType.greedyString();
             case WORD, PLAYER, CHOICE -> StringArgumentType.word();
             case SELECTOR -> EntityArgument.entities();
+            case POS -> BlockPosArgument.blockPos(); // ~ support + targeted-block suggestions
         };
     }
 

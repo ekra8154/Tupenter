@@ -1064,7 +1064,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "§7Create:§r /customcommand add <name> <body>  ·  Remove:§r /customcommand remove <name>  ·  List:§r /customcommand list",
                 "§7Bodies§r can hold commands, chat, && chains, $...$ expressions, directives (#repeat, #if, #silent, ...), and other custom commands. Commands need their /: sunny = /weather clear && Have fun!",
                 "§7Parameters§r go before the body: /customcommand add smite <target:player> /execute at $target$ run summon lightning_bolt — then /smite Steve. Use as $target$ or $1$.",
-                "§7Types:§r <name> or <name:string> = a word or \"anything quoted\" · <n:int> / <n:float> = numbers · <n:word> = one plain token (letters/digits/_-.+ only — no selectors!) · <n:selector> = @e[...] with tab-complete · <n:player> = player name · <n:text> = rest of the line (must be last) · <n:opt1,opt2,...> = one of a fixed list, tab-completed",
+                "§7Types:§r <name> or <name:string> = a word or \"anything quoted\" · <n:int> / <n:float> = numbers · <n:word> = one plain token (letters/digits/_-.+ only — no selectors!) · <n:selector> = @e[...] with tab-complete · <n:player> = player name · <n:text> = rest of the line (must be last) · <n:opt1,opt2,...> = one of a fixed list, tab-completed · <n:pos> = x y z with ~ support and targeted-block tab-complete, binds $n$ = \"x y z\" plus $n.x$ $n.y$ $n.z$",
                 "§7Selectors:§r use <name:selector>, or quote them into a plain <name>: /cmd \"@e[type=!player,limit=1]\"",
                 "§7Example:§r /customcommand add waves <count:int> <mob:word> #repeat $count$ (/summon $mob$ ~ ~ ~)  →  /waves 3 zombie",
         };

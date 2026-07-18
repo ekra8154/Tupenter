@@ -296,6 +296,35 @@ class ScriptParserTest {
     }
 
     @Test
+    void posParamsResolveTildesAndBindComponents() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.bx", Value.ofNumber(100));
+        store.set("client.by", Value.ofNumber(64));
+        store.set("client.bz", Value.ofNumber(-8));
+        Map<String, String> aliases = Map.of("portal",
+                "<p:pos> <dim:to_overworld,to_nether> /say $dim$: $floor(dim == \"to_nether\" ? p.x/8 : p.x*8)$ $p.y$ at $p$");
+
+        ScriptParser.ParseResult absolute = ScriptParser.parse("portal 64 64 64 to_nether", options(aliases, store));
+        assertNull(absolute.error());
+        assertEquals(List.of("say to_nether: 8 64 at 64 64 64"), contents(absolute));
+
+        ScriptParser.ParseResult relative = ScriptParser.parse("portal ~ ~5 ~-1 to_nether", options(aliases, store));
+        assertNull(relative.error());
+        assertEquals(List.of("say to_nether: 12 69 at 100 69 -9"), contents(relative));
+    }
+
+    @Test
+    void posParamRejectsBadCoordinates() {
+        SessionVariableStore store = new SessionVariableStore();
+        Map<String, String> aliases = Map.of("here", "<p:pos> /say $p$");
+        assertNotNull(ScriptParser.parse("here 1 2", options(aliases, store)).error());
+        assertNotNull(ScriptParser.parse("here ^ ^ ^", options(aliases, store)).error());
+        assertNotNull(ScriptParser.parse("here a b c", options(aliases, store)).error());
+        // ~ without a position provider (not in-game)
+        assertNotNull(ScriptParser.parse("here ~ ~ ~", options(aliases, store)).error());
+    }
+
+    @Test
     void paramsCanDriveLoops() {
         Map<String, String> aliases = Map.of("spam", "<count:int> #repeat $count$ (/say hi $i$)");
         ScriptParser.ParseResult result = parse("spam 3", aliases);

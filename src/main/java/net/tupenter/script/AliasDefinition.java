@@ -33,7 +33,8 @@ public record AliasDefinition(String body, List<Param> params) {
         TEXT,     // greedy — must be last
         PLAYER,   // word + online-player suggestions in the command UI
         SELECTOR, // entity selector, validated + tab-completed, no quotes needed
-        CHOICE;   // fixed set of options: <dim:to_overworld,to_nether>
+        CHOICE,   // fixed set of options: <dim:to_overworld,to_nether>
+        POS;      // block position: three coords, ~ supported, targeted-block autocomplete
 
         public static ParamType fromKeyword(String keyword) {
             return switch (keyword.toLowerCase(Locale.ROOT)) {
@@ -44,7 +45,8 @@ public record AliasDefinition(String body, List<Param> params) {
                 case "text" -> TEXT;
                 case "player" -> PLAYER;
                 case "selector" -> SELECTOR;
-                default -> throw new IllegalArgumentException("Unknown parameter type '" + keyword + "' — use int, float, string, word, text, player, or selector");
+                case "pos" -> POS;
+                default -> throw new IllegalArgumentException("Unknown parameter type '" + keyword + "' — use int, float, string, word, text, player, selector, or pos");
             };
         }
     }
