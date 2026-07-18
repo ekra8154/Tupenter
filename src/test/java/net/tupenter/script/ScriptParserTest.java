@@ -457,6 +457,30 @@ class ScriptParserTest {
     }
 
     @Test
+    void generatedLinesUseBodyStatementForms() {
+        ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(
+                "/time set day && hello && #echo hi", "/$x$", options(Map.of()));
+        assertNull(result.error());
+        List<Script.SendStatement> statements = result.script().statements();
+        assertEquals(3, statements.size());
+        assertEquals(Script.Kind.COMMAND, statements.get(0).kind());
+        assertEquals("time set day", statements.get(0).content());
+        assertEquals(Script.Kind.CHAT, statements.get(1).kind());
+        assertEquals("hello", statements.get(1).content());
+        assertEquals(Script.Kind.ECHO, statements.get(2).kind());
+        assertEquals("/$x$", result.script().originalLine());
+    }
+
+    @Test
+    void generatedPlainTextIsChatAndStillAScript() {
+        ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine("hi", "/$x$", options(Map.of()));
+        assertNull(result.error());
+        assertEquals(1, result.script().statements().size());
+        assertEquals(Script.Kind.CHAT, result.script().statements().get(0).kind());
+        assertEquals("hi", result.script().statements().get(0).content());
+    }
+
+    @Test
     void paramsCanDriveLoops() {
         Map<String, String> aliases = Map.of("spam", "<count:int> #repeat $count$ (/say hi $i$)");
         ScriptParser.ParseResult result = parse("spam 3", aliases);

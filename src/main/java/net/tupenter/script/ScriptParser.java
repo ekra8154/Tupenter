@@ -131,6 +131,32 @@ public final class ScriptParser {
         return parseSequence(work, message, true, prefixes.silent(), prefixes.history(), options);
     }
 
+    /**
+     * Parses script-generated text (e.g. the string a /$...$ line evaluated
+     * to) with alias-body semantics: each statement picks its own form —
+     * "/..." command, "#..." directive, bare text chat. Unlike parse(),
+     * chained bare segments are NOT forced to commands, and the result is
+     * always a runnable script. {@code originalLine} is what history records.
+     */
+    public static ParseResult parseGeneratedLine(String line, String originalLine, Options options) {
+        LinePrefixes prefixes;
+        try {
+            prefixes = stripLinePrefixes(line, options);
+        } catch (ParseAbort abort) {
+            return ParseResult.error(abort.getMessage());
+        }
+
+        String work = prefixes.rest();
+        if (work.isEmpty()) {
+            return ParseResult.error("The expression evaluated to nothing runnable");
+        }
+        if (work.startsWith("#") && !isKnownStatementWord(firstWord(work).toLowerCase(Locale.ROOT))) {
+            return ParseResult.error("Unknown directive " + firstWord(work));
+        }
+
+        return parseSequence(work, originalLine, true, prefixes.silent(), prefixes.history(), options, true);
+    }
+
     private static boolean isKnownStatementWord(String word) {
         return STATEMENT_DIRECTIVES.contains(word)
                 || SCANNER_DIRECTIVES.contains(word)
@@ -182,6 +208,10 @@ public final class ScriptParser {
     }
 
     private static ParseResult parseSequence(String input, String originalLine, boolean allowChat, boolean silent, Script.HistoryMode history, Options options) {
+        return parseSequence(input, originalLine, allowChat, silent, history, options, false);
+    }
+
+    private static ParseResult parseSequence(String input, String originalLine, boolean allowChat, boolean silent, Script.HistoryMode history, Options options, boolean alwaysScript) {
         Walker walker = new Walker(options);
         walker.silentDepth = silent ? 1 : 0;
         walker.history = history;
@@ -192,7 +222,7 @@ public final class ScriptParser {
             return ParseResult.error(abort.getMessage());
         }
 
-        if (silent || walker.history != Script.HistoryMode.NORMAL) {
+        if (silent || walker.history != Script.HistoryMode.NORMAL || alwaysScript) {
             walker.changed = true; // these lines always need the executor path
         }
 

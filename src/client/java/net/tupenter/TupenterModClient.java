@@ -1190,11 +1190,12 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /**
-     * Runs the string a /$...$ line evaluated to, using the language's three
-     * statement forms: "/..." is a command (full pipeline, alias expansion
-     * included), "#..." a directive, anything else a plain chat message.
-     * The leading / of /$...$ only marks the line as script, not chat.
-     * History records the ORIGINAL /$...$ line, so resending re-rolls pick().
+     * Runs the string a /$...$ line evaluated to, with alias-body statement
+     * forms per segment: "/..." is a command (full pipeline, alias expansion
+     * included), "#..." a directive, anything else a plain chat message —
+     * so "/echo hello && hello" echoes AND chats. The leading / of /$...$
+     * only marks the line as script, not chat. History records the ORIGINAL
+     * /$...$ line, so resending re-rolls pick().
      */
     private static void runEvaluatedLine(String evaluated, String historyLine) {
         String content = evaluated.trim();
@@ -1203,27 +1204,13 @@ public class TupenterModClient implements ClientModInitializer {
             return;
         }
 
-        ScriptParser.ParseResult result;
-        Script fallback;
-        if (content.startsWith("/")) {
-            String command = content.substring(1).trim();
-            if (command.isEmpty()) {
-                sendLocalCalcError(Component.literal("The expression evaluated to an empty command"));
-                return;
-            }
-            result = ScriptParser.parse(command, parserOptions());
-            fallback = new Script(historyLine, List.of(new Script.SendStatement(command, Script.Kind.COMMAND, false)), Script.HistoryMode.NORMAL);
-        } else {
-            result = ScriptParser.parseChatLine(content, parserOptions());
-            fallback = new Script(historyLine, List.of(new Script.SendStatement(content, Script.Kind.CHAT, false)), Script.HistoryMode.NORMAL);
-        }
-
+        ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(content, historyLine, parserOptions());
         if (result.error() != null) {
             sendEnhancedParsingError(result.error());
             return;
         }
 
-        Script script = result.changed() ? result.script() : fallback;
+        Script script = result.script();
         switch (script.history()) {
             case NORMAL -> updateLastMessage(historyLine);
             case FORCE -> forceAddToHistory(historyLine);
