@@ -948,11 +948,11 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Math:§r /give @s stick $32+5$ · exact fractions, no float drift · $3s$ = 3 stacks (×64)",
                     "§7Text:§r \"quoted\" · + joins: $\"lvl \" + 5$ · comparisons: == != < <= > >=",
                     "§7Conditions:§r $client.y > 60 ? 10 : 0$ · true/false · && \\|\\| !",
-                    "§7Functions:§r rand(1,64) randf pick(a | b | c) range(1,10) int float abs floor ceil round min max len sqrt sin cos tan (degrees)",
+                    "§7Functions:§r rand(1,64) randf pick(a | b | c) range(1,10) int float abs floor ceil round min max len sqrt sin cos tan (degrees). pick options are expressions and nest — quote literal text: pick(\"say hi\" | \"say nah\")",
                     "§7Implicit math:§r with Inline Expressions = Auto-detect (the default), bare math evaluates WITHOUT markers: /give @s stick 64*5 → 320. Numbers-and-operators only (no variables/functions beyond int/float), skipped inside {NBT braces}, and unparseable text is sent as-is (never errors). $...$ is the full language and works everywhere, in every mode except Disabled.",
                     "§7Gotchas:§r \\$ = literal dollar · write 2*sin(x), not 2sin(x) (bare s = stack suffix)",
                     "§7Errors:§r a bad $...$ shows a local error and sends NOTHING.",
-                    "§7Try it:§r /calc <expr> evaluates locally. /$ expr $ is top-down: numbers display, but a string result RUNS as a command — /$pick(say hi | time set day)$",
+                    "§7Try it:§r /calc <expr> evaluates locally. /$ expr $ is top-down: numbers display, but a string result RUNS as a command — /$pick(\"say hi\" | \"time set day\")$",
             };
             case "variables" -> new String[]{
                     "§bVariables — use anywhere as $name$:",

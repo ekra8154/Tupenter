@@ -95,7 +95,7 @@ class MathEvaluatorTest {
         int amount = Integer.parseInt(randResult.substring("give @s stick ".length()));
         assertTrue(amount >= 1 && amount <= 5);
 
-        String pickResult = apply("summon $pick(zombie | zombie)$", NumberMathMode.EXPLICIT_ONLY);
+        String pickResult = apply("summon $pick(\"zombie\" | \"zombie\")$", NumberMathMode.EXPLICIT_ONLY);
         assertEquals("summon zombie", pickResult);
     }
 

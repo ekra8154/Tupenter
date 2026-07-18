@@ -38,7 +38,7 @@ A line is a command (`/...`), a directive (`#...`), or plain chat.
 /give @s stick $32+5$                          → 37
 /give @s diamond $3s$                          → 192   (s = stacks of 64)
 /give @s stick $rand(1, 64)$                   → random amount, inclusive
-/summon $pick(zombie | skeleton | creeper)$    → random choice (fully literal options)
+/summon $pick("zombie" | "skeleton" | "creeper")$    → random choice (options are expressions; quote literal text)
 /tp @s ~ ~$client.y > 60 ? 10 : 0$ ~           → conditional value
 /say $client.health < 5 ? "help!" : "fine"$    → strings, comparisons
 ```
@@ -166,9 +166,10 @@ play where `sendCommandFeedback` is off.
 `/calc <expr>` evaluates anything the expression engine supports and prints
 the result without sending anything. The `/$ expr $` shorthand is top-down:
 numbers, booleans, and lists print locally like `/calc`, but a **string**
-result runs as a command — `/$pick(say hi | replacenear 5 grass_block ice)$`
+result runs as a command — `/$pick("say hi" | "replacenear 5 grass_block ice")$`
 picks one and executes it. Resending the line re-rolls (history keeps the
-original `/$...$` form).
+original `/$...$` form). pick options are expressions, so picks nest:
+`/$pick(pick("say hi" | "say yo") | "say nah")$`.
 
 ## Reference
 

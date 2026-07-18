@@ -494,51 +494,31 @@ final class ExpressionEvaluator {
         }
 
         /**
-         * pick(a | b | c) — options are literal text, split on top-level '|'.
-         * Escapes: \| \( \) \\ \$ produce the literal character. Parentheses
-         * inside options must balance (or be escaped).
+         * pick(a | b | c) — options are full expressions separated by
+         * top-level '|' ('||' is still boolean or inside an option), so
+         * picks nest and compute: pick(rand(1,5) | client.y | pick(1 | 2)).
+         * Quote literal text: pick("say hi" | "say nah"). Like ternary,
+         * every option evaluates; one result is returned at random.
          */
         private Value parsePick() {
-            List<String> options = new ArrayList<>();
-            StringBuilder current = new StringBuilder();
-            int depth = 1;
-
+            List<Value> options = new ArrayList<>();
             while (true) {
+                options.add(parseTernary());
+                skipWhitespace();
                 if (atEnd()) {
                     throw new ExpressionException("pick(...) is missing its closing parenthesis");
                 }
-                char c = input.charAt(index);
-
-                if (c == '\\' && index + 1 < input.length()) {
-                    current.append(input.charAt(index + 1));
-                    index += 2;
-                    continue;
-                }
-                if (c == '(') {
-                    depth++;
-                } else if (c == ')') {
-                    depth--;
-                    if (depth == 0) {
-                        index++;
-                        break;
-                    }
-                } else if (c == '|' && depth == 1) {
-                    options.add(current.toString().trim());
-                    current.setLength(0);
+                char c = peek();
+                if (c == '|') {
                     index++;
                     continue;
                 }
-
-                current.append(c);
-                index++;
+                if (c == ')') {
+                    index++;
+                    return options.get(context.random().nextInt(options.size()));
+                }
+                throw new ExpressionException("pick(...): expected '|' or ')' but found '" + c + "'");
             }
-            options.add(current.toString().trim());
-
-            if (options.size() == 1 && options.get(0).isEmpty()) {
-                throw new ExpressionException("pick(...) needs at least one option, e.g. pick(a | b)");
-            }
-
-            return new Value.StringValue(options.get(context.random().nextInt(options.size())));
         }
 
         private String parseIdentifier() {

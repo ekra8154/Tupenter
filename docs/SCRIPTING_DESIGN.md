@@ -171,8 +171,9 @@ var         := "$" name "$"
    directive header, or as a `#foreach` list). Structural parens nest and
    shield `&&` and `|`. Anywhere else parens are literal (`/say (hi)` untouched).
 3. `&&` splits only at depth 0 (outside `$...$` and structural parens).
-4. `|` separates items only inside `pick(...)` and `#foreach` lists; `\|` is a
-   literal pipe there. Elsewhere `|` is literal.
+4. `|` separates items only inside `pick(...)` (where options are
+   expressions — quote literal text) and `#foreach` lists (`\|` escapes a
+   literal pipe there). Elsewhere `|` is literal.
 5. `#word` is a directive only in statement position (line start or right
    after `&&` / inside a group). A `#` mid-text is literal.
 6. A stray unmatched `$` in a line containing no other Tupenter syntax is
@@ -209,7 +210,8 @@ directive arguments. `CommandMathParser`'s exact-rational core is the seed.
 | literals, parens, functions, variables | |
 
 Functions, phase 1: `int` `float` (existing), `rand(min,max)` (integer,
-inclusive), `pick(a | b | c)` (options literal, `\|` escape — NBT-safe),
+inclusive), `pick(a | b | c)` (options are full expressions, so picks nest
+and compute; quote literal text — `pick("say hi" | "say nah")`),
 `range(start, stop[, step])` (inclusive). Phase 2: `floor` `ceil` `round`
 `abs` `min` `max` `randf` `len`.
 

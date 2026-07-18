@@ -125,32 +125,37 @@ class ExpressionEvaluatorTest {
         EvalContext context = new EvalContext(new Random(7));
         Set<String> options = Set.of("stick", "iron_ingot", "diamond");
         for (int i = 0; i < 50; i++) {
-            String result = ExpressionEvaluator.evaluate("pick(stick | iron_ingot | diamond)", context).displayString();
+            String result = ExpressionEvaluator.evaluate("pick(\"stick\" | \"iron_ingot\" | \"diamond\")", context).displayString();
             assertTrue(options.contains(result), "unexpected pick: " + result);
         }
     }
 
     @Test
-    void pickOptionsAreLiteralText() {
-        // NBT-ish fragments with commas, brackets, braces survive untouched
-        String result = eval("pick(,0,0]} | ,0,0]})");
-        assertEquals(",0,0]}", result);
+    void pickOptionsAreExpressions() {
+        assertEquals("4", eval("pick(2+2 | 2*2)"));
+        // nested pick evaluates instead of returning its own source text
+        assertEquals("7", eval("pick(pick(7 | 7) | 7)"));
+        // literal text (spaces, commas, pipes) goes in quotes
+        String quoted = eval("pick(\"say hi there\" | \"say hi there\")");
+        assertEquals("say hi there", quoted);
+        assertEquals("a | b", eval("pick(\"a | b\" | \"a | b\")"));
     }
 
     @Test
-    void pickEscapedPipeIsLiteral() {
-        assertEquals("a | b", eval("pick(a \\| b)"));
-    }
-
-    @Test
-    void pickBalancedParensInsideOptions() {
-        assertEquals("(a,b)", eval("pick((a,b) | (a,b))"));
+    void pickSeparatorDoesNotEatBooleanOr() {
+        // || binds inside an option; a single | separates options
+        EvalContext context = new EvalContext(new Random(3));
+        Set<String> results = new java.util.HashSet<>();
+        for (int i = 0; i < 50; i++) {
+            results.add(ExpressionEvaluator.evaluate("pick(true || false | 9)", context).displayString());
+        }
+        assertEquals(Set.of("true", "9"), results);
     }
 
     @Test
     void pickRequiresAnOption() {
         assertThrows(ExpressionException.class, () -> eval("pick()"));
-        assertThrows(ExpressionException.class, () -> eval("pick(a | b"));
+        assertThrows(ExpressionException.class, () -> eval("pick(1 | 2"));
     }
 
     // --- variables ---
