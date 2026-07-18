@@ -17,6 +17,7 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.ClientSuggestionProvider;
+import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.AngleArgument;
 import net.minecraft.commands.arguments.ColorArgument;
@@ -24,10 +25,12 @@ import net.minecraft.commands.arguments.DimensionArgument;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.commands.arguments.TimeArgument;
+import net.minecraft.commands.arguments.blocks.BlockStateArgument;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.commands.arguments.coordinates.ColumnPosArgument;
 import net.minecraft.commands.arguments.coordinates.RotationArgument;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
+import net.minecraft.commands.arguments.item.ItemArgument;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.tupenter.TupenterMod;
 import net.tupenter.script.AliasDefinition;
@@ -49,7 +52,7 @@ public final class ClientCommandRegistrar {
     }
 
     /** Tree for the Fabric client-command dispatcher (executes the alias). */
-    public static LiteralArgumentBuilder<FabricClientCommandSource> buildAliasNode(String name, AliasDefinition definition) {
+    public static LiteralArgumentBuilder<FabricClientCommandSource> buildAliasNode(String name, AliasDefinition definition, CommandBuildContext buildContext) {
         LiteralArgumentBuilder<FabricClientCommandSource> node = literal(name);
 
         if (definition.params().isEmpty()) {
@@ -62,7 +65,7 @@ public final class ClientCommandRegistrar {
         ArgumentBuilder<FabricClientCommandSource, ?> chain = null;
         for (int i = definition.params().size() - 1; i >= 0; i--) {
             AliasDefinition.Param param = definition.params().get(i);
-            RequiredArgumentBuilder<FabricClientCommandSource, ?> arg = argument(param.name(), argumentTypeFor(param.type()));
+            RequiredArgumentBuilder<FabricClientCommandSource, ?> arg = argument(param.name(), argumentTypeFor(param.type(), buildContext));
             if (param.type() == AliasDefinition.ParamType.PLAYER) {
                 arg.suggests((context, builder) -> SharedSuggestionProvider.suggest(context.getSource().getOnlinePlayerNames(), builder));
             } else if (param.type() == AliasDefinition.ParamType.CHOICE) {
@@ -80,7 +83,12 @@ public final class ClientCommandRegistrar {
         return node;
     }
 
-    private static ArgumentType<?> argumentTypeFor(AliasDefinition.ParamType type) {
+    private static ArgumentType<?> argumentTypeFor(AliasDefinition.ParamType type, CommandBuildContext buildContext) {
+        if (buildContext == null && (type == AliasDefinition.ParamType.ITEM || type == AliasDefinition.ParamType.BLOCK)) {
+            // no registries yet (shouldn't happen — trees are built per-connection); degrade to plain text
+            TupenterMod.LOGGER.warn("No registry context for an item/block parameter — falling back to a plain string argument");
+            return StringArgumentType.string();
+        }
         return switch (type) {
             case INT -> IntegerArgumentType.integer();
             case FLOAT -> DoubleArgumentType.doubleArg();
@@ -97,7 +105,8 @@ public final class ClientCommandRegistrar {
             case DIMENSION -> DimensionArgument.dimension(); // suggests the dimensions the client knows
             case COLOR -> ColorArgument.color();
             case ID -> ResourceLocationArgument.id();
-            case ITEM, BLOCK -> StringArgumentType.string(); // upgraded to registry-aware types when a build context is available
+            case ITEM -> ItemArgument.item(buildContext);      // registry tab-complete incl. [components]
+            case BLOCK -> BlockStateArgument.block(buildContext); // registry tab-complete incl. [states]
         };
     }
 
@@ -142,17 +151,28 @@ public final class ClientCommandRegistrar {
 
     /** Registers (or replaces) an alias in the live dispatchers — no relaunch. */
     public static void registerDynamic(String name, AliasDefinition definition) {
+        CommandBuildContext buildContext = currentBuildContext();
+
         CommandDispatcher<FabricClientCommandSource> dispatcher = ClientCommandManager.getActiveDispatcher();
         if (dispatcher != null) {
             removeNode(dispatcher.getRoot(), name);
-            dispatcher.register(buildAliasNode(name, definition));
+            dispatcher.register(buildAliasNode(name, definition, buildContext));
         }
 
         ClientPacketListener connection = Minecraft.getInstance().getConnection();
         if (connection != null) {
             removeNode(connection.getCommands().getRoot(), name);
-            connection.getCommands().getRoot().addChild(buildSuggestionNode(name, definition).build());
+            connection.getCommands().getRoot().addChild(buildSuggestionNode(name, definition, buildContext).build());
         }
+    }
+
+    /** Registry context from the live connection (item/block params need it); null when not in-game. */
+    public static CommandBuildContext currentBuildContext() {
+        ClientPacketListener connection = Minecraft.getInstance().getConnection();
+        if (connection == null) {
+            return null;
+        }
+        return CommandBuildContext.simple(connection.registryAccess(), connection.enabledFeatures());
     }
 
     /** Removes an alias from the live dispatchers. Best-effort (reflection). */
@@ -170,7 +190,7 @@ public final class ClientCommandRegistrar {
     }
 
     /** Suggestion-only tree for the vanilla command tree (drives tab-complete). */
-    private static LiteralArgumentBuilder<ClientSuggestionProvider> buildSuggestionNode(String name, AliasDefinition definition) {
+    private static LiteralArgumentBuilder<ClientSuggestionProvider> buildSuggestionNode(String name, AliasDefinition definition, CommandBuildContext buildContext) {
         LiteralArgumentBuilder<ClientSuggestionProvider> node = LiteralArgumentBuilder.literal(name);
 
         if (definition.params().isEmpty()) {
@@ -182,7 +202,7 @@ public final class ClientCommandRegistrar {
         for (int i = definition.params().size() - 1; i >= 0; i--) {
             AliasDefinition.Param param = definition.params().get(i);
             RequiredArgumentBuilder<ClientSuggestionProvider, ?> arg =
-                    RequiredArgumentBuilder.argument(param.name(), argumentTypeFor(param.type()));
+                    RequiredArgumentBuilder.argument(param.name(), argumentTypeFor(param.type(), buildContext));
             if (param.type() == AliasDefinition.ParamType.PLAYER) {
                 arg.suggests((context, builder) -> SharedSuggestionProvider.suggest(context.getSource().getOnlinePlayerNames(), builder));
             } else if (param.type() == AliasDefinition.ParamType.CHOICE) {

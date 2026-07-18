@@ -413,7 +413,7 @@ public class TupenterModClient implements ClientModInitializer {
                                     .executes(TupenterModClient::runAliasDetailCommand)));
 
                     for (Map.Entry<String, AliasDefinition> alias : CommandAliasManager.getAliasMap().entrySet()) {
-                        dispatcher.register(ClientCommandRegistrar.buildAliasNode(alias.getKey(), alias.getValue()));
+                        dispatcher.register(ClientCommandRegistrar.buildAliasNode(alias.getKey(), alias.getValue(), registryAccess));
                     }
                 });
 
