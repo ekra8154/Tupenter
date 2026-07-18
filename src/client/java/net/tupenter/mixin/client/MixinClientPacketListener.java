@@ -9,8 +9,22 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(ClientPacketListener.class)
+// priority 900: the sendCommand hook must observe the line before Fabric's
+// client-command handler cancels it for client-only commands
+@Mixin(value = ClientPacketListener.class, priority = 900)
 public class MixinClientPacketListener {
+
+    /**
+     * Client-only commands (/tupenter, /customcommand, /echo, other mods')
+     * never become packets — Fabric executes and swallows them — so the
+     * packet mixin can't record them. Catch them here so anything sent by
+     * pressing Enter lands in resend history (toggle and filter still apply).
+     */
+    @Inject(method = "sendCommand", at = @At("HEAD"))
+    private void tupenter$recordClientOnlyCommand(String command, CallbackInfo ci) {
+        TupenterModClient.recordIfClientOnlyCommand(command);
+    }
+
     @Inject(method = "handleSystemChat", at = @At("HEAD"), cancellable = true)
     private void onHandleSystemChat(ClientboundSystemChatPacket packet, CallbackInfo ci) {
         // #silent scripts suppress feedback for their whole run (plus grace)

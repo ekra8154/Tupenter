@@ -38,7 +38,8 @@ public class MixinConnection {
             if (TupenterConfig.INSTANCE.enhancedCommandParsingEnabled
                     && packet instanceof ServerboundChatPacket chatPacket
                     && chatPacket.message().startsWith("#")) {
-                if (TupenterModClient.handleStagePrefix(chatPacket.message(), false)) {
+                if (TupenterModClient.handleStagePrefix(chatPacket.message(), false)
+                        || TupenterModClient.handleUnstagePrefix(chatPacket.message())) {
                     ci.cancel();
                     return;
                 }
@@ -76,7 +77,8 @@ public class MixinConnection {
             return false;
         }
 
-        if (TupenterModClient.handleStagePrefix(originalCommand, true)) {
+        if (TupenterModClient.handleStagePrefix(originalCommand, true)
+                || TupenterModClient.handleUnstagePrefix(originalCommand)) {
             ci.cancel();
             return true;
         }

@@ -252,6 +252,75 @@ public class TupenterModClient implements ClientModInitializer {
         return true;
     }
 
+    /**
+     * #unstage [count] — removes the newest [count] (default 1) entries from
+     * resend history and reports what the next resend now is. The #unstage
+     * line itself is never recorded.
+     *
+     * @return true when the line was an #unstage line (packet must be cancelled)
+     */
+    public static boolean handleUnstagePrefix(String line) {
+        String trimmed = line.trim();
+        if (!trimmed.regionMatches(true, 0, "#unstage", 0, 8)) {
+            return false;
+        }
+        if (trimmed.length() > 8 && !Character.isWhitespace(trimmed.charAt(8))) {
+            return false; // "#unstaged..." or similar — not our word
+        }
+
+        String argument = trimmed.substring(8).trim();
+        int count = 1;
+        if (!argument.isEmpty()) {
+            try {
+                count = Integer.parseInt(argument);
+            } catch (NumberFormatException ex) {
+                sendEnhancedParsingError("#unstage takes a count, e.g. #unstage 3");
+                return true;
+            }
+            if (count < 1) {
+                sendEnhancedParsingError("#unstage count must be at least 1");
+                return true;
+            }
+        }
+
+        int removed = 0;
+        while (removed < count && !messageHistory.isEmpty()) {
+            messageHistory.remove(messageHistory.size() - 1);
+            removed++;
+        }
+
+        String next;
+        if (messageHistory.isEmpty()) {
+            next = "nothing — history is empty";
+        } else {
+            next = messageHistory.get(messageHistory.size() - 1);
+            if (next.length() > 60) {
+                next = next.substring(0, 60) + "…";
+            }
+        }
+        sendEnhancedParsingInfo("Unstaged " + removed + " — next resend: " + next);
+        return true;
+    }
+
+    /**
+     * Records a typed command that Fabric's client-command handler will
+     * swallow before it can become a packet (/tupenter, /echo, ...). Custom
+     * command aliases are skipped — they DO reach the packet path, which
+     * records them with #norecord respected.
+     */
+    public static void recordIfClientOnlyCommand(String command) {
+        int separator = command.indexOf(' ');
+        String first = (separator >= 0 ? command.substring(0, separator) : command).toLowerCase(java.util.Locale.ROOT);
+        if (first.isEmpty() || CommandAliasManager.hasAlias(first)) {
+            return;
+        }
+        var dispatcher = net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.getActiveDispatcher();
+        if (dispatcher == null || dispatcher.getRoot().getChild(first) == null) {
+            return; // a normal server command — the packet path records it
+        }
+        updateLastMessage("/" + command);
+    }
+
     /** Adds to resend history bypassing the recording toggle and filter (#stage, #record). */
     public static void forceAddToHistory(String msg) {
         if (messageHistory.isEmpty() || !messageHistory.get(messageHistory.size() - 1).equals(msg)) {
@@ -1039,7 +1108,8 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7#norecord§r — run the line but keep it out of resend history",
                     "§7#record§r — the inverse: records even when message tracking is OFF (and bypasses the filter)",
                     "§7#stage§r — put the line INTO resend history without running it — press R when you want it",
-                    "§7/echo§r — show text only to yourself, sends nothing: /echo y is $client.y$",
+                    "§7#unstage [n]§r — remove the newest n (default 1) entries from resend history; reports what the next resend is",
+                    "§7/echo§r — show text only to yourself, sends nothing: /echo y is $client.y$. Colors with &-codes: /echo &aall good &7($client.health$ hp) — \\& for a literal &",
                     "§7Prefixes combine: #norecord #silent /say hi",
             };
             case "scripts" -> new String[]{
@@ -1192,8 +1262,26 @@ public class TupenterModClient implements ClientModInitializer {
                 return 0;
             }
         }
-        context.getSource().sendFeedback(Component.literal(text).withStyle(ChatFormatting.GRAY));
+        context.getSource().sendFeedback(Component.literal(applyAmpersandColors(text)).withStyle(ChatFormatting.GRAY));
         return 1;
+    }
+
+    /** &a-style color codes for /echo (translated to §); \& is a literal ampersand. */
+    private static String applyAmpersandColors(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\\' && i + 1 < text.length() && text.charAt(i + 1) == '&') {
+                out.append('&');
+                i++;
+            } else if (c == '&' && i + 1 < text.length()
+                    && "0123456789abcdefklmnorABCDEFKLMNOR".indexOf(text.charAt(i + 1)) >= 0) {
+                out.append('§');
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
     }
 
     private static int runCustomCommandHelp(CommandContext<FabricClientCommandSource> context) {
