@@ -47,8 +47,9 @@ public final class TickScriptRunner {
                 continue;
             }
 
-            String command = trimmed.startsWith("/") ? trimmed.substring(1) : trimmed;
-            ScriptParser.ParseResult result = ScriptParser.parse(command, options);
+            // statement forms apply, like custom command bodies: /command,
+            // #directive, bare text chat (which WILL spam 20x/s — on you)
+            ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(trimmed, trimmed, options);
 
             if (result.error() != null) {
                 faulted.add(trimmed);
@@ -57,11 +58,7 @@ public final class TickScriptRunner {
                 continue;
             }
 
-            Script script = result.changed()
-                    ? result.script()
-                    : new Script(trimmed, List.of(new Script.SendStatement(command, Script.Kind.COMMAND, false)), Script.HistoryMode.SKIP);
-
-            executor.trySubmit(script); // quiet refusal — retry next tick
+            executor.trySubmit(result.script()); // quiet refusal — retry next tick
         }
     }
 

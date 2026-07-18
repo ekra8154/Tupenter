@@ -30,6 +30,13 @@ client-side scripting layer. Grounded in the current code
    - `/...` → a command
    - `#...` → a Tupenter directive
    - anything else → a plain chat message
+   This holds in every context — typed lines, custom command bodies, tick
+   scripts, and evaluated strings. The typed `/` of a command line flavors
+   only its first segment. A segment that is *exactly one* `$...$` marker
+   evaluates first and its string result re-dispatches by the same forms
+   ($cmd$ holding "/tp ~ ~1 ~" runs the command); the whole-line `/$expr$`
+   shorthand is the same rule for the entire line. Chat segments inside
+   scripts evaluate explicit `$...$` markers (never auto-detect math).
 3. **Never clash with vanilla syntax.** `{}` `[]` `"` selectors and NBT remain
    untouched. Parens are literal unless owned by a directive. `$` and `#` are
    effectively unused by vanilla commands.

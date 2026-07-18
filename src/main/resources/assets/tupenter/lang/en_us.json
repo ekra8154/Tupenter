@@ -16,7 +16,7 @@
   "text.tupenter.add_script": "+ Add Script",
   "tooltip.tupenter.add_script": "Adds a new (disabled) script row. WARNING: this reloads the screen — script text edits are kept, but unsaved changes in other tabs are discarded.",
   "option.tupenter.tick_scripts": "Tick Scripts",
-  "tooltip.tupenter.tick_scripts": "One script per line — commands, #if guards, && chains, anything Tupenter parses. Start a line with // to disable it. Tick scripts never touch your resend history and never print #set notices. A script with an error reports once and is skipped until you edit the list. Examples: #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying) — or — #if ($client.y$ > $maxy$) (/tp @s ~ $maxy$ ~) with $maxy$ set via #set.",
+  "tooltip.tupenter.tick_scripts": "One script per line — statement forms apply like custom command bodies: /command, #directive, bare text = chat (20x/second — you have been warned). Start a line with // to disable it. Tick scripts never touch your resend history and never print #set notices. A script with an error reports once and is skipped until you edit the list. Examples: #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying) — or — #if ($client.y$ > $maxy$) (/tp @s ~ $maxy$ ~) with $maxy$ set via #set.",
 
   "option.tupenter.reset_on_new_session": "Clear Resend History on New Session",
   "tooltip.tupenter.reset_on_new_session": "If enabled, your resend history is automatically cleared when you join a world or server.",
@@ -89,7 +89,7 @@
   "option.tupenter.max_concurrent_scripts": "Max Concurrent Scripts",
   "tooltip.tupenter.max_concurrent_scripts": "How many scripts may be mid-execution at the same time. Mostly relevant when large scripts are spread across ticks. Use /tupenter abort to stop all running scripts.",
   "option.tupenter.command_chaining": "Command Chaining",
-  "tooltip.tupenter.command_chaining": "Lets Tupenter split commands joined with && and send them in order. Tupenter still remembers and replays the original combined command as one history entry. Example: /weather clear && /time set day.",
+  "tooltip.tupenter.command_chaining": "Lets Tupenter split lines joined with && and send the pieces in order. Each segment picks its own form: /command, #directive, bare text = chat — so /say ready && weather clear says ready then CHATS the words weather clear. Tupenter still remembers and replays the original combined line as one history entry. Example: /weather clear && /time set day.",
   "option.tupenter.number_math": "Inline Expressions",
   "tooltip.tupenter.number_math": "Evaluates $ ... $ expressions inside commands before sending. Supports math (+, -, *, /, decimals, parentheses, s for stacks x64), text in \"quotes\", comparisons (==, !=, <, >), conditions like $x > 5 ? \"big\" : \"small\"$, and functions: int(...), float(...), rand(min, max), pick(a | b | c) with expression options (quote literal text: pick(\"say hi\" | \"say nah\")), sin/cos/tan (degrees), sqrt, abs. Write \\$ for a literal dollar sign. Note: write 2*sin(x), not 2sin(x) — a bare s after a number is the stack suffix. A bad $...$ expression shows an error and sends nothing. Auto-detect additionally solves plain math like 32+4 or 3s outside NBT braces (never errors — unparseable text is sent as-is).",
   "mode.tupenter.number_math.disabled": "Disabled",

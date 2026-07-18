@@ -62,11 +62,15 @@ class ScriptParserTest {
     }
 
     @Test
-    void chainSplitsIntoCommands() {
-        ScriptParser.ParseResult result = parse("time set day && weather clear");
+    void chainSegmentsPickTheirOwnStatementForm() {
+        // the typed / flavors only the first segment; the rest follow the
+        // three forms — /command, #directive, bare chat
+        ScriptParser.ParseResult result = parse("time set day && /weather clear && weather clear");
         assertTrue(result.changed());
-        assertEquals(List.of("time set day", "weather clear"), contents(result));
-        assertTrue(result.script().statements().stream().allMatch(Script.SendStatement::isCommand));
+        assertEquals(List.of("time set day", "weather clear", "weather clear"), contents(result));
+        assertTrue(result.script().statements().get(0).isCommand());
+        assertTrue(result.script().statements().get(1).isCommand());
+        assertFalse(result.script().statements().get(2).isCommand());
         assertFalse(result.script().statements().get(0).silent());
     }
 
@@ -92,11 +96,45 @@ class ScriptParserTest {
     }
 
     @Test
-    void nonAliasChatSegmentsAreForcedToCommands() {
+    void chainedBareSegmentsAreChat() {
         ScriptParser.ParseResult result = parse("time set day && hello");
         assertTrue(result.changed());
-        assertTrue(result.script().statements().get(1).isCommand());
+        assertFalse(result.script().statements().get(1).isCommand());
         assertEquals("hello", result.script().statements().get(1).content());
+    }
+
+    @Test
+    void wholeMarkerStatementsRedispatchByForm() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("cmd1", Value.of("/tp ~ ~1 ~"));
+        store.set("greet", Value.of("hello"));
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "say teleporting && $cmd1$ && $greet$", options(Map.of(), store));
+        assertNull(result.error());
+        List<Script.SendStatement> statements = result.script().statements();
+        assertEquals(3, statements.size());
+        assertTrue(statements.get(0).isCommand());
+        assertEquals("say teleporting", statements.get(0).content());
+        assertTrue(statements.get(1).isCommand());
+        assertEquals("tp ~ ~1 ~", statements.get(1).content());
+        assertFalse(statements.get(2).isCommand());
+        assertEquals("hello", statements.get(2).content());
+    }
+
+    @Test
+    void wholeMarkerNumbersStayChatText() {
+        ScriptParser.ParseResult result = parse("say x && $1+2$");
+        assertNull(result.error());
+        assertFalse(result.script().statements().get(1).isCommand());
+        assertEquals("3", result.script().statements().get(1).content());
+    }
+
+    @Test
+    void chatSegmentsEvaluateExplicitMarkers() {
+        ScriptParser.ParseResult result = parse("say hi && score is $1+1$");
+        assertNull(result.error());
+        assertFalse(result.script().statements().get(1).isCommand());
+        assertEquals("score is 2", result.script().statements().get(1).content());
     }
 
     @Test

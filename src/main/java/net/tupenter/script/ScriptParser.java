@@ -96,8 +96,7 @@ public final class ScriptParser {
             work = "/" + work;
         }
 
-        boolean allowChat = isAlias(stripLeadingSlash(work), options.aliases());
-        return parseSequence(work, command, allowChat, prefixes.silent(), prefixes.history(), options);
+        return parseSequence(work, command, prefixes.silent(), prefixes.history(), options);
     }
 
     /**
@@ -128,7 +127,7 @@ public final class ScriptParser {
             return ParseResult.error("Unknown directive " + firstWord(work));
         }
 
-        return parseSequence(work, message, true, prefixes.silent(), prefixes.history(), options);
+        return parseSequence(work, message, prefixes.silent(), prefixes.history(), options);
     }
 
     /**
@@ -154,7 +153,7 @@ public final class ScriptParser {
             return ParseResult.error("Unknown directive " + firstWord(work));
         }
 
-        return parseSequence(work, originalLine, true, prefixes.silent(), prefixes.history(), options, true);
+        return parseSequence(work, originalLine, prefixes.silent(), prefixes.history(), options, true);
     }
 
     private static boolean isKnownStatementWord(String word) {
@@ -207,17 +206,17 @@ public final class ScriptParser {
         }
     }
 
-    private static ParseResult parseSequence(String input, String originalLine, boolean allowChat, boolean silent, Script.HistoryMode history, Options options) {
-        return parseSequence(input, originalLine, allowChat, silent, history, options, false);
+    private static ParseResult parseSequence(String input, String originalLine, boolean silent, Script.HistoryMode history, Options options) {
+        return parseSequence(input, originalLine, silent, history, options, false);
     }
 
-    private static ParseResult parseSequence(String input, String originalLine, boolean allowChat, boolean silent, Script.HistoryMode history, Options options, boolean alwaysScript) {
+    private static ParseResult parseSequence(String input, String originalLine, boolean silent, Script.HistoryMode history, Options options, boolean alwaysScript) {
         Walker walker = new Walker(options);
         walker.silentDepth = silent ? 1 : 0;
         walker.history = history;
 
         try {
-            walker.processStatements(input, allowChat);
+            walker.processStatements(input);
         } catch (ParseAbort abort) {
             return ParseResult.error(abort.getMessage());
         }
@@ -293,7 +292,7 @@ public final class ScriptParser {
             this.context = new EvalContext(options.random(), lookup);
         }
 
-        private void processStatements(String text, boolean allowChat) {
+        private void processStatements(String text) {
             if (++depth > MAX_NESTING_DEPTH) {
                 throw new ParseAbort("Scripts can't nest deeper than " + MAX_NESTING_DEPTH + " levels");
             }
@@ -304,9 +303,9 @@ public final class ScriptParser {
                 }
                 for (Stmt statement : statements) {
                     if (statement instanceof DirectiveStmt directive) {
-                        processDirective(directive, allowChat);
+                        processDirective(directive);
                     } else {
-                        processRaw(((RawStmt) statement).text(), allowChat);
+                        processRaw(((RawStmt) statement).text());
                     }
                 }
             } finally {
@@ -314,7 +313,7 @@ public final class ScriptParser {
             }
         }
 
-        private void processRaw(String text, boolean allowChat) {
+        private void processRaw(String text) {
             Script.SendStatement normalized = normalizeSegment(text);
             if (normalized == null) {
                 return; // empty segment (e.g. "a && && b") — skip it
@@ -342,12 +341,35 @@ public final class ScriptParser {
             }
 
             boolean isCommand = normalized.isCommand();
-            if (!allowChat && !isCommand) {
-                isCommand = true;
+
+            // a chat statement that is exactly one $...$ marker re-dispatches
+            // its string result by statement form, like /$expr$ does for the
+            // whole line — $cmd$ holding "/tp ~ ~1 ~" runs as a command
+            if (!isCommand && options.mathMode() != NumberMathMode.DISABLED) {
+                String inner = wholeMarkerInner(content);
+                if (inner != null) {
+                    Value value;
+                    try {
+                        value = ExpressionEvaluator.evaluate(inner, context);
+                    } catch (ExpressionException ex) {
+                        throw new ParseAbort(ex.getMessage());
+                    }
+                    changed = true;
+                    if (value instanceof Value.StringValue string) {
+                        processStatements(string.value());
+                        return;
+                    }
+                    try {
+                        emitSend(value.substitutionString(), false);
+                    } catch (ExpressionException ex) {
+                        throw new ParseAbort(ex.getMessage());
+                    }
+                    return;
+                }
             }
 
             if (isAlias(content, options.aliases())) {
-                processAliasInvocation(content, allowChat);
+                processAliasInvocation(content);
             } else {
                 emitSend(content, isCommand);
             }
@@ -355,9 +377,11 @@ public final class ScriptParser {
 
         private void emitSend(String content, boolean isCommand) {
             String rewritten = content;
-            if (isCommand && options.mathMode() != NumberMathMode.DISABLED) {
+            if (options.mathMode() != NumberMathMode.DISABLED) {
                 try {
-                    rewritten = MathEvaluator.applyNumberMath(content, options.mathMode(), context);
+                    // chat evaluates explicit $...$ only — never auto-detect math
+                    rewritten = MathEvaluator.applyNumberMath(content,
+                            isCommand ? options.mathMode() : NumberMathMode.EXPLICIT_ONLY, context);
                 } catch (ExpressionException ex) {
                     throw new ParseAbort(ex.getMessage());
                 }
@@ -429,7 +453,7 @@ public final class ScriptParser {
 
         // --- aliases ---
 
-        private void processAliasInvocation(String content, boolean allowChat) {
+        private void processAliasInvocation(String content) {
             int separator = findFirstWhitespace(content);
             String name = (separator >= 0 ? content.substring(0, separator) : content).toLowerCase(Locale.ROOT);
             String remainder = separator >= 0 ? content.substring(separator).trim() : "";
@@ -483,7 +507,7 @@ public final class ScriptParser {
             scopes.push(bindings);
             silentDepth += silentPushes;
             try {
-                processStatements(body, true);
+                processStatements(body);
             } finally {
                 silentDepth -= silentPushes;
                 scopes.pop();
@@ -819,23 +843,23 @@ public final class ScriptParser {
 
         // --- structural directives ---
 
-        private void processDirective(DirectiveStmt directive, boolean allowChat) {
+        private void processDirective(DirectiveStmt directive) {
             changed = true;
             switch (directive.word()) {
-                case "#repeat" -> processRepeat(directive, allowChat);
-                case "#if" -> processIf(directive, allowChat);
-                case "#for" -> processFor(directive, allowChat);
-                case "#foreach" -> processForeach(directive, allowChat);
-                case "#silent" -> processSilentGroup(directive, allowChat);
+                case "#repeat" -> processRepeat(directive);
+                case "#if" -> processIf(directive);
+                case "#for" -> processFor(directive);
+                case "#foreach" -> processForeach(directive);
+                case "#silent" -> processSilentGroup(directive);
                 default -> throw new ParseAbort("Unknown directive " + directive.word());
             }
         }
 
-        private void processSilentGroup(DirectiveStmt directive, boolean allowChat) {
+        private void processSilentGroup(DirectiveStmt directive) {
             requireSilentEnabled(options);
             silentDepth++;
             try {
-                processStatements(directive.group(), allowChat);
+                processStatements(directive.group());
             } finally {
                 silentDepth--;
             }
@@ -847,7 +871,7 @@ public final class ScriptParser {
             }
         }
 
-        private void processRepeat(DirectiveStmt directive, boolean allowChat) {
+        private void processRepeat(DirectiveStmt directive) {
             requireLoops("#repeat");
             if (directive.header().isEmpty()) {
                 throw new ParseAbort("#repeat needs a count, e.g. #repeat 5 (/say hi)");
@@ -859,11 +883,11 @@ public final class ScriptParser {
             checkIterations(count, "#repeat");
 
             for (long i = 1; i <= count; i++) {
-                runScoped(Map.of("i", Value.ofNumber(i)), directive.group(), allowChat);
+                runScoped(Map.of("i", Value.ofNumber(i)), directive.group());
             }
         }
 
-        private void processIf(DirectiveStmt directive, boolean allowChat) {
+        private void processIf(DirectiveStmt directive) {
             if (!options.conditionalsEnabled()) {
                 throw new ParseAbort("Conditionals (#if) are disabled in the Tupenter config (Scripting tab).");
             }
@@ -872,13 +896,13 @@ public final class ScriptParser {
                 throw new ParseAbort("#if condition must be true/false, e.g. #if ($client.y$ > 60) (...)");
             }
             if (bool.value()) {
-                processStatements(directive.group(), allowChat);
+                processStatements(directive.group());
             } else if (directive.elseGroup() != null) {
-                processStatements(directive.elseGroup(), allowChat);
+                processStatements(directive.elseGroup());
             }
         }
 
-        private void processFor(DirectiveStmt directive, boolean allowChat) {
+        private void processFor(DirectiveStmt directive) {
             requireLoops("#for");
             ForHeader header = parseForHeader(directive.header());
 
@@ -902,12 +926,12 @@ public final class ScriptParser {
 
             BigInteger current = a;
             while (step.signum() > 0 ? current.compareTo(b) <= 0 : current.compareTo(b) >= 0) {
-                runScoped(Map.of(header.var(), new Value.NumberValue(Rational.of(current))), directive.group(), allowChat);
+                runScoped(Map.of(header.var(), new Value.NumberValue(Rational.of(current))), directive.group());
                 current = current.add(step);
             }
         }
 
-        private void processForeach(DirectiveStmt directive, boolean allowChat) {
+        private void processForeach(DirectiveStmt directive) {
             requireLoops("#foreach");
             ForeachHeader header = parseForeachHeader(directive.header());
 
@@ -927,14 +951,14 @@ public final class ScriptParser {
 
             checkIterations(items.size(), "#foreach");
             for (Value item : items) {
-                runScoped(Map.of(header.var(), item), directive.group(), allowChat);
+                runScoped(Map.of(header.var(), item), directive.group());
             }
         }
 
-        private void runScoped(Map<String, Value> bindings, String body, boolean allowChat) {
+        private void runScoped(Map<String, Value> bindings, String body) {
             scopes.push(bindings);
             try {
-                processStatements(body, allowChat);
+                processStatements(body);
             } finally {
                 scopes.pop();
             }
@@ -1513,6 +1537,24 @@ public final class ScriptParser {
         int separator = findFirstWhitespace(normalizedCommand);
         String aliasName = separator >= 0 ? normalizedCommand.substring(0, separator) : normalizedCommand;
         return aliases.containsKey(aliasName.toLowerCase(Locale.ROOT));
+    }
+
+    /** The inner text when {@code content} is exactly one $...$ span ({@code \} escapes), else null. */
+    private static String wholeMarkerInner(String content) {
+        if (content.length() < 2 || content.charAt(0) != '$') {
+            return null;
+        }
+        for (int i = 1; i < content.length(); i++) {
+            char c = content.charAt(i);
+            if (c == '\\') {
+                i++;
+                continue;
+            }
+            if (c == '$') {
+                return i == content.length() - 1 ? content.substring(1, i) : null;
+            }
+        }
+        return null;
     }
 
     private static Script.SendStatement normalizeSegment(String segment) {

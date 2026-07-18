@@ -965,7 +965,7 @@ public class TupenterModClient implements ClientModInitializer {
             };
             case "flow" -> new String[]{
                     "§bChains, loops & conditions:",
-                    "§7Chain:§r /time set day && /weather clear — one line, sent in order",
+                    "§7Chain:§r /time set day && /weather clear — one line, sent in order. Each segment picks its form: /command, #directive, bare text = chat. A segment that is exactly one $expr$ runs its string result the same way ($cmd$ holding \"/tp ~ ~1 ~\" teleports).",
                     "§7Repeat:§r #repeat 5 (/say Tick $i$!) — $i$ counts 1..5",
                     "§7For:§r #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~) — inclusive, counts down automatically",
                     "§7Foreach:§r #foreach $m$ in (zombie | skeleton) (/summon $m$) — or in range(1, 10)",
