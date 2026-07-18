@@ -517,15 +517,14 @@ class ScriptParserTest {
     @Test
     void generatedLinesUseBodyStatementForms() {
         ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(
-                "/time set day && hello && #echo hi", "/$x$", options(Map.of()));
+                "/time set day && hello", "/$x$", options(Map.of()));
         assertNull(result.error());
         List<Script.SendStatement> statements = result.script().statements();
-        assertEquals(3, statements.size());
+        assertEquals(2, statements.size());
         assertEquals(Script.Kind.COMMAND, statements.get(0).kind());
         assertEquals("time set day", statements.get(0).content());
         assertEquals(Script.Kind.CHAT, statements.get(1).kind());
         assertEquals("hello", statements.get(1).content());
-        assertEquals(Script.Kind.ECHO, statements.get(2).kind());
         assertEquals("/$x$", result.script().originalLine());
     }
 
@@ -978,29 +977,16 @@ class ScriptParserTest {
         assertEquals(Script.HistoryMode.SKIP, parse("#record #norecord say hi").script().history());
     }
 
-    // --- #echo ---
+    // --- #echo removed: /echo is a client command now ---
 
     @Test
-    void echoEmitsALocalStatement() {
-        ScriptParser.ParseResult result = parse("#echo y is $1+1$");
+    void echoDirectiveIsGone() {
+        assertNotNull(parse("#echo hi").error());
+        // /echo in a chain is just a (client-routed) command
+        ScriptParser.ParseResult result = parse("say a && /echo done");
         assertNull(result.error());
-        assertEquals(1, result.script().statements().size());
-        Script.SendStatement echo = result.script().statements().get(0);
-        assertEquals(Script.Kind.ECHO, echo.kind());
-        assertEquals("y is 2", echo.content());
-    }
-
-    @Test
-    void echoWorksMidChain() {
-        ScriptParser.ParseResult result = parse("say a && #echo done");
-        assertNull(result.error());
-        assertEquals(Script.Kind.COMMAND, result.script().statements().get(0).kind());
-        assertEquals(Script.Kind.ECHO, result.script().statements().get(1).kind());
-    }
-
-    @Test
-    void echoNeedsText() {
-        assertNotNull(parse("#echo").error());
+        assertEquals(Script.Kind.COMMAND, result.script().statements().get(1).kind());
+        assertEquals("echo done", result.script().statements().get(1).content());
     }
 
     // --- #elseif ---

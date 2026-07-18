@@ -90,7 +90,7 @@ stops everything.
 #silent /time set day && /weather clear          (whole line)
 #repeat 5 (#silent (/give @s stick) && /say hi)  (just part of it)
 #norecord /msg friend secret                     (kept out of resend history)
-#echo my y is $client.y$                         (shown only to you, sends nothing)
+/echo my y is $client.y$                         (shown only to you, sends nothing)
 ```
 
 `#silent` hides command feedback on your screen (and `#set` notices) — the

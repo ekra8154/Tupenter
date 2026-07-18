@@ -36,7 +36,6 @@ public record Script(String originalLine, List<SendStatement> statements, Histor
 
     public enum Kind {
         COMMAND, // sent as a command packet
-        CHAT,    // sent as a chat packet
-        ECHO     // displayed locally only (#echo) — nothing is sent
+        CHAT     // sent as a chat packet
     }
 }

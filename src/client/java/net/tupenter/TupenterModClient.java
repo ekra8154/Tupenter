@@ -95,14 +95,6 @@ public class TupenterModClient implements ClientModInitializer {
                 }
 
                 @Override
-                public void echo(String message) {
-                    Minecraft client = Minecraft.getInstance();
-                    if (client.player != null) {
-                        client.player.displayClientMessage(Component.literal(message).withStyle(ChatFormatting.GRAY), false);
-                    }
-                }
-
-                @Override
                 public void error(String message) {
                     sendLocalCalcError(Component.literal(message));
                 }
@@ -821,12 +813,10 @@ public class TupenterModClient implements ClientModInitializer {
             ChatFormatting color = switch (statement.kind()) {
                 case COMMAND -> ChatFormatting.AQUA;
                 case CHAT -> ChatFormatting.YELLOW;
-                case ECHO -> ChatFormatting.LIGHT_PURPLE;
             };
             String label = switch (statement.kind()) {
                 case COMMAND -> "/";
                 case CHAT -> "chat: ";
-                case ECHO -> "echo: ";
             };
             net.minecraft.network.chat.MutableComponent entry = Component.literal(" " + shown + ". ").withStyle(ChatFormatting.DARK_GRAY)
                     .append(Component.literal(label + statement.content()).withStyle(color));
@@ -1049,7 +1039,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7#norecord§r — run the line but keep it out of resend history",
                     "§7#record§r — the inverse: records even when message tracking is OFF (and bypasses the filter)",
                     "§7#stage§r — put the line INTO resend history without running it — press R when you want it",
-                    "§7#echo§r / §7/echo§r — show text only to yourself, sends nothing: /echo y is $client.y$",
+                    "§7/echo§r — show text only to yourself, sends nothing: /echo y is $client.y$",
                     "§7Prefixes combine: #norecord #silent /say hi",
             };
             case "scripts" -> new String[]{
@@ -1071,7 +1061,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7/customcommand add|remove|list [verbose]|help§r · /customcommand <name> — inspect one",
                     "§7/echo <text>§r — local-only output, evaluates $...$",
                     "§7/calc <expr>§r — local calculator · /$ expr $ — like /calc for numbers, but a string result runs as a fresh line (\"/...\" command, \"#...\" directive, else chat)",
-                    "§7/unroll <line>§r — dry-run debugger: shows what a line unrolls to (color-coded: §b/commands§7, §echat§7, §decho§7) without sending anything. #set values aren't saved.",
+                    "§7/unroll <line>§r — dry-run debugger: shows what a line unrolls to (color-coded: §b/commands§7, §echat§7) without sending anything. #set values aren't saved.",
                     "§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking",
             };
             default -> new String[]{
@@ -1079,7 +1069,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7/tupenter help expressions§r — $...$ math, text, conditions, functions",
                     "§7/tupenter help variables§r — #set, #local, client.*/world.*/nbt paths, groups",
                     "§7/tupenter help flow§r — && chains, #repeat, #for, #foreach, #if/#elseif",
-                    "§7/tupenter help prefixes§r — #silent, #norecord, #stage, #echo",
+                    "§7/tupenter help prefixes§r — #silent, #norecord, #stage, /echo",
                     "§7/tupenter help scripts§r — the every-tick Scripts tab",
                     "§7/tupenter help commands§r — every command the mod adds",
                     "§7/customcommand help§r — make your own commands (typed params, autocomplete)",

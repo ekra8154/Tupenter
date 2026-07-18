@@ -46,10 +46,9 @@ public final class ScriptParser {
     private static final String RECORD = "#record";
     private static final String SET = "#set";
     private static final String LOCAL = "#local";
-    private static final String ECHO = "#echo";
     /** Directives handled by the statement scanner (own a (...) group). */
     private static final Set<String> SCANNER_DIRECTIVES = Set.of("#repeat", "#if", "#foreach", "#for", "#silent");
-    private static final Set<String> STATEMENT_DIRECTIVES = Set.of(SET, LOCAL, ECHO);
+    private static final Set<String> STATEMENT_DIRECTIVES = Set.of(SET, LOCAL);
     private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
             "rand", "randf", "pick", "int", "float", "range", "true", "false",
             "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len");
@@ -330,10 +329,6 @@ public final class ScriptParser {
                     handleSet(content, LOCAL, false);
                     return;
                 }
-                if (word.equals(ECHO)) {
-                    handleEcho(content);
-                    return;
-                }
                 if (word.equals(SILENT) || word.equals(NORECORD)) {
                     throw new ParseAbort(word + " goes at the start of the line" + (word.equals(SILENT) ? ", or wrap statements: #silent (/cmd && /cmd)" : ""));
                 }
@@ -430,25 +425,6 @@ public final class ScriptParser {
                 localNames.add(setVar.name());
             }
             changed = true;
-        }
-
-        // --- #echo ---
-
-        private void handleEcho(String content) {
-            String text = content.substring(ECHO.length()).trim();
-            if (text.isEmpty()) {
-                throw new ParseAbort("#echo needs text, e.g. #echo y is $client.y$");
-            }
-            if (options.mathMode() != NumberMathMode.DISABLED) {
-                try {
-                    // markers only — auto-detect would mangle prose
-                    text = MathEvaluator.applyNumberMath(text, NumberMathMode.EXPLICIT_ONLY, context);
-                } catch (ExpressionException ex) {
-                    throw new ParseAbort(ex.getMessage());
-                }
-            }
-            changed = true;
-            sends.add(new Script.SendStatement(text, Script.Kind.ECHO, false));
         }
 
         // --- aliases ---

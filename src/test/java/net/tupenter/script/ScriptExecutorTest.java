@@ -13,7 +13,6 @@ class ScriptExecutorTest {
 
     private static final class RecordingSender implements ScriptExecutor.PacketSender {
         final List<String> sent = new ArrayList<>();
-        final List<String> echoed = new ArrayList<>();
         final List<String> errors = new ArrayList<>();
 
         @Override
@@ -24,11 +23,6 @@ class ScriptExecutorTest {
         @Override
         public void sendChat(String message) {
             sent.add(message);
-        }
-
-        @Override
-        public void echo(String message) {
-            echoed.add(message);
         }
 
         @Override
@@ -95,20 +89,6 @@ class ScriptExecutorTest {
         ), Script.HistoryMode.NORMAL));
 
         assertEquals(List.of("/time set day", "Have fun!"), sender.sent);
-    }
-
-    @Test
-    void echoStatementsDisplayLocally() {
-        RecordingSender sender = new RecordingSender();
-        ScriptExecutor executor = executor(sender, 16, 1000, 8);
-
-        executor.submit(new Script("x", List.of(
-                new Script.SendStatement("say hi", Script.Kind.COMMAND, false),
-                new Script.SendStatement("done!", Script.Kind.ECHO, false)
-        ), Script.HistoryMode.NORMAL));
-
-        assertEquals(List.of("/say hi"), sender.sent);
-        assertEquals(List.of("done!"), sender.echoed);
     }
 
     @Test

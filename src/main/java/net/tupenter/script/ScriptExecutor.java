@@ -21,9 +21,6 @@ public final class ScriptExecutor {
 
         void sendChat(String message);
 
-        /** #echo — display locally, send nothing. */
-        void echo(String message);
-
         void error(String message);
     }
 
@@ -153,7 +150,6 @@ public final class ScriptExecutor {
             switch (statement.kind()) {
                 case COMMAND -> sender.sendCommand(statement.content());
                 case CHAT -> sender.sendChat(statement.content());
-                case ECHO -> sender.echo(statement.content());
             }
 
             if (instance.isDone()) {
