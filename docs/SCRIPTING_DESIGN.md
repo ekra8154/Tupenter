@@ -324,9 +324,16 @@ The interpreter architecture supports adding it later if a real use case shows u
   their trees fall back to plain strings only if no registries exist).
 - Body references params by name (`$target$`) or position (`$1$`).
 - No declared params → current behavior (extra args appended verbatim).
+- `<name:type=default>` makes a param optional. Defaults may hold `$...$`
+  expressions, evaluated at invoke time with earlier params in scope.
+  Binding is try-parse: a strictly-typed optional that doesn't match the
+  next token is skipped (default bound) and the token falls through to the
+  next param; the Brigadier tree grows matching skip-branches. Loose types
+  (string/word/text) always consume, so optional loose params belong last.
 - Each alias gets a real Brigadier tree → vanilla autocomplete.
-- **Dynamic re-registration** on add/remove — kills the "relaunch for
-  autocomplete" limitation.
+- **Dynamic re-registration** on add/update/remove — kills the "relaunch
+  for autocomplete" limitation. `add` refuses existing names (clickable
+  "update instead" suggestion); `update` refuses missing ones.
 
 ---
 

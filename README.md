@@ -113,7 +113,18 @@ and inside custom command bodies.
 Typed parameters get real autocomplete prompts, bind as `$name$` or
 `$1$..$n$`, and commands added via `/customcommand` register immediately —
 no relaunch. Bodies can contain anything: chains, expressions, directives,
-other custom commands (recursion capped at 50 expansions).
+other custom commands (recursion capped at 50 expansions). Edit with
+`/customcommand update <name> <body>` (signature changes re-register the
+autocomplete tree too); `add` refuses names that already exist and offers a
+clickable "update it instead".
+
+Append `=default` to make a parameter optional: `<r:int=5>`,
+`<p:pos=~ ~ ~>`. Defaults may hold `$...$` expressions, evaluated when the
+param is omitted (earlier params are visible). Strictly-typed optionals can
+even be skipped mid-command — with `<p:pos=~ ~ ~> <dim:to_overworld,to_nether=...>`,
+`/portal`, `/portal 64 64 64`, and `/portal to_nether` all work. Loose
+types (`string`/`word`/`text`) always grab the next argument, so put
+optional loose params last.
 
 Available types: `int`, `float`, `string` (the default — a word or
 `"anything quoted"`), `word`, `text` (greedy, must be last), `player`,
