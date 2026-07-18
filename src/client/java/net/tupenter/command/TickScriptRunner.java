@@ -41,7 +41,8 @@ public final class TickScriptRunner {
 
         ScriptParser.Options options = TupenterModClient.parserOptions();
         for (String line : scripts) {
-            String trimmed = line.trim();
+            // newlines are Mod Menu formatting only — a script runs as one line
+            String trimmed = line.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();
             if (trimmed.isEmpty() || trimmed.startsWith("//") || faulted.contains(trimmed)) {
                 continue;
             }

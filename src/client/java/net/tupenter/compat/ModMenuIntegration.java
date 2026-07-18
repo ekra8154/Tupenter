@@ -360,33 +360,36 @@ public class ModMenuIntegration implements ModMenuApi {
     }
 
     /**
-     * One custom command as a row: wrap toggle, definition box, delete button.
-     * Expanded rows use a wrapping multi-line editor; newlines are stored as
-     * formatting but the command always runs as a single line.
+     * A row with [leading widgets] [wrap toggle] [text box] [✕]. The wrap
+     * toggle swaps a single-line box for a wrapping multi-line editor.
+     * Newlines are preserved: collapsing shows a joined view, but text()
+     * returns the formatted value unless the joined view was actually edited.
      */
-    private static class CommandRowEntry extends AbstractConfigListEntry<String> {
+    private abstract static class WrapRowEntry extends AbstractConfigListEntry<String> {
         private static final int BOX_HEIGHT_EXPANDED = 62;
         private final Button wrapButton;
         private final Button deleteButton;
         private final net.minecraft.client.gui.components.EditBox singleBox;
         private net.minecraft.client.gui.components.MultiLineEditBox multiBox; // built lazily at the rendered width
-        private String multiValue; // survives width-rebuilds of multiBox
+        private String multiValue;      // formatting-preserving source of truth
+        private String collapsedMirror; // what the single-line box was last given
         private final String initialText;
         private boolean expanded;
-        private boolean deleted;
+        boolean deleted;
 
-        CommandRowEntry(String definition) {
+        WrapRowEntry(String text, Component deleteTooltip, Runnable onDelete) {
             super(Component.empty(), false);
-            this.initialText = definition.trim();
-            this.expanded = definition.contains("\n");
-            this.multiValue = definition;
+            this.initialText = text.trim();
+            this.multiValue = text;
+            this.expanded = text.contains("\n");
 
             this.singleBox = new net.minecraft.client.gui.components.EditBox(
                     Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty());
             this.singleBox.setMaxLength(4000);
-            if (!expanded) {
-                this.singleBox.setValue(definition);
-            }
+            String joined = singleLine(text);
+            this.singleBox.setValue(joined);
+            this.singleBox.moveCursorToStart(false); // show the start, not the tail
+            this.collapsedMirror = joined;
 
             this.wrapButton = Button.builder(wrapLabel(), button -> toggleWrap())
                     .bounds(0, 0, 20, 20)
@@ -395,12 +398,15 @@ public class ModMenuIntegration implements ModMenuApi {
 
             this.deleteButton = Button.builder(Component.literal("✕").withStyle(net.minecraft.ChatFormatting.RED), button -> {
                         this.deleted = true;
-                        TupenterConfig.INSTANCE.aliases = collectCommandRows();
-                        Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                        onDelete.run();
                     })
                     .bounds(0, 0, 20, 20)
-                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.delete_command")))
+                    .tooltip(Tooltip.create(deleteTooltip))
                     .build();
+        }
+
+        static String singleLine(String text) {
+            return text.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();
         }
 
         private Component wrapLabel() {
@@ -409,9 +415,16 @@ public class ModMenuIntegration implements ModMenuApi {
 
         private void toggleWrap() {
             if (expanded) {
-                singleBox.setValue(currentMultiValue().replaceAll("\\s*[\\r\\n]+\\s*", " ").trim());
+                multiValue = currentMultiValue(); // keep the formatting for the next expand
+                String joined = singleLine(multiValue);
+                singleBox.setValue(joined);
+                singleBox.moveCursorToStart(false);
+                collapsedMirror = joined;
             } else {
-                multiValue = singleBox.getValue();
+                String current = singleBox.getValue();
+                if (!current.equals(collapsedMirror)) {
+                    multiValue = current; // edited while collapsed — content wins, formatting resets
+                }
                 if (multiBox != null) {
                     multiBox.setValue(multiValue);
                 }
@@ -437,8 +450,18 @@ public class ModMenuIntegration implements ModMenuApi {
             return multiBox;
         }
 
+        /** Newline-preserving value, whichever view is active. */
         String text() {
-            return (expanded ? currentMultiValue() : singleBox.getValue()).trim();
+            if (expanded) {
+                return currentMultiValue().trim();
+            }
+            String current = singleBox.getValue();
+            return (current.equals(collapsedMirror) ? multiValue : current).trim();
+        }
+
+        /** Widgets rendered before the wrap button (e.g. the scripts On/Off toggle). */
+        List<net.minecraft.client.gui.components.AbstractWidget> leadingWidgets() {
+            return List.of();
         }
 
         @Override
@@ -448,18 +471,27 @@ public class ModMenuIntegration implements ModMenuApi {
 
         @Override
         public void render(GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
-            wrapButton.setX(x);
+            int cursor = x;
+            for (net.minecraft.client.gui.components.AbstractWidget widget : leadingWidgets()) {
+                widget.setX(cursor);
+                widget.setY(y);
+                widget.render(graphics, mouseX, mouseY, partialTick);
+                cursor += widget.getWidth() + 4;
+            }
+
+            wrapButton.setX(cursor);
             wrapButton.setY(y);
             wrapButton.render(graphics, mouseX, mouseY, partialTick);
+            cursor += 24;
 
-            int boxWidth = entryWidth - 24 - 24;
+            int boxWidth = entryWidth - (cursor - x) - 24;
             if (expanded) {
                 net.minecraft.client.gui.components.MultiLineEditBox box = ensureMultiBox(boxWidth);
-                box.setX(x + 24);
+                box.setX(cursor);
                 box.setY(y);
                 box.render(graphics, mouseX, mouseY, partialTick);
             } else {
-                singleBox.setX(x + 24);
+                singleBox.setX(cursor);
                 singleBox.setY(y + 1);
                 singleBox.setWidth(boxWidth);
                 singleBox.render(graphics, mouseX, mouseY, partialTick);
@@ -475,14 +507,22 @@ public class ModMenuIntegration implements ModMenuApi {
             return deleted || !text().equals(initialText);
         }
 
+        private List<net.minecraft.client.gui.components.AbstractWidget> allWidgets() {
+            List<net.minecraft.client.gui.components.AbstractWidget> widgets = new ArrayList<>(leadingWidgets());
+            widgets.add(wrapButton);
+            widgets.add(expanded && multiBox != null ? multiBox : singleBox);
+            widgets.add(deleteButton);
+            return widgets;
+        }
+
         @Override
         public List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children() {
-            return List.of(wrapButton, expanded && multiBox != null ? multiBox : singleBox, deleteButton);
+            return allWidgets();
         }
 
         @Override
         public List<? extends net.minecraft.client.gui.narration.NarratableEntry> narratables() {
-            return List.of(wrapButton, expanded && multiBox != null ? multiBox : singleBox, deleteButton);
+            return allWidgets();
         }
 
         @Override
@@ -497,6 +537,16 @@ public class ModMenuIntegration implements ModMenuApi {
 
         @Override
         public void save() {
+        }
+    }
+
+    /** One custom command as a row: wrap toggle, definition box, delete. */
+    private static class CommandRowEntry extends WrapRowEntry {
+        CommandRowEntry(String definition) {
+            super(definition, Component.translatable("tooltip.tupenter.delete_command"), () -> {
+                TupenterConfig.INSTANCE.aliases = collectCommandRows();
+                Minecraft.getInstance().setScreen(createScreen(cachedParent));
+            });
         }
     }
 
@@ -520,19 +570,17 @@ public class ModMenuIntegration implements ModMenuApi {
         return trimmed.startsWith("//") ? trimmed.substring(2).trim() : trimmed;
     }
 
-    /** One tick script as a single row: toggle button, edit box, delete button. */
-    private static class TickScriptEntry extends AbstractConfigListEntry<String> {
+    /** One tick script as a row: On/Off toggle, wrap toggle, edit box, delete. */
+    private static class TickScriptEntry extends WrapRowEntry {
         private final Button toggleButton;
-        private final Button deleteButton;
-        private final net.minecraft.client.gui.components.EditBox textBox;
-        private final String initialText;
         private final boolean initialEnabled;
         private boolean enabled;
-        private boolean deleted;
 
         TickScriptEntry(String text, boolean enabled) {
-            super(Component.empty(), false);
-            this.initialText = text;
+            super(text, Component.translatable("tooltip.tupenter.delete_script"), () -> {
+                TupenterConfig.INSTANCE.tickScripts = collectTickScriptRows();
+                Minecraft.getInstance().setScreen(createScreen(cachedParent));
+            });
             this.initialEnabled = enabled;
             this.enabled = enabled;
 
@@ -543,20 +591,6 @@ public class ModMenuIntegration implements ModMenuApi {
                     .bounds(0, 0, 40, 20)
                     .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.tick_script_toggle")))
                     .build();
-
-            this.deleteButton = Button.builder(Component.literal("✕").withStyle(net.minecraft.ChatFormatting.RED), button -> {
-                        this.deleted = true;
-                        TupenterConfig.INSTANCE.tickScripts = collectTickScriptRows();
-                        Minecraft.getInstance().setScreen(createScreen(cachedParent));
-                    })
-                    .bounds(0, 0, 20, 20)
-                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.delete_script")))
-                    .build();
-
-            this.textBox = new net.minecraft.client.gui.components.EditBox(
-                    Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty());
-            this.textBox.setMaxLength(1000);
-            this.textBox.setValue(text);
         }
 
         private Component toggleLabel() {
@@ -565,53 +599,14 @@ public class ModMenuIntegration implements ModMenuApi {
                     : Component.literal("Off").withStyle(net.minecraft.ChatFormatting.RED);
         }
 
-        String text() {
-            return textBox.getValue().trim();
-        }
-
         @Override
-        public void render(GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
-            toggleButton.setX(x);
-            toggleButton.setY(y);
-            toggleButton.render(graphics, mouseX, mouseY, partialTick);
-
-            textBox.setX(x + 44);
-            textBox.setY(y + 1);
-            textBox.setWidth(entryWidth - 44 - 24);
-            textBox.render(graphics, mouseX, mouseY, partialTick);
-
-            deleteButton.setX(x + entryWidth - 20);
-            deleteButton.setY(y);
-            deleteButton.render(graphics, mouseX, mouseY, partialTick);
+        List<net.minecraft.client.gui.components.AbstractWidget> leadingWidgets() {
+            return List.of(toggleButton);
         }
 
         @Override
         public boolean isEdited() {
-            return deleted || enabled != initialEnabled || !text().equals(initialText);
-        }
-
-        @Override
-        public List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children() {
-            return List.of(toggleButton, textBox, deleteButton);
-        }
-
-        @Override
-        public List<? extends net.minecraft.client.gui.narration.NarratableEntry> narratables() {
-            return List.of(toggleButton, textBox, deleteButton);
-        }
-
-        @Override
-        public String getValue() {
-            return text();
-        }
-
-        @Override
-        public Optional<String> getDefaultValue() {
-            return Optional.empty();
-        }
-
-        @Override
-        public void save() {
+            return super.isEdited() || enabled != initialEnabled;
         }
     }
 
