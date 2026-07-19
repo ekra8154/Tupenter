@@ -28,7 +28,9 @@ import java.util.List;
  */
 public final class ChatInputStyler {
 
-    private static final Style SEPARATOR = Style.EMPTY.withColor(ChatFormatting.GOLD).withBold(true);
+    // NOTE: no bold anywhere in these styles — bold glyphs are wider, which
+    // would desync the editor overlay (and the chat cursor) from plain text
+    private static final Style SEPARATOR = Style.EMPTY.withColor(ChatFormatting.GOLD);
     private static final Style MARKER = Style.EMPTY.withColor(ChatFormatting.AQUA);
     private static final Style DIRECTIVE_WORD = Style.EMPTY.withColor(ChatFormatting.GOLD);
     private static final Style GROUP_PAREN = Style.EMPTY.withColor(ChatFormatting.DARK_GRAY);
@@ -200,13 +202,13 @@ public final class ChatInputStyler {
         return styles;
     }
 
-    /** name bold · <declarations> green · = gold. */
+    /** name white · <declarations> green · = gold (never bold — width-safe). */
     private static void styleSignature(String flat, Style[] styles, int separator) {
         int nameEnd = 0;
         while (nameEnd < separator && !Character.isWhitespace(flat.charAt(nameEnd)) && flat.charAt(nameEnd) != '<') {
             nameEnd++;
         }
-        fill(styles, 0, nameEnd, Style.EMPTY.withBold(true));
+        fill(styles, 0, nameEnd, Style.EMPTY.withColor(ChatFormatting.WHITE));
         boolean marker = false;
         for (int i = nameEnd; i < separator; i++) {
             char c = flat.charAt(i);
