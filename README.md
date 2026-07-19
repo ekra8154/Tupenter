@@ -106,13 +106,17 @@ across sessions.)
 ### Variables
 
 ```
-#set $spawn$ = "100 64 -200"
+#set spawn = "100 64 -200"
 /tp @s $spawn$
-#local $x$ = rand(1, 10) && /give @s stick $x$ && /say I got $x$!
+#set i += 1                      (compound assignment: += -= *= /= %=)
+#local x = rand(1, 10) && /give @s stick $x$ && /say I got $x$!
 ```
 
 - `#set` = session (clears on join, configurable; echoes a notice);
   `#local` = this line only, silent. `/tupenter vars` lists everything.
+  The `$` around the name is optional, and the right side is already an
+  expression — `#set i = i + 1` and `#set i = $i + 1$` both work
+  (`$...$` always evaluates its inside, everywhere).
 - `/tupenter var save <name>` promotes one to the config file forever;
   `/tupenter var delete <name>` removes it.
 - Live client state: `$client.x$` `$client.y$` `$client.z$` (`bx/by/bz` for

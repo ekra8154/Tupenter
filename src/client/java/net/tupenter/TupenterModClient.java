@@ -1369,8 +1369,9 @@ public class TupenterModClient implements ClientModInitializer {
             };
             case "variables" -> new String[]{
                     "§bVariables — use anywhere as $name$:",
-                    "§7Yours:§r #set $x$ = 5 (session, cleared on join) · #local $x$ = 5 (this line only, silent) · dotted groups allowed: #set $hitlist.bob$ = \"wanted\"",
-                    "§7Persistent:§r /tupenter var save <name> keeps it forever · /tupenter var delete <name>",
+                    "§7Yours:§r #set x = 5 (session, cleared on join) · #set x += 1 (also -= *= /= %=) · #local x = 5 (this line only, silent) · $ around the name is optional · dotted groups allowed: #set hitlist.bob = \"wanted\"",
+                    "§7On the right side§r you're already in expression world: #set x = x + 1 — bare names work; $x + 1$ works too ($...$ always evaluates its inside)",
+                    "§7Persistent:§r /tupenter var save <name> keeps it forever · /tupenter var delete <name> removes it",
                     "§7Built-in:§r $client.x/y/z/health/held_item/target_block/target_hit...$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$ — target_hit = \"block\"/\"entity\"/\"miss\"; target_block errors on a miss (gate it with target_hit)",
                     "§7Environment:§r $client.biome$ · $client.light / light_block / light_sky$ · $client.facing$ · $client.chunk_x/chunk_z$ · $world.spawn$ · $world.key$ (the per-world scripts id)",
                     "§7Movement:§r $client.speed$ (horizontal b/s) · $client.speed_y$ · booleans: on_ground, sneaking, sprinting, swimming, flying, gliding",

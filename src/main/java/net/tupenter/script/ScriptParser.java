@@ -1762,7 +1762,7 @@ public final class ScriptParser {
     private static SetVar parseSetDirective(String content, String directive) {
         String rest = content.substring(directive.length()).trim();
 
-        String syntax = directive + " syntax: " + directive + " $name$ = expression";
+        String syntax = directive + " syntax: " + directive + " name = expression (also name += expression; $ around the name is optional)";
 
         boolean wrapped = rest.startsWith("$");
         if (wrapped) {
@@ -1788,12 +1788,23 @@ public final class ScriptParser {
         }
         validateSetVariableName(name);
 
+        // compound assignment: #set i += 1 (also -= *= /= %=) rewrites to
+        // name op (rhs) — the natural spelling for counters
+        String compound = null;
+        if (rest.length() >= 2 && rest.charAt(1) == '=' && "+-*/%".indexOf(rest.charAt(0)) >= 0) {
+            compound = rest.substring(0, 1);
+            rest = "=" + rest.substring(2);
+        }
+
         if (!rest.startsWith("=")) {
             throw new ParseAbort(syntax);
         }
         String expression = rest.substring(1).trim();
         if (expression.isEmpty()) {
             throw new ParseAbort(directive + " $" + name + "$ needs a value, e.g. " + directive + " $" + name + "$ = 5");
+        }
+        if (compound != null) {
+            expression = name + " " + compound + " (" + expression + ")";
         }
 
         return new SetVar(name, expression);

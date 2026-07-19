@@ -467,6 +467,17 @@ class ScriptParserTest {
     }
 
     @Test
+    void setAcceptsBareNamesCompoundOpsAndWrappedExpressions() {
+        // bare name + compound assignment — the counter idiom
+        assertEquals(List.of("say 3"), contents(parse("#set i = 1 && #set i += 2 && /say $i$")));
+        assertEquals(List.of("say 6"), contents(parse("#set i = 3 && #set i *= 2 && /say $i$")));
+        // $...$ wraps a full expression on the right-hand side too
+        assertEquals(List.of("say 2"), contents(parse("#set $i$ = 1 && #set $i$ = $i+ 1$ && /say $i$")));
+        // compound on an undefined variable is a clear error
+        assertNotNull(parse("#set nope += 1").error());
+    }
+
+    @Test
     void waitEmitsAWaitStatement() {
         ScriptParser.ParseResult result = parse("say hi && #wait 1.5s && /say later");
         assertNull(result.error());

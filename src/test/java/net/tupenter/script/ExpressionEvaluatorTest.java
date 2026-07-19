@@ -292,6 +292,29 @@ class ExpressionEvaluatorTest {
         assertThrows(ExpressionException.class, () -> eval("pick(1 | 2"));
     }
 
+    // --- $...$ wraps full expressions ---
+
+    @Test
+    void dollarWrapsAnyExpression() {
+        // in expression world, $...$ is explicit wrapping — one rule everywhere
+        assertEquals("2", eval("$1 + 1$"));
+        assertEquals("2", eval("$1+ 1$"));
+        assertEquals("14", eval("2 * $3 + 4$"));
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("i", Value.ofNumber(4));
+        assertEquals("5", ExpressionEvaluator.evaluate("$i+ 1$", contextWith(store)).displayString());
+        assertThrows(ExpressionException.class, () -> eval("$1 + 1"));
+    }
+
+    @Test
+    void digitsOnlyDollarStaysAPositionalReference() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("1", Value.of("bound-param"));
+        assertEquals("bound-param", ExpressionEvaluator.evaluate("$1$", contextWith(store)).displayString());
+        // unbound digits-only still errors like an unknown variable
+        assertThrows(ExpressionException.class, () -> eval("$1$"));
+    }
+
     // --- variables ---
 
     private static EvalContext contextWith(SessionVariableStore store) {

@@ -280,16 +280,29 @@ final class ExpressionEvaluator {
             }
 
             if (current == '$') {
-                // $name$ variable reference — same look as everywhere else in
-                // Tupenter. $1$..$n$ are positional custom-command parameters.
+                // $...$ evaluates its inside — the SAME rule as command-world
+                // markers, so $i+ 1$ works on a #set right-hand side too. In
+                // an expression it's just explicit wrapping. One carve-out,
+                // also shared with command markers: digits-only content
+                // ($1$..$n$) is a positional-parameter reference.
                 index++;
-                String name = peekIsDigit() ? parseDigits() : parseIdentifier();
+                if (peekIsDigit()) {
+                    int save = index;
+                    String digits = parseDigits();
+                    skipWhitespace();
+                    if (!atEnd() && peek() == '$') {
+                        index++;
+                        return resolveVariable(digits);
+                    }
+                    index = save; // the digits started an expression: $1+2$
+                }
+                Value value = parseTernary();
                 skipWhitespace();
                 if (atEnd() || peek() != '$') {
-                    throw new ExpressionException("Expected closing $ after variable name '" + name + "'");
+                    throw new ExpressionException("Missing closing $");
                 }
                 index++;
-                return resolveVariable(name);
+                return value;
             }
 
             if (current == '#') {

@@ -216,6 +216,13 @@ directive arguments. `CommandMathParser`'s exact-rational core is the seed.
 | unary `-`, `s` stack suffix (×64) | existing |
 | literals, parens, functions, variables | |
 
+`$...$` unification (2026-07-18): inside expression world, `$...$` wraps a
+FULL expression (it used to accept only a bare name), so the command-world
+intuition "$...$ evaluates its inside" holds everywhere — `#set i = $i+ 1$`
+works. Digits-only content (`$1$`) stays a positional-parameter reference,
+the same carve-out command markers use. `#set`/`#local` accept bare names
+(the `$` decoration is optional) and compound assignment `+= -= *= /= %=`.
+
 Functions, phase 1: `int` `float` (existing), `rand(min,max)` (integer,
 inclusive), `pick(a | b | c)` (options are full expressions, so picks nest
 and compute; quote literal text — `pick("say hi" | "say nah")`),
