@@ -18,6 +18,8 @@ repositories {
 loom {
 	splitEnvironmentSourceSets()
 
+	accessWidenerPath = file("src/main/resources/tupenter.accesswidener")
+
 	mods {
 		"modid" {
 			sourceSet sourceSets.main

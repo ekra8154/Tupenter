@@ -90,6 +90,11 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.ping", player -> Value.ofNumber(playerInfo(player).getLatency()));
         register("client.fps", player -> Value.ofNumber(Minecraft.getInstance().getFps()));
         register("client.uuid", player -> Value.of(player.getStringUUID()));
+        // NBT-flavored UUID for Owner-style fields: {Owner:[I;a,b,c,d]}
+        register("client.uuid_nbt", player -> {
+            int[] parts = net.minecraft.core.UUIDUtil.uuidToIntArray(player.getUUID());
+            return Value.of("[I;" + parts[0] + "," + parts[1] + "," + parts[2] + "," + parts[3] + "]");
+        });
 
         // hazards + surroundings
         register("client.in_water", player -> Value.of(player.isInWater()));

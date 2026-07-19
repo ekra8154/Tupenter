@@ -126,7 +126,7 @@
   "text.tupenter.add_command": "+ Add Command",
   "tooltip.tupenter.add_command": "Adds a new command row. WARNING: this reloads the screen — command text edits are kept, but unsaved changes in other tabs are discarded.",
   "tooltip.tupenter.delete_command": "Delete this custom command (takes effect immediately).",
-  "tooltip.tupenter.wrap_toggle": "Toggle a larger editor with word wrap. You can use newlines to format long entries — they're saved and survive collapsing/expanding, but the entry still runs as a single line. Editing the collapsed single-line view replaces the formatted version.",
+  "tooltip.tupenter.wrap_toggle": "Toggle a larger editor with word wrap and chat-style syntax colors (unmatched parens and unclosed $...$ glow red). Newlines format long entries — they're saved, survive collapsing, and still run as a single line. Enter auto-indents, Tab inserts spaces, and pasting multi-line text into the collapsed view auto-expands. Editing the collapsed single-line view replaces the formatted version.",
 
   "title.tupenter.import_confirm": "Import History?",
   "message.tupenter.import_confirm": "This will reload the screen and discard any other unsaved changes. Are you sure?",

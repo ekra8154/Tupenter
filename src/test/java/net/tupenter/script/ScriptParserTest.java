@@ -546,6 +546,34 @@ class ScriptParserTest {
                 contents(ScriptParser.parse("launch minecraft:tnt 1", options(aliases, store))));
     }
 
+    private static final String LAUNCH2_BODY =
+            "<e:entity> <s:float=1.5> "
+            + "#local h = cos(client.pitch) && "
+            + "#local x = -sin(client.yaw) * h && "
+            + "#local y = -sin(client.pitch) && "
+            + "#local z = cos(client.yaw) * h && "
+            + "#local p = \"~\" + round(x*15)/10 + \" ~\" + (1.5 + round(y*15)/10) + \" ~\" + round(z*15)/10 && "
+            + "#local m = round(x*s*1000)/1000 + \"d,\" + round(y*s*1000)/1000 + \"d,\" + round(z*s*1000)/1000 + \"d\" && "
+            + "#if (e == \"minecraft:fireball\") (/summon $e$ $p$ {Motion:[$m$],ExplosionPower:50b}) "
+            + "#elseif (e == \"minecraft:ender_pearl\") (/summon $e$ $p$ {Motion:[$m$],Owner:$client.uuid_nbt$}) "
+            + "#else (/summon $e$ $p$ {Motion:[$m$]})";
+
+    @Test
+    void launchSpecialCasesForFireballAndEnderPearl() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.yaw", Value.ofNumber(0));
+        store.set("client.pitch", Value.ofNumber(0));
+        store.set("client.uuid_nbt", Value.of("[I;1,2,3,4]"));
+        Map<String, String> aliases = Map.of("launch", LAUNCH2_BODY);
+
+        assertEquals(List.of("summon minecraft:fireball ~0 ~1.5 ~1.5 {Motion:[0d,0d,2d],ExplosionPower:50b}"),
+                contents(ScriptParser.parse("launch minecraft:fireball 2", options(aliases, store))));
+        assertEquals(List.of("summon minecraft:ender_pearl ~0 ~1.5 ~1.5 {Motion:[0d,0d,1.5d],Owner:[I;1,2,3,4]}"),
+                contents(ScriptParser.parse("launch minecraft:ender_pearl", options(aliases, store))));
+        assertEquals(List.of("summon minecraft:arrow ~0 ~1.5 ~1.5 {Motion:[0d,0d,3d]}"),
+                contents(ScriptParser.parse("launch minecraft:arrow 3", options(aliases, store))));
+    }
+
     private static final String RANDOMFILL_BODY =
             "<a:pos> <b:pos> <set:blockset> <filter:blockset=any> #silent #local choices = blockset(set) && "
             + "#for $x$ in a.x..b.x (#for $y$ in a.y..b.y (#for $z$ in a.z..b.z "

@@ -170,27 +170,84 @@ public final class ChatInputStyler {
         }
         Style[] styles = new Style[full.length()];
         java.util.Arrays.fill(styles, Style.EMPTY);
+        styleStatements(full, 0, styles);
+        overlayMarkers(full, styles);
+        cachedText = full;
+        cachedStyles = styles;
+        return styles;
+    }
 
-        List<Segment> segments = segments(full);
-        for (Segment segment : segments) {
-            switch (segment.kind()) {
-                case CHAT -> fill(styles, segment.start(), segment.end(), CHAT_TEXT);
-                case DIRECTIVE -> styleDirective(full, styles, segment);
-                case COMMAND -> styleCommand(full, styles, segment);
+    /**
+     * Styles for the Mod Menu script editor: raw multi-line text, styled as
+     * the single line it becomes at runtime (newlines mapped 1:1 to spaces
+     * so every index lines up). Definitions get their signature styled too.
+     */
+    public static Style[] editorStyles(String raw, boolean definition) {
+        String flat = raw.replace('\r', ' ').replace('\n', ' ');
+        Style[] styles = new Style[flat.length()];
+        java.util.Arrays.fill(styles, Style.EMPTY);
+
+        int bodyStart = 0;
+        if (definition) {
+            int separator = net.tupenter.script.AliasDefinition.signatureSeparator(flat);
+            if (separator >= 0) {
+                styleSignature(flat, styles, separator);
+                bodyStart = separator + 1;
             }
         }
+        styleStatements(flat, bodyStart, styles);
+        overlayMarkers(flat, styles);
+        return styles;
+    }
 
-        // && separators live in the gaps between segments
-        for (int s = 0; s + 1 < segments.size(); s++) {
-            int gapStart = segments.get(s).end();
-            fill(styles, gapStart, gapStart + 2, SEPARATOR);
+    /** name bold · <declarations> green · = gold. */
+    private static void styleSignature(String flat, Style[] styles, int separator) {
+        int nameEnd = 0;
+        while (nameEnd < separator && !Character.isWhitespace(flat.charAt(nameEnd)) && flat.charAt(nameEnd) != '<') {
+            nameEnd++;
         }
+        fill(styles, 0, nameEnd, Style.EMPTY.withBold(true));
+        boolean marker = false;
+        for (int i = nameEnd; i < separator; i++) {
+            char c = flat.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '$') {
+                marker = !marker;
+            } else if (!marker && (c == '<' || c == '>')) {
+                styles[i] = SEPARATOR;
+            } else if (!marker && c != ' ') {
+                styles[i] = Style.EMPTY.withColor(ChatFormatting.GREEN);
+            }
+        }
+        styles[separator] = SEPARATOR;
+    }
 
-        // markers overlay everything — they're Tupenter's, not the command's
+    /** Per-segment statement-form styling for [from, end) of the text. */
+    private static void styleStatements(String text, int from, Style[] styles) {
+        String region = text.substring(from);
+        List<Segment> segments = segments(region);
+        for (int s = 0; s < segments.size(); s++) {
+            Segment local = segments.get(s);
+            Segment segment = new Segment(local.start() + from, local.end() + from, local.textStart() + from, local.kind());
+            switch (segment.kind()) {
+                case CHAT -> fill(styles, segment.start(), segment.end(), CHAT_TEXT);
+                case DIRECTIVE -> styleDirective(text, styles, segment);
+                case COMMAND -> styleCommand(text, styles, segment);
+            }
+            if (s + 1 < segments.size()) {
+                int gapStart = segment.end();
+                fill(styles, gapStart, gapStart + 2, SEPARATOR); // the &&
+            }
+        }
+    }
+
+    /** Markers overlay everything — they're Tupenter's, not the command's. */
+    private static void overlayMarkers(String text, Style[] styles) {
         boolean marker = false;
         int lastOpen = -1;
-        for (int i = 0; i < full.length(); i++) {
-            char c = full.charAt(i);
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
             if (c == '\\') {
                 i++;
                 continue;
@@ -208,10 +265,23 @@ public final class ChatInputStyler {
         if (marker && lastOpen >= 0) {
             styles[lastOpen] = ERROR; // unclosed marker — its opening $ turns red
         }
+    }
 
-        cachedText = full;
-        cachedStyles = styles;
-        return styles;
+    /** A styled slice [from, to) of text, for the editor's line-by-line rendering. */
+    public static FormattedCharSequence sequence(String text, Style[] styles, int from, int to) {
+        List<FormattedCharSequence> parts = new ArrayList<>();
+        int i = Math.max(0, from);
+        int end = Math.min(to, text.length());
+        while (i < end) {
+            Style style = i < styles.length ? styles[i] : Style.EMPTY;
+            int runEnd = i + 1;
+            while (runEnd < end && (runEnd < styles.length ? styles[runEnd] : Style.EMPTY) == style) {
+                runEnd++;
+            }
+            parts.add(FormattedCharSequence.forward(text.substring(i, runEnd), style));
+            i = runEnd;
+        }
+        return FormattedCharSequence.composite(parts);
     }
 
     private static void styleDirective(String full, Style[] styles, Segment segment) {

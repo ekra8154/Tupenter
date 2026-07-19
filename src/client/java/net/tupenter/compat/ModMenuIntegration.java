@@ -292,7 +292,7 @@ public class ModMenuIntegration implements ModMenuApi {
                     List<String> updated = collectCommandRows();
                     updated.add("newcommand = /echo edit me");
                     TupenterConfig.INSTANCE.aliases = updated;
-                    Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                    reopenScreen(TAB_ALIASES);
                 }
         ));
 
@@ -343,7 +343,7 @@ public class ModMenuIntegration implements ModMenuApi {
                     commitScriptEdits();
                     TupenterConfig.INSTANCE.globalScripts.add(new TupenterConfig.GlobalScript(
                             TupenterConfig.GlobalScript.newId(), "/echo new script"));
-                    Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                    reopenScreen(TAB_SCRIPTS);
                 }
         ));
         scripts.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.global_scripts"), globalEntries)
@@ -371,7 +371,7 @@ public class ModMenuIntegration implements ModMenuApi {
                         commitScriptEdits();
                         TupenterConfig.INSTANCE.worldStateOrCreate(scriptsWorldKey).scripts
                                 .add(new TupenterConfig.WorldScript("/echo new script", false));
-                        Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                        reopenScreen(TAB_SCRIPTS);
                     }
             ));
         }
@@ -482,12 +482,27 @@ public class ModMenuIntegration implements ModMenuApi {
             this.expanded = text.contains("\n");
 
             this.singleBox = new net.minecraft.client.gui.components.EditBox(
-                    Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty());
+                    Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty()) {
+                @Override
+                public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+                    // a multi-line paste into the collapsed box would lose its
+                    // newlines — expand and paste into the real editor instead
+                    if (event.isPaste()) {
+                        String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
+                        if (clip.indexOf('\n') >= 0 || clip.indexOf('\r') >= 0) {
+                            pasteMultiline(clip);
+                            return true;
+                        }
+                    }
+                    return super.keyPressed(event);
+                }
+            };
             this.singleBox.setMaxLength(4000);
             String joined = singleLine(text);
             this.singleBox.setValue(joined);
             this.singleBox.moveCursorToStart(false); // show the start, not the tail
             this.collapsedMirror = joined;
+            this.singleBox.addFormatter(this::styleCollapsed);
 
             this.wrapButton = Button.builder(wrapLabel(), button -> toggleWrap())
                     .bounds(0, 0, 20, 20)
@@ -535,12 +550,41 @@ public class ModMenuIntegration implements ModMenuApi {
             return multiBox != null ? multiBox.getValue() : multiValue;
         }
 
+        /** True for custom-command rows: their text is "name <params> = body". */
+        boolean definitionRow() {
+            return false;
+        }
+
+        /** Chat-style colors for the collapsed single-line view. */
+        private net.minecraft.util.FormattedCharSequence styleCollapsed(String partial, int offset) {
+            String value = singleBox.getValue();
+            if (!value.equals(collapsedStyledFor)) {
+                collapsedStyles = net.tupenter.command.ChatInputStyler.editorStyles(value, definitionRow());
+                collapsedStyledFor = value;
+            }
+            return net.tupenter.command.ChatInputStyler.sequence(value, collapsedStyles, offset, offset + partial.length());
+        }
+
+        private String collapsedStyledFor;
+        private net.minecraft.network.chat.Style[] collapsedStyles;
+
+        /** A newline-bearing paste: splice at the cursor and jump to the expanded editor. */
+        private void pasteMultiline(String clip) {
+            String current = singleBox.getValue();
+            int cursor = Math.max(0, Math.min(singleBox.getCursorPosition(), current.length()));
+            multiValue = current.substring(0, cursor) + clip + current.substring(cursor);
+            expanded = true;
+            wrapButton.setMessage(wrapLabel());
+            if (multiBox != null) {
+                multiBox.setValue(multiValue);
+            }
+        }
+
         /** The multi-line editor wraps at build width, so rebuild when the row width changes. */
         private net.minecraft.client.gui.components.MultiLineEditBox ensureMultiBox(int width) {
             if (multiBox == null || multiBox.getWidth() != width) {
                 String value = currentMultiValue();
-                multiBox = net.minecraft.client.gui.components.MultiLineEditBox.builder()
-                        .build(Minecraft.getInstance().font, width, BOX_HEIGHT_EXPANDED, Component.empty());
+                multiBox = new ScriptEditBox(Minecraft.getInstance().font, width, BOX_HEIGHT_EXPANDED, definitionRow());
                 multiBox.setCharacterLimit(4000);
                 multiBox.setValue(value);
                 multiValue = value;
@@ -643,9 +687,27 @@ public class ModMenuIntegration implements ModMenuApi {
         CommandRowEntry(String definition) {
             super(definition, Component.translatable("tooltip.tupenter.delete_command"), () -> {
                 TupenterConfig.INSTANCE.aliases = collectCommandRows();
-                Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                reopenScreen(TAB_ALIASES);
             });
         }
+
+        @Override
+        boolean definitionRow() {
+            return true;
+        }
+    }
+
+    // getOrCreateCategory order in createScreen: general, scripting, aliases, scripts
+    private static final int TAB_ALIASES = 2;
+    private static final int TAB_SCRIPTS = 3;
+
+    /** Rebuild the config screen WITHOUT dumping the user back on the first tab. */
+    private static void reopenScreen(int tabIndex) {
+        Screen screen = createScreen(cachedParent);
+        if (screen instanceof me.shedaniel.clothconfig2.gui.AbstractConfigScreen cloth) {
+            cloth.selectedCategoryIndex = tabIndex;
+        }
+        Minecraft.getInstance().setScreen(screen);
     }
 
     /**
@@ -662,7 +724,7 @@ public class ModMenuIntegration implements ModMenuApi {
         ScriptRowEntry(String text, boolean enabled, boolean toggleLocked) {
             super(text, Component.translatable("tooltip.tupenter.delete_script"), () -> {
                 commitScriptEdits();
-                Minecraft.getInstance().setScreen(createScreen(cachedParent));
+                reopenScreen(TAB_SCRIPTS);
             });
             this.initialEnabled = enabled;
             this.enabled = enabled;
