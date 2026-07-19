@@ -351,6 +351,7 @@ public final class MathEvaluator {
             Rational value = parseTerm();
 
             while (true) {
+                int beforeWhitespace = index;
                 skipWhitespace();
                 if (index >= input.length()) {
                     return value;
@@ -358,6 +359,17 @@ public final class MathEvaluator {
 
                 char operator = input.charAt(index);
                 if (operator != '+' && operator != '-') {
+                    return value;
+                }
+
+                // "82 -2" is two command arguments (a coordinate pair), not
+                // 82 minus 2: an asymmetric "space before, none after" sign
+                // ends the expression, which soft-fails the span upstream and
+                // leaves the command untouched. "82-2" and "82 - 2" stay math.
+                boolean spaceBefore = index > beforeWhitespace;
+                boolean spaceAfter = index + 1 >= input.length()
+                        || Character.isWhitespace(input.charAt(index + 1));
+                if (spaceBefore && !spaceAfter) {
                     return value;
                 }
 
@@ -371,6 +383,7 @@ public final class MathEvaluator {
             Rational value = parseFactor();
 
             while (true) {
+                int beforeWhitespace = index;
                 skipWhitespace();
                 if (index >= input.length()) {
                     return value;
@@ -384,7 +397,11 @@ public final class MathEvaluator {
                     continue;
                 }
 
-                if (!startsImplicitMultiplication()) {
+                // implicit multiplication needs ADJACENCY — 2(3+4) is math,
+                // but "495 72" is two coordinates, never 495*72. Rewind so
+                // parseExpression can see the whitespace for its own check.
+                if (index > beforeWhitespace || !startsImplicitMultiplication()) {
+                    index = beforeWhitespace;
                     return value;
                 }
 
@@ -396,15 +413,13 @@ public final class MathEvaluator {
         private Rational parseFactor() {
             Rational value = parsePrimary();
 
-            while (true) {
-                skipWhitespace();
-                if (index < input.length() && isStackSuffix(input.charAt(index))) {
-                    index++;
-                    value = value.multiply(Rational.of(64));
-                    continue;
-                }
-                return value;
+            // stack suffix needs ADJACENCY (3s, not "3 s") — skipping
+            // whitespace here would hide coordinate gaps from parseTerm
+            while (index < input.length() && isStackSuffix(input.charAt(index))) {
+                index++;
+                value = value.multiply(Rational.of(64));
             }
+            return value;
         }
 
         private Rational parsePrimary() {

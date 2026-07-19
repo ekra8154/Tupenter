@@ -38,6 +38,25 @@ class MathEvaluatorTest {
     }
 
     @Test
+    void autoDetectNeverEatsCoordinateRuns() {
+        // the /fill regression: whitespace-separated numbers are arguments,
+        // not implicit multiplication, and "82 -2" is a pair, not 80
+        assertEquals("fill 495 72 -15 467 82 -2 minecraft:ice",
+                apply("fill 495 72 -15 467 82 -2 minecraft:ice", NumberMathMode.AUTO_DETECT));
+        assertEquals("tp 100 64 -200", apply("tp 100 64 -200", NumberMathMode.AUTO_DETECT));
+        assertEquals("setblock 467 81 -2 minecraft:stone",
+                apply("setblock 467 81 -2 minecraft:stone", NumberMathMode.AUTO_DETECT));
+        // real math still auto-detects: adjacency or symmetric spacing
+        assertEquals("give @s stick 320", apply("give @s stick 64*5", NumberMathMode.AUTO_DETECT));
+        assertEquals("give @s stick 320", apply("give @s stick 64 * 5", NumberMathMode.AUTO_DETECT));
+        assertEquals("give @s stick 69", apply("give @s stick 64+5", NumberMathMode.AUTO_DETECT));
+        assertEquals("give @s stick 69", apply("give @s stick 64 + 5", NumberMathMode.AUTO_DETECT));
+        assertEquals("give @s stick 8", apply("give @s stick 2(3+1)", NumberMathMode.AUTO_DETECT));
+        // markers are explicit code and keep full math semantics
+        assertEquals("say 80", apply("say $82 - 2$", NumberMathMode.AUTO_DETECT));
+    }
+
+    @Test
     void stackSuffix() {
         assertEquals("192", MathEvaluator.evaluateExpressionAsCommandValue("3s"));
         assertEquals("192", MathEvaluator.evaluateExpressionAsCommandValue("(2+1)s"));

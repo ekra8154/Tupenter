@@ -1020,6 +1020,49 @@ public class TupenterModClient implements ClientModInitializer {
         return evaluateLocalCalcExpression(unwrapOptionalMarkers(expression.trim()), context.getSource()::sendFeedback, context.getSource()::sendError);
     }
 
+    /**
+     * A body with unbalanced parens or an unclosed marker is usually a
+     * definition VANILLA'S 256-CHAR CHAT LIMIT truncated mid-paste — warn
+     * right at save time instead of erroring mid-run later.
+     */
+    private static void warnUnbalancedDefinition(CommandContext<FabricClientCommandSource> context, String command) {
+        int depth = 0;
+        boolean marker = false;
+        boolean quoted = false;
+        for (int i = 0; i < command.length(); i++) {
+            char c = command.charAt(i);
+            if (c == '\\') {
+                i++;
+                continue;
+            }
+            if (c == '$') {
+                marker = !marker;
+            } else if (!marker) {
+                if (c == '"') {
+                    quoted = !quoted;
+                } else if (!quoted) {
+                    if (c == '(') {
+                        depth++;
+                    } else if (c == ')') {
+                        depth--;
+                    }
+                }
+            }
+        }
+        if (depth == 0 && !marker) {
+            return;
+        }
+        String what = depth != 0
+                ? Math.abs(depth) + " unclosed " + (depth > 0 ? "'('" : "')'")
+                : "an unclosed $...$ marker";
+        String hint = command.length() >= 230
+                ? " Chat cuts input at 256 characters — this definition was likely truncated. Edit long commands in Mod Menu → Tupenter → Custom Commands instead."
+                : "";
+        context.getSource().sendFeedback(Component.literal(
+                "⚠ Saved, but the body has " + what + " — it will error when run." + hint)
+                .withStyle(ChatFormatting.YELLOW));
+    }
+
     private static int runAliasAddCommand(CommandContext<FabricClientCommandSource> context) {
         String name = StringArgumentType.getString(context, "name");
         String command = StringArgumentType.getString(context, "command");
@@ -1061,6 +1104,7 @@ public class TupenterModClient implements ClientModInitializer {
             context.getSource().sendFeedback(Component.literal(
                     (isNew ? "Saved custom command /" : "Updated custom command /") + savedName + " — available now.").withStyle(ChatFormatting.GREEN));
             warnUnknownNamespacedVariables(context, command);
+            warnUnbalancedDefinition(context, command);
             return 1;
         } catch (IllegalArgumentException ex) {
             context.getSource().sendError(Component.literal(ex.getMessage()));

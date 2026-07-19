@@ -188,6 +188,7 @@ public final class ChatInputStyler {
 
         // markers overlay everything — they're Tupenter's, not the command's
         boolean marker = false;
+        int lastOpen = -1;
         for (int i = 0; i < full.length(); i++) {
             char c = full.charAt(i);
             if (c == '\\') {
@@ -197,9 +198,15 @@ public final class ChatInputStyler {
             if (c == '$') {
                 styles[i] = MARKER;
                 marker = !marker;
+                if (marker) {
+                    lastOpen = i;
+                }
             } else if (marker) {
                 styles[i] = MARKER;
             }
+        }
+        if (marker && lastOpen >= 0) {
+            styles[lastOpen] = ERROR; // unclosed marker — its opening $ turns red
         }
 
         cachedText = full;
@@ -208,9 +215,12 @@ public final class ChatInputStyler {
     }
 
     private static void styleDirective(String full, Style[] styles, Segment segment) {
-        // gold #words (the leading one and any nested ones), dimmed group parens
+        // gold #words (the leading one and any nested ones), dimmed group
+        // parens — unmatched parens turn red so a truncated or mistyped
+        // definition shows itself before Enter
         boolean marker = false;
         boolean quoted = false;
+        java.util.Deque<Integer> openParens = new java.util.ArrayDeque<>();
         for (int i = segment.textStart(); i < segment.end(); i++) {
             char c = full.charAt(i);
             if (c == '\\') {
@@ -234,10 +244,21 @@ public final class ChatInputStyler {
                     }
                     fill(styles, i, word, DIRECTIVE_WORD);
                     i = word - 1;
-                } else if (c == '(' || c == ')') {
+                } else if (c == '(') {
                     styles[i] = GROUP_PAREN;
+                    openParens.push(i);
+                } else if (c == ')') {
+                    if (openParens.isEmpty()) {
+                        styles[i] = ERROR; // stray close
+                    } else {
+                        styles[i] = GROUP_PAREN;
+                        openParens.pop();
+                    }
                 }
             }
+        }
+        for (int unmatched : openParens) {
+            styles[unmatched] = ERROR; // never closed
         }
     }
 
