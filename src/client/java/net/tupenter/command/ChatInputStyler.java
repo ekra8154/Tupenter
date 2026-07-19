@@ -36,6 +36,10 @@ public final class ChatInputStyler {
     private static final Style GROUP_PAREN = Style.EMPTY.withColor(ChatFormatting.DARK_GRAY);
     private static final Style CHAT_TEXT = Style.EMPTY.withColor(ChatFormatting.YELLOW);
     private static final Style ERROR = Style.EMPTY.withColor(ChatFormatting.RED).withUnderlined(true);
+    // vanilla CommandSuggestions.LITERAL_STYLE — the soft gray of command
+    // literals; unstyled spans otherwise fall back to the edit box's near-white
+    // default (0xE0E0E0), which reads as a jarring "white" once we take over
+    private static final Style COMMAND_LITERAL = Style.EMPTY.withColor(ChatFormatting.GRAY);
     // vanilla CommandSuggestions argument color cycle
     private static final List<Style> ARG_STYLES = List.of(
             Style.EMPTY.withColor(ChatFormatting.AQUA),
@@ -93,13 +97,78 @@ public final class ChatInputStyler {
             if (full.length() > 1 && full.charAt(1) == '#' && ScriptParser.isDirectiveLine(full.substring(1))) {
                 return true; // /#silent /cmd — command-typed directive form
             }
-            if (full.regionMatches(true, 0, "/unroll ", 0, 8)) {
-                return true; // the greedy argument is a whole line
+            if (innerLineStart(full) > 0) {
+                return true; // /unroll <line> or /customcommand add|update — the argument is a whole line
             }
             boolean chained = TupenterConfig.INSTANCE.commandChainingEnabled && segments(full).size() > 1;
             return chained || containsMarker(full);
         }
         return ScriptParser.isDirectiveLine(full);
+    }
+
+    /**
+     * Meta-commands carry a whole LINE as their tail: /unroll <line>, and
+     * /customcommand add|update <name> <decls...> <body>. Returns where
+     * that embedded line's statements begin (past the name and any
+     * parameter declarations), or 0 when this isn't such a command.
+     */
+    public static int innerLineStart(String full) {
+        if (full.regionMatches(true, 0, "/unroll ", 0, 8)) {
+            return 8;
+        }
+        if (!full.regionMatches(true, 0, "/customcommand ", 0, 15)) {
+            return 0;
+        }
+        int i = skipWhitespace(full, 15);
+        int subEnd = skipWord(full, i);
+        String sub = full.substring(i, subEnd).toLowerCase(java.util.Locale.ROOT);
+        if (!sub.equals("add") && !sub.equals("update")) {
+            return 0;
+        }
+        i = skipWhitespace(full, subEnd);
+        int nameEnd = skipWord(full, i);
+        if (nameEnd == i) {
+            return 0; // no name yet
+        }
+        i = skipWhitespace(full, nameEnd);
+        while (i < full.length() && full.charAt(i) == '<') {
+            int close = angleClose(full, i);
+            if (close < 0) {
+                return i; // unfinished declaration — statements "start" here
+            }
+            i = skipWhitespace(full, close + 1);
+        }
+        return i;
+    }
+
+    private static int skipWhitespace(String text, int i) {
+        while (i < text.length() && Character.isWhitespace(text.charAt(i))) {
+            i++;
+        }
+        return i;
+    }
+
+    private static int skipWord(String text, int i) {
+        while (i < text.length() && !Character.isWhitespace(text.charAt(i))) {
+            i++;
+        }
+        return i;
+    }
+
+    /** The '>' closing the '<' at {@code open}, outside $...$ markers; -1 if unclosed. */
+    private static int angleClose(String text, int open) {
+        boolean marker = false;
+        for (int i = open; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '$') {
+                marker = !marker;
+            } else if (c == '>' && !marker) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -109,7 +178,7 @@ public final class ChatInputStyler {
      * (#norecord /cmd), the /#directive form, and /unroll's inner line.
      */
     public static int[] rerootTarget(String full, int cursor) {
-        int base = full.regionMatches(true, 0, "/unroll ", 0, 8) ? 8 : 0;
+        int base = innerLineStart(full);
         String region = full.substring(base);
         List<Segment> segments = segments(region);
         if (base == 0 && full.startsWith("/")
@@ -142,6 +211,16 @@ public final class ChatInputStyler {
      * live), the index of the '#'; -1 otherwise (tags in markers excluded).
      */
     public static int directiveTokenStart(String text, int cursor) {
+        // inside a meta-command's embedded line, positions are relative to it
+        int base = innerLineStart(text);
+        if (base > 0 && cursor >= base) {
+            int local = directiveTokenStartRaw(text.substring(base), cursor - base);
+            return local < 0 ? -1 : local + base;
+        }
+        return directiveTokenStartRaw(text, cursor);
+    }
+
+    private static int directiveTokenStartRaw(String text, int cursor) {
         int start = Math.min(cursor, text.length());
         while (start > 0 && Character.isLetter(text.charAt(start - 1))) {
             start--;
@@ -539,6 +618,35 @@ public final class ChatInputStyler {
         }
     }
 
+    /** The meta-command's own text: command word(s) gold, param declarations green like a signature. */
+    private static void styleMetaHead(String full, Style[] styles, int to) {
+        int wordEnd = skipWord(full, 0);
+        fill(styles, 0, wordEnd, DIRECTIVE_WORD); // /unroll or /customcommand
+        int i = skipWhitespace(full, wordEnd);
+        int subEnd = skipWord(full, i);
+        String sub = full.substring(i, Math.min(subEnd, to)).toLowerCase(java.util.Locale.ROOT);
+        if (sub.equals("add") || sub.equals("update")) {
+            fill(styles, i, subEnd, DIRECTIVE_WORD);
+        }
+        boolean marker = false;
+        int angle = 0;
+        for (int j = 0; j < to && j < full.length(); j++) {
+            char c = full.charAt(j);
+            if (c == '\\') {
+                j++;
+            } else if (c == '$') {
+                marker = !marker;
+            } else if (!marker) {
+                if (c == '<' || c == '>') {
+                    styles[j] = SEPARATOR;
+                    angle += c == '<' ? 1 : -1;
+                } else if (angle > 0) {
+                    styles[j] = Style.EMPTY.withColor(ChatFormatting.GREEN);
+                }
+            }
+        }
+    }
+
     /** Index of the ')' matching the '(' at {@code open}, honoring nesting, markers, and quotes; -1 if unclosed. */
     private static int matchingClose(String text, int open, int end) {
         boolean marker = false;
@@ -571,18 +679,22 @@ public final class ChatInputStyler {
     }
 
     private static void styleCommand(String full, Style[] styles, Segment segment, int depth) {
-        // /unroll <line> — the greedy argument IS a line; style it as one
+        // meta-commands (/unroll <line>, /customcommand add|update ...) carry
+        // a whole line — style their head, then the embedded statements for real
         int textStart = segment.textStart();
-        if (depth < 8 && full.regionMatches(true, textStart, "/unroll", 0, 7)
-                && textStart + 7 < segment.end() && Character.isWhitespace(full.charAt(textStart + 7))) {
-            fill(styles, textStart, textStart + 7, DIRECTIVE_WORD);
-            int inner = textStart + 7;
-            while (inner < segment.end() && Character.isWhitespace(full.charAt(inner))) {
-                inner++;
+        if (depth < 8 && textStart == 0) {
+            int inner = innerLineStart(full);
+            if (inner > 0 && inner <= segment.end()) {
+                styleMetaHead(full, styles, inner);
+                styleStatements(full, inner, segment.end(), styles, depth + 1);
+                return;
             }
-            styleStatements(full, inner, segment.end(), styles, depth + 1);
-            return;
         }
+
+        // vanilla paints command literals gray; argument ranges (below) and
+        // any leftover-red overlay on top. Without this base the literals stay
+        // Style.EMPTY and render at the edit box's near-white default.
+        fill(styles, textStart, trimmedEnd(full, segment), COMMAND_LITERAL);
 
         boolean hasMarker = containsMarker(full.substring(segment.textStart(), segment.end()));
         ClientPacketListener connection = Minecraft.getInstance().getConnection();
