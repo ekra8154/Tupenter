@@ -46,6 +46,9 @@ public final class ScriptParser {
     private static final String SILENT = "#silent";
     private static final String NORECORD = "#norecord";
     private static final String RECORD = "#record";
+    /** Prefix shorthands, expanded to canonical form before parsing. #st/#ust (stage/unstage) are handled client-side. */
+    private static final Map<String, String> PREFIX_SHORTHANDS = Map.of(
+            "#s", SILENT, "#nr", NORECORD, "#r", RECORD);
     private static final String SET = "#set";
     private static final String LOCAL = "#local";
     private static final String WAIT = "#wait";
@@ -57,7 +60,7 @@ public final class ScriptParser {
     private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
             "rand", "randf", "pick", "int", "float", "range", "true", "false",
             "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len",
-            "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains");
+            "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains", "indexof");
 
     private ScriptParser() {
     }
@@ -203,11 +206,38 @@ public final class ScriptParser {
     }
 
     private static boolean isKnownStatementWord(String word) {
-        return STATEMENT_DIRECTIVES.contains(word)
-                || SCANNER_DIRECTIVES.contains(word)
-                || word.equals(SILENT)
-                || word.equals(NORECORD)
-                || word.equals(RECORD);
+        String canon = PREFIX_SHORTHANDS.getOrDefault(word, word);
+        return STATEMENT_DIRECTIVES.contains(canon)
+                || SCANNER_DIRECTIVES.contains(canon)
+                || canon.equals(SILENT)
+                || canon.equals(NORECORD)
+                || canon.equals(RECORD);
+    }
+
+    /** Expands a leading run of shorthand prefix words (#s #nr #r) to canonical form; other text is untouched. */
+    private static String expandShorthands(String line) {
+        int lead = 0;
+        while (lead < line.length() && Character.isWhitespace(line.charAt(lead))) {
+            lead++;
+        }
+        StringBuilder out = new StringBuilder(line.substring(0, lead));
+        String rest = line.substring(lead);
+        while (rest.startsWith("#")) {
+            String word = firstWord(rest);
+            String canon = PREFIX_SHORTHANDS.get(word.toLowerCase(Locale.ROOT));
+            if (canon == null) {
+                break;
+            }
+            out.append(canon);
+            rest = rest.substring(word.length());
+            int ws = 0;
+            while (ws < rest.length() && Character.isWhitespace(rest.charAt(ws))) {
+                ws++;
+            }
+            out.append(rest, 0, ws);
+            rest = rest.substring(ws);
+        }
+        return out.append(rest).toString();
     }
 
     private record LinePrefixes(String rest, boolean silent, Script.HistoryMode history) {
@@ -219,7 +249,7 @@ public final class ScriptParser {
      * '(' is the group form and stays for the scanner.
      */
     private static LinePrefixes stripLinePrefixes(String text, Options options) {
-        String work = text.trim();
+        String work = expandShorthands(text.trim());
         boolean silent = false;
         Script.HistoryMode history = Script.HistoryMode.NORMAL;
 

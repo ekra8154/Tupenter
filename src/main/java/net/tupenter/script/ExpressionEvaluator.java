@@ -392,6 +392,7 @@ final class ExpressionEvaluator {
                 case "len" -> len(args);
                 case "nth" -> nth(args);
                 case "contains" -> contains(args);
+                case "indexof" -> indexof(args);
                 case "randf" -> randf(args);
                 // trig takes DEGREES — Minecraft rotations (client.yaw/pitch) are degrees
                 case "sin" -> mathFunction("sin", args, degrees -> Math.sin(Math.toRadians(degrees)));
@@ -452,6 +453,27 @@ final class ExpressionEvaluator {
                 }
             }
             return new Value.BoolValue(false);
+        }
+
+        /** indexof(list, value) — 0-based position of the first == match, or -1. The inverse of nth. */
+        private Value indexof(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("indexof(list, value) takes a list and a value");
+            }
+            if (!(args.get(0) instanceof Value.ListValue list)) {
+                throw new ExpressionException("indexof(list, value): the first argument must be a list, e.g. indexof(blockset(#minecraft:wool), block(client.target_block))");
+            }
+            List<Value> values = list.values();
+            for (int i = 0; i < values.size(); i++) {
+                try {
+                    if (compare(values.get(i), "==", args.get(1))) {
+                        return new Value.NumberValue(Rational.of(i));
+                    }
+                } catch (ExpressionException incomparable) {
+                    // a differently-typed element is simply not a match
+                }
+            }
+            return new Value.NumberValue(Rational.of(-1));
         }
 
         /** nth(list, i) — 0-based element access; pairs with % for cycling. */
@@ -754,7 +776,7 @@ final class ExpressionEvaluator {
             String best = null;
             int bestDistance = 3; // suggest only within edit distance 2
             List<String> candidates = new ArrayList<>(context.variables().names());
-            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains"));
+            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains", "indexof"));
             for (String candidate : candidates) {
                 int distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
                 if (distance < bestDistance) {

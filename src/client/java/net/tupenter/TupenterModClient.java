@@ -199,7 +199,7 @@ public class TupenterModClient implements ClientModInitializer {
         names.add("client.nbt.");
         names.add("target.nbt.");
         names.addAll(java.util.List.of(
-                "rand", "randf", "pick", "range", "len", "nth", "int", "float",
+                "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false"));
         return new java.util.ArrayList<>(names);
@@ -445,16 +445,25 @@ public class TupenterModClient implements ClientModInitializer {
      *
      * @return true when the line was a #stage line (packet must be cancelled)
      */
+    /** Matched length of {@code longForm} or its {@code shortForm} at the head of {@code trimmed} (word boundary required), or -1. */
+    private static int prefixWordLen(String trimmed, String longForm, String shortForm) {
+        for (String form : new String[]{longForm, shortForm}) {
+            if (trimmed.regionMatches(true, 0, form, 0, form.length())
+                    && (trimmed.length() == form.length() || Character.isWhitespace(trimmed.charAt(form.length())))) {
+                return form.length();
+            }
+        }
+        return -1;
+    }
+
     public static boolean handleStagePrefix(String line, boolean commandOrigin) {
         String trimmed = line.trim();
-        if (!trimmed.regionMatches(true, 0, "#stage", 0, 6)) {
+        int wordLen = prefixWordLen(trimmed, "#stage", "#st");
+        if (wordLen < 0) {
             return false;
         }
-        if (trimmed.length() > 6 && !Character.isWhitespace(trimmed.charAt(6))) {
-            return false; // "#staged..." or similar — not our word
-        }
 
-        String staged = trimmed.substring(6).trim();
+        String staged = trimmed.substring(wordLen).trim();
         if (staged.isEmpty()) {
             sendEnhancedParsingError("#stage needs a line to stage, e.g. #stage /kill @e[type=fireball]");
             return true;
@@ -477,14 +486,12 @@ public class TupenterModClient implements ClientModInitializer {
      */
     public static boolean handleUnstagePrefix(String line) {
         String trimmed = line.trim();
-        if (!trimmed.regionMatches(true, 0, "#unstage", 0, 8)) {
+        int wordLen = prefixWordLen(trimmed, "#unstage", "#ust");
+        if (wordLen < 0) {
             return false;
         }
-        if (trimmed.length() > 8 && !Character.isWhitespace(trimmed.charAt(8))) {
-            return false; // "#unstaged..." or similar — not our word
-        }
 
-        String argument = trimmed.substring(8).trim();
+        String argument = trimmed.substring(wordLen).trim();
         int count = 1;
         if (!argument.isEmpty()) {
             try {
@@ -1394,7 +1401,7 @@ public class TupenterModClient implements ClientModInitializer {
             case "lists" -> new String[]{
                     "§bExpressions · lists:",
                     "§7range(start, stop[, step])§r — inclusive whole numbers: range(1, 10), range(10, 0, -2)",
-                    "§7len(x)§r — list length (or text length) · §7nth(list, i)§r — element i, 0-based · §7contains(list, v)§r — membership test",
+                    "§7len(x)§r — list length (or text length) · §7nth(list, i)§r — element i, 0-based · §7indexof(list, v)§r — position of v (or -1) · §7contains(list, v)§r — membership test",
                     "§7Cycling:§r nth(list, $i$ % len(list)) walks a list forever — with a #set counter, one step per run: #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset(\"#minecraft:wool\"), i % 16)$",
                     "§7Registry sets:§r blockset(#minecraft:logs) / itemset(#c:ores) / effectset(#...) / entityset(#minecraft:skeletons) = a TAG's members as a list — no quotes needed, and typing # inside the parens TAB-COMPLETES the tags. A CONCRETE id makes a one-element set: blockset(\"stone\") — so block-or-blockset params feed the same functions. NO argument = the whole registry. Needs a live world.",
                     "§7Use them:§r rand(list) picks one: /effect give @s $rand(effectset())$ 30 1 · #foreach loops: #foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)",

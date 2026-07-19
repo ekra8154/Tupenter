@@ -54,20 +54,24 @@ public final class ChatInputStyler {
     /** Directives that START a statement — seeing one mid-statement means a missing && (#else/#elseif legitimately continue). */
     private static final java.util.Set<String> STATEMENT_STARTERS = java.util.Set.of(
             "#set", "#local", "#wait", "#repeat", "#if", "#for", "#foreach",
-            "#silent", "#norecord", "#record", "#stage", "#unstage");
+            "#silent", "#norecord", "#record", "#stage", "#unstage",
+            "#s", "#nr", "#r", "#st", "#ust");
 
     /** Line/statement prefixes — a statement-starter may legally follow these without &&: #silent #local x = ... */
     private static final java.util.Set<String> PREFIX_WORDS = java.util.Set.of(
-            "#silent", "#norecord", "#record", "#stage");
+            "#silent", "#norecord", "#record", "#stage",
+            "#s", "#nr", "#r", "#st");
 
     /** Line modifiers — colored as annotations (PREFIX_WORD), not control-flow keywords. */
     private static final java.util.Set<String> LINE_MODIFIERS = java.util.Set.of(
-            "#silent", "#norecord", "#record", "#stage", "#unstage");
+            "#silent", "#norecord", "#record", "#stage", "#unstage",
+            "#s", "#nr", "#r", "#st", "#ust");
 
     /** Everything tab-completion should offer for a '#' word. */
     private static final List<String> DIRECTIVE_WORDS = List.of(
             "#set", "#local", "#wait", "#repeat", "#if", "#elseif", "#else", "#for", "#foreach",
-            "#silent", "#norecord", "#record", "#stage", "#unstage");
+            "#silent", "#norecord", "#record", "#stage", "#unstage",
+            "#s", "#nr", "#r", "#st", "#ust");
 
     /** Directives whose header carries an EXPRESSION (condition/iterable) — an implicit $...$ zone for styling and completion. */
     private static final java.util.Set<String> HEADER_EXPR_DIRECTIVES = java.util.Set.of(
