@@ -90,7 +90,10 @@ registry. Either way it's a plain list, so `rand(list)`, `len(list)`,
 ```
 
 (Quoted tags still work; quote them when a tag sits right before a
-ternary's `:`.)
+ternary's `:`.) A **concrete id** makes a one-element set —
+`blockset("stone")` is `[minecraft:stone]` — so a block-or-blockset
+parameter feeds the same functions either way, and `contains(list, v)`
+tests membership: `contains(blockset(#minecraft:logs), block(client.target_block))`.
 
 `nth(list, i)` (0-based) plus the `%` operator (floored modulo) make lists
 cyclable — a custom command that steps through the wool colors, one block

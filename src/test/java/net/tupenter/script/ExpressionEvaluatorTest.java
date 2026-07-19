@@ -145,19 +145,29 @@ class ExpressionEvaluatorTest {
 
     // --- tag sets ---
 
-    private static final TagResolver STUB_TAGS = (kind, tagId) -> {
-        if (tagId == null) { // whole-registry enumeration
-            return kind == TagResolver.TagKind.EFFECT
-                    ? java.util.List.of("minecraft:speed", "minecraft:slowness", "minecraft:levitation")
-                    : java.util.List.of("minecraft:everything");
+    private static final TagResolver STUB_TAGS = new TagResolver() {
+        @Override
+        public java.util.List<String> resolve(TagKind kind, String tagId) {
+            if (tagId == null) { // whole-registry enumeration
+                return kind == TagResolver.TagKind.EFFECT
+                        ? java.util.List.of("minecraft:speed", "minecraft:slowness", "minecraft:levitation")
+                        : java.util.List.of("minecraft:everything");
+            }
+            if (kind == TagResolver.TagKind.BLOCK && tagId.equals("minecraft:logs")) {
+                return java.util.List.of("minecraft:oak_log", "minecraft:birch_log");
+            }
+            if (kind == TagResolver.TagKind.ITEM && tagId.equals("c:ores")) {
+                return java.util.List.of("minecraft:iron_ore");
+            }
+            return java.util.List.of();
         }
-        if (kind == TagResolver.TagKind.BLOCK && tagId.equals("minecraft:logs")) {
-            return java.util.List.of("minecraft:oak_log", "minecraft:birch_log");
+
+        @Override
+        public String lookup(TagKind kind, String id) {
+            // the stub registry knows exactly one concrete block
+            return kind == TagResolver.TagKind.BLOCK && (id.equals("minecraft:stone") || id.equals("stone"))
+                    ? "minecraft:stone" : null;
         }
-        if (kind == TagResolver.TagKind.ITEM && tagId.equals("c:ores")) {
-            return java.util.List.of("minecraft:iron_ore");
-        }
-        return java.util.List.of();
     };
 
     private static EvalContext tagContext() {
@@ -177,6 +187,29 @@ class ExpressionEvaluatorTest {
         assertEquals("minecraft:iron_ore", ExpressionEvaluator.evaluate("rand(itemset(#c:ores))", tagContext()).displayString());
         // a bare # is an error, not an empty tag
         assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("blockset(#)", tagContext()));
+    }
+
+    @Test
+    void concreteIdsMakeOneElementSets() {
+        // "block OR blockset" filters: a plain id becomes a singleton list,
+        // normalized to its canonical form
+        assertEquals("1", ExpressionEvaluator.evaluate("len(blockset(\"stone\"))", tagContext()).displayString());
+        assertEquals("minecraft:stone", ExpressionEvaluator.evaluate("rand(blockset(\"minecraft:stone\"))", tagContext()).displayString());
+        // an explicit # is ALWAYS a tag — no silent fallback
+        assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("blockset(#minecraft:stone)", tagContext()));
+        assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("blockset(\"minecraft:nope\")", tagContext()));
+    }
+
+    @Test
+    void containsChecksMembership() {
+        assertEquals("true", ExpressionEvaluator.evaluate(
+                "contains(blockset(#minecraft:logs), \"minecraft:oak_log\")", tagContext()).displayString());
+        assertEquals("false", ExpressionEvaluator.evaluate(
+                "contains(blockset(#minecraft:logs), \"minecraft:stone\")", tagContext()).displayString());
+        assertEquals("true", eval("contains(range(1, 5), 3)"));
+        // a differently-typed element is not a match, not an error
+        assertEquals("false", eval("contains(range(1, 5), \"three\")"));
+        assertThrows(ExpressionException.class, () -> eval("contains(5, 1)"));
     }
 
     @Test

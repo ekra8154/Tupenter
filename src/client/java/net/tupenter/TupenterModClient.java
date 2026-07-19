@@ -370,17 +370,37 @@ public class TupenterModClient implements ClientModInitializer {
      * the whole registry (rand(effectset()) = a random effect). Null when
      * not in-game; an unknown tag resolves to an empty list.
      */
-    public static final net.tupenter.script.TagResolver TAG_RESOLVER = (kind, tagId) -> {
-        net.minecraft.client.multiplayer.ClientPacketListener connection = Minecraft.getInstance().getConnection();
-        if (connection == null) {
-            return null;
+    public static final net.tupenter.script.TagResolver TAG_RESOLVER = new net.tupenter.script.TagResolver() {
+        @Override
+        public java.util.List<String> resolve(TagKind kind, String tagId) {
+            net.minecraft.client.multiplayer.ClientPacketListener connection = Minecraft.getInstance().getConnection();
+            if (connection == null) {
+                return null;
+            }
+            return registryIds(connection, registryKey(kind), tagId);
         }
-        return switch (kind) {
-            case ITEM -> registryIds(connection, net.minecraft.core.registries.Registries.ITEM, tagId);
-            case BLOCK -> registryIds(connection, net.minecraft.core.registries.Registries.BLOCK, tagId);
-            case EFFECT -> registryIds(connection, net.minecraft.core.registries.Registries.MOB_EFFECT, tagId);
-        };
+
+        @Override
+        public String lookup(TagKind kind, String id) {
+            net.minecraft.client.multiplayer.ClientPacketListener connection = Minecraft.getInstance().getConnection();
+            net.minecraft.resources.ResourceLocation location = net.minecraft.resources.ResourceLocation.tryParse(id);
+            if (connection == null || location == null) {
+                return null;
+            }
+            return connection.registryAccess().lookupOrThrow(registryKey(kind)).containsKey(location)
+                    ? location.toString() : null;
+        }
     };
+
+    @SuppressWarnings("unchecked")
+    private static <T> net.minecraft.resources.ResourceKey<net.minecraft.core.Registry<T>> registryKey(
+            net.tupenter.script.TagResolver.TagKind kind) {
+        return (net.minecraft.resources.ResourceKey<net.minecraft.core.Registry<T>>) (net.minecraft.resources.ResourceKey<?>) switch (kind) {
+            case ITEM -> net.minecraft.core.registries.Registries.ITEM;
+            case BLOCK -> net.minecraft.core.registries.Registries.BLOCK;
+            case EFFECT -> net.minecraft.core.registries.Registries.MOB_EFFECT;
+        };
+    }
 
     private static <T> java.util.List<String> registryIds(
             net.minecraft.client.multiplayer.ClientPacketListener connection,
@@ -1326,9 +1346,9 @@ public class TupenterModClient implements ClientModInitializer {
             case "lists" -> new String[]{
                     "§bExpressions · lists:",
                     "§7range(start, stop[, step])§r — inclusive whole numbers: range(1, 10), range(10, 0, -2)",
-                    "§7len(x)§r — list length (or text length) · §7nth(list, i)§r — element i, 0-based",
+                    "§7len(x)§r — list length (or text length) · §7nth(list, i)§r — element i, 0-based · §7contains(list, v)§r — membership test",
                     "§7Cycling:§r nth(list, $i$ % len(list)) walks a list forever — with a #set counter, one step per run: #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset(\"#minecraft:wool\"), i % 16)$",
-                    "§7Registry sets:§r blockset(#minecraft:logs) / itemset(#c:ores) / effectset(#...) = a TAG's members as a list — no quotes needed, and typing # inside the parens TAB-COMPLETES the tags. NO argument = the whole registry: effectset() is every effect. Needs a live world.",
+                    "§7Registry sets:§r blockset(#minecraft:logs) / itemset(#c:ores) / effectset(#...) = a TAG's members as a list — no quotes needed, and typing # inside the parens TAB-COMPLETES the tags. A CONCRETE id makes a one-element set: blockset(\"stone\") — so block-or-blockset params feed the same functions. NO argument = the whole registry. Needs a live world.",
                     "§7Use them:§r rand(list) picks one: /effect give @s $rand(effectset())$ 30 1 · #foreach loops: #foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)",
                     "§7Item tags exist too:§r #minecraft:planks, #minecraft:logs, #c:ores, ... — type itemset(# and browse",
                     "§7Also a list:§r $client.effects$ — your active effect ids",
@@ -1640,6 +1660,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "§7Position types:§r <n:pos> = whole x y z with ~ support and targeted-block tab-complete · <n:vec3> = decimal x y z with ~ · <n:column_pos> = whole x z with ~ · <n:rotation> = yaw pitch with ~ · <n:angle> = one yaw with ~. Tuples bind $n$ = the joined coords plus $n.x$ $n.y$ $n.z$ (or $n.yaw$ $n.pitch$); angle binds a number.",
                 "§7More types:§r <n:time> = duration (10t / 1.5s / 3d), binds as ticks · <n:dimension> = dimension id, tab-completed · <n:color> = chat color, tab-completed · <n:id> = any namespaced id · <n:item> / <n:block> = item or block with full registry tab-complete (including [components] / [states]) · <n:itemset> / <n:blockset> = an item/block OR a #tag like #minecraft:logs, tab-completed",
                 "§7Optional params:§r add =default to make a param optional: <r:int=5>, <p:pos=~ ~ ~>. Defaults may hold $...$ expressions (evaluated when omitted, earlier params visible). Strictly-typed optionals can even be skipped mid-command — /portal to_nether works with <p:pos=~ ~ ~> <dim:...> because to_nether isn't a coordinate. Loose types (string/word/text) always grab the next arg, so put those last.",
+                "§7No natural default?§r Use a SENTINEL the body branches on: <filter:blockset=any> then #if ($filter$ == \"any\") (unfiltered...) #else (filtered...) — that's how an omitted param can mean 'do something else' rather than 'use this value'.",
                 "§7Selectors:§r use <name:selector>, or quote them into a plain <name>: /cmd \"@e[type=!player,limit=1]\"",
                 "§7Example:§r /customcommand add waves <count:int> <mob:word> #repeat $count$ (/summon $mob$ ~ ~ ~)  →  /waves 3 zombie",
         };

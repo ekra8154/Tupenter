@@ -391,6 +391,7 @@ final class ExpressionEvaluator {
                 case "max" -> minMax("max", args, false);
                 case "len" -> len(args);
                 case "nth" -> nth(args);
+                case "contains" -> contains(args);
                 case "randf" -> randf(args);
                 // trig takes DEGREES — Minecraft rotations (client.yaw/pitch) are degrees
                 case "sin" -> mathFunction("sin", args, degrees -> Math.sin(Math.toRadians(degrees)));
@@ -430,6 +431,26 @@ final class ExpressionEvaluator {
                 return Value.ofNumber(string.value().length());
             }
             throw new ExpressionException("len(...) takes a list or text");
+        }
+
+        /** contains(list, value) — membership by == semantics; mixed-type elements just don't match. */
+        private Value contains(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("contains(list, value) takes a list and a value");
+            }
+            if (!(args.get(0) instanceof Value.ListValue list)) {
+                throw new ExpressionException("contains(list, value): the first argument must be a list, e.g. contains(blockset(#minecraft:logs), block(client.target_block))");
+            }
+            for (Value element : list.values()) {
+                try {
+                    if (compare(element, "==", args.get(1))) {
+                        return new Value.BoolValue(true);
+                    }
+                } catch (ExpressionException incomparable) {
+                    // a differently-typed element is simply not a match
+                }
+            }
+            return new Value.BoolValue(false);
         }
 
         /** nth(list, i) — 0-based element access; pairs with % for cycling. */
@@ -586,26 +607,36 @@ final class ExpressionEvaluator {
          */
         private Value tagMembers(String name, TagResolver.TagKind kind, List<Value> args) {
             String tag = null; // null = every entry in the registry
+            boolean explicitTag = false;
             if (!args.isEmpty()) {
                 Value arg = single(args, name);
                 if (!(arg instanceof Value.StringValue string)) {
-                    throw new ExpressionException(name + "(...) takes a tag id string — " + name + "(\"#minecraft:logs\") — or no argument for the whole registry");
+                    throw new ExpressionException(name + "(...) takes a #tag or a concrete id — " + name + "(#minecraft:logs) — or no argument for the whole registry");
                 }
                 tag = string.value().trim();
                 if (tag.startsWith("#")) {
+                    explicitTag = true;
                     tag = tag.substring(1);
                 }
                 if (tag.isEmpty()) {
-                    throw new ExpressionException(name + "(...) needs a tag id, e.g. " + name + "(\"#minecraft:logs\") — or no argument for the whole registry");
+                    throw new ExpressionException(name + "(...) needs a tag id, e.g. " + name + "(#minecraft:logs) — or no argument for the whole registry");
                 }
             }
             List<String> ids = context.tags().resolve(kind, tag);
             if (ids == null) {
                 throw new ExpressionException(name + "(...) needs a live world to look up the registry");
             }
+            if (ids.isEmpty() && tag != null && !explicitTag) {
+                // not a tag — a concrete id makes a one-element set, so
+                // "block OR blockset" params feed the same functions
+                String canonical = context.tags().lookup(kind, tag);
+                if (canonical != null) {
+                    ids = List.of(canonical);
+                }
+            }
             if (ids.isEmpty()) {
-                throw new ExpressionException("Unknown or empty "
-                        + kind.name().toLowerCase(java.util.Locale.ROOT) + " tag: #" + tag);
+                throw new ExpressionException("Unknown " + kind.name().toLowerCase(java.util.Locale.ROOT)
+                        + (explicitTag ? " tag: #" + tag : " tag or id: " + tag));
             }
             List<Value> values = new ArrayList<>(ids.size());
             for (String id : ids) {
@@ -722,7 +753,7 @@ final class ExpressionEvaluator {
             String best = null;
             int bestDistance = 3; // suggest only within edit distance 2
             List<String> candidates = new ArrayList<>(context.variables().names());
-            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "block", "nth"));
+            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "block", "nth", "contains"));
             for (String candidate : candidates) {
                 int distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
                 if (distance < bestDistance) {

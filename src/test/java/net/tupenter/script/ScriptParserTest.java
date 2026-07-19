@@ -516,22 +516,36 @@ class ScriptParserTest {
         assertNotNull(ScriptParser.parse("say $rand(blockset(\"#minecraft:logs\"))$", options(Map.of())).error());
     }
 
+    private static final String RANDOMFILL_BODY =
+            "<a:pos> <b:pos> <set:blockset> <filter:blockset=any> #silent #local choices = blockset(set) && "
+            + "#for $x$ in a.x..b.x (#for $y$ in a.y..b.y (#for $z$ in a.z..b.z "
+            + "(#if (filter == \"any\") (/setblock $x$ $y$ $z$ $rand(choices)$) "
+            + "#else (#if (contains(blockset(filter), block($x$, $y$, $z$))) (/setblock $x$ $y$ $z$ $rand(choices)$)))))";
+
+    private static ScriptParser.Options randomfillOptions(BlockReader blocks) {
+        TagResolver tags = new TagResolver() {
+            @Override
+            public List<String> resolve(TagKind kind, String tagId) {
+                return kind == TagResolver.TagKind.BLOCK && "minecraft:logs".equals(tagId)
+                        ? List.of("minecraft:oak_log", "minecraft:birch_log")
+                        : List.of();
+            }
+
+            @Override
+            public String lookup(TagKind kind, String id) {
+                return kind == TagResolver.TagKind.BLOCK && id.endsWith("dirt") ? "minecraft:dirt" : null;
+            }
+        };
+        SessionVariableStore store = new SessionVariableStore();
+        return new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, aliasMap(Map.of("randomfill", RANDOMFILL_BODY)),
+                true, true, true, true, 100, 1000, new Random(42), store, store, tags, blocks, false);
+    }
+
     @Test
     void randomfillRecipeWorks() {
-        // the /randomfill custom command: nested #for over the volume,
-        // each block independently random from the tag's member list
-        TagResolver tags = (kind, tagId) -> kind == TagResolver.TagKind.BLOCK && "minecraft:logs".equals(tagId)
-                ? List.of("minecraft:oak_log", "minecraft:birch_log")
-                : List.of();
-        SessionVariableStore store = new SessionVariableStore();
-        Map<String, AliasDefinition> aliases = aliasMap(Map.of("randomfill",
-                "<a:pos> <b:pos> <set:blockset> #silent #local choices = blockset(set) && "
-                + "#for $x$ in a.x..b.x (#for $y$ in a.y..b.y (#for $z$ in a.z..b.z "
-                + "(/setblock $x$ $y$ $z$ $rand(choices)$)))"));
-        ScriptParser.Options options = new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, aliases,
-                true, true, true, true, 100, 1000, new Random(42), store, store, tags);
-
-        ScriptParser.ParseResult result = ScriptParser.parse("randomfill 0 0 0 1 1 0 #minecraft:logs", options);
+        // nested #for over the volume, each block independently random
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "randomfill 0 0 0 1 1 0 #minecraft:logs", randomfillOptions(BlockReader.NONE));
         assertNull(result.error());
         List<String> sent = contents(result);
         assertEquals(4, sent.size(), "2x2x1 volume = 4 setblocks");
@@ -542,6 +556,21 @@ class ScriptParserTest {
         }
         assertTrue(picked.size() > 1, "blocks vary across positions");
         assertTrue(result.script().statements().get(0).silent(), "feedback is suppressed");
+    }
+
+    @Test
+    void randomfillFilterOnlyReplacesMatchingBlocks() {
+        // world: dirt at even x, stone at odd x — filter "dirt" (a concrete
+        // id, exercising the one-element-set fallback) touches only evens
+        BlockReader blocks = (x, y, z) -> x % 2 == 0 ? "minecraft:dirt" : "minecraft:stone";
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "randomfill 0 0 0 3 0 0 #minecraft:logs dirt", randomfillOptions(blocks));
+        assertNull(result.error());
+        List<String> sent = contents(result);
+        assertEquals(2, sent.size(), "only the two dirt columns are replaced");
+        for (String line : sent) {
+            assertTrue(line.matches("setblock [02] 0 0 minecraft:(oak|birch)_log"), line);
+        }
     }
 
     @Test

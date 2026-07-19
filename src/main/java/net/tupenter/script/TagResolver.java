@@ -28,4 +28,13 @@ public interface TagResolver {
      *         lookup is unavailable (not in-game)
      */
     List<String> resolve(TagKind kind, String tagId);
+
+    /**
+     * A CONCRETE registry entry: the canonical id ("stone" -&gt;
+     * "minecraft:stone") when the registry contains it, else null. Lets the
+     * set functions treat a plain block/item/effect id as a one-element set.
+     */
+    default String lookup(TagKind kind, String id) {
+        return null;
+    }
 }
