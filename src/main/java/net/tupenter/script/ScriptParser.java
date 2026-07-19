@@ -46,9 +46,11 @@ public final class ScriptParser {
     private static final String SILENT = "#silent";
     private static final String NORECORD = "#norecord";
     private static final String RECORD = "#record";
+    /** #chat (#c): a no-op chat prefix — evaluate the line's $...$ and send it as a normal, recorded chat message. */
+    private static final String CHAT = "#chat";
     /** Prefix shorthands, expanded to canonical form before parsing. #st/#ust (stage/unstage) are handled client-side. */
     private static final Map<String, String> PREFIX_SHORTHANDS = Map.of(
-            "#s", SILENT, "#nr", NORECORD, "#r", RECORD);
+            "#s", SILENT, "#nr", NORECORD, "#r", RECORD, "#c", CHAT);
     private static final String SET = "#set";
     private static final String LOCAL = "#local";
     private static final String WAIT = "#wait";
@@ -136,11 +138,11 @@ public final class ScriptParser {
             if (!isKnownStatementWord(word)) {
                 return ParseResult.error("Unknown directive " + firstWord(work));
             }
-        } else if (!work.startsWith("/")) {
-            work = "/" + work;
+        } else if (!work.startsWith("/") && !prefixes.chat()) {
+            work = "/" + work; // #chat keeps it chat; otherwise a bare command word gets its slash
         }
 
-        return parseSequence(work, command, prefixes.silent(), prefixes.history(), options);
+        return parseSequence(work, command, prefixes.silent(), prefixes.history(), options, prefixes.chat());
     }
 
     /**
@@ -171,7 +173,7 @@ public final class ScriptParser {
             return ParseResult.error("Unknown directive " + firstWord(work));
         }
 
-        return parseSequence(work, message, prefixes.silent(), prefixes.history(), options);
+        return parseSequence(work, message, prefixes.silent(), prefixes.history(), options, prefixes.chat());
     }
 
     /**
@@ -212,7 +214,8 @@ public final class ScriptParser {
                 || SCANNER_DIRECTIVES.contains(canon)
                 || canon.equals(SILENT)
                 || canon.equals(NORECORD)
-                || canon.equals(RECORD);
+                || canon.equals(RECORD)
+                || canon.equals(CHAT);
     }
 
     /** Expands a leading run of shorthand prefix words (#s #nr #r) to canonical form; other text is untouched. */
@@ -241,7 +244,7 @@ public final class ScriptParser {
         return out.append(rest).toString();
     }
 
-    private record LinePrefixes(String rest, boolean silent, Script.HistoryMode history) {
+    private record LinePrefixes(String rest, boolean silent, Script.HistoryMode history, boolean chat) {
     }
 
     /**
@@ -252,6 +255,7 @@ public final class ScriptParser {
     private static LinePrefixes stripLinePrefixes(String text, Options options) {
         String work = expandShorthands(text.trim());
         boolean silent = false;
+        boolean chat = false;
         Script.HistoryMode history = Script.HistoryMode.NORMAL;
 
         while (work.startsWith("#")) {
@@ -270,11 +274,14 @@ public final class ScriptParser {
             } else if (word.equals(RECORD)) {
                 history = Script.HistoryMode.FORCE;
                 work = work.substring(RECORD.length()).trim();
+            } else if (word.equals(CHAT)) {
+                chat = true; // no side effect — just evaluate and send as chat
+                work = work.substring(CHAT.length()).trim();
             } else {
                 break;
             }
         }
-        return new LinePrefixes(work, silent, history);
+        return new LinePrefixes(work, silent, history, chat);
     }
 
     private static void requireSilentEnabled(Options options) {

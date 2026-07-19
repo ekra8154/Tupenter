@@ -1561,7 +1561,9 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7#record§r — the inverse: records even when message tracking is OFF (and bypasses the filter)",
                     "§7#stage§r — put the line INTO resend history without running it — press R when you want it",
                     "§7#unstage [n]§r — remove the newest n (default 1) entries from resend history; reports what the next resend is",
+                    "§7#chat§r — send a normal chat message that evaluates its $...$: #chat my coords are $client.pos$ → posts \"my coords are 100 64 -30\". (Plain chat leaves $...$ literal; this is the opt-in.)",
                     "§7/echo§r — show text only to yourself, sends nothing: /echo y is $client.y$. Colors with &-codes: /echo &aall good &7($client.health$ hp) — \\& for a literal &",
+                    "§7Shorthands:§r #s #nr #r #st #ust #c for #silent #norecord #record #stage #unstage #chat",
                     "§7Prefixes combine: #norecord #silent /say hi",
             };
             case "scripts" -> new String[]{

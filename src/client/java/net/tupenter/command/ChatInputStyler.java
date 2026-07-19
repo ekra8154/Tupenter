@@ -37,7 +37,7 @@ public final class ChatInputStyler {
     // about how the line is sent/recorded, distinct from control-flow keywords
     private static final Style PREFIX_WORD = Style.EMPTY.withColor(ChatFormatting.LIGHT_PURPLE);
     private static final Style GROUP_PAREN = Style.EMPTY.withColor(ChatFormatting.DARK_GRAY);
-    private static final Style CHAT_TEXT = Style.EMPTY.withColor(ChatFormatting.YELLOW);
+    private static final Style CHAT_TEXT = Style.EMPTY.withColor(ChatFormatting.WHITE);
     private static final Style ERROR = Style.EMPTY.withColor(ChatFormatting.RED).withUnderlined(true);
     // vanilla CommandSuggestions.LITERAL_STYLE — the soft gray of command
     // literals; unstyled spans otherwise fall back to the edit box's near-white
@@ -54,24 +54,24 @@ public final class ChatInputStyler {
     /** Directives that START a statement — seeing one mid-statement means a missing && (#else/#elseif legitimately continue). */
     private static final java.util.Set<String> STATEMENT_STARTERS = java.util.Set.of(
             "#set", "#local", "#wait", "#repeat", "#if", "#for", "#foreach",
-            "#silent", "#norecord", "#record", "#stage", "#unstage",
-            "#s", "#nr", "#r", "#st", "#ust");
+            "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
+            "#s", "#nr", "#r", "#st", "#ust", "#c");
 
     /** Line/statement prefixes — a statement-starter may legally follow these without &&: #silent #local x = ... */
     private static final java.util.Set<String> PREFIX_WORDS = java.util.Set.of(
-            "#silent", "#norecord", "#record", "#stage",
-            "#s", "#nr", "#r", "#st");
+            "#silent", "#norecord", "#record", "#stage", "#chat",
+            "#s", "#nr", "#r", "#st", "#c");
 
     /** Line modifiers — colored as annotations (PREFIX_WORD), not control-flow keywords. */
     private static final java.util.Set<String> LINE_MODIFIERS = java.util.Set.of(
-            "#silent", "#norecord", "#record", "#stage", "#unstage",
-            "#s", "#nr", "#r", "#st", "#ust");
+            "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
+            "#s", "#nr", "#r", "#st", "#ust", "#c");
 
     /** Everything tab-completion should offer for a '#' word. */
     private static final List<String> DIRECTIVE_WORDS = List.of(
             "#set", "#local", "#wait", "#repeat", "#if", "#elseif", "#else", "#for", "#foreach",
-            "#silent", "#norecord", "#record", "#stage", "#unstage",
-            "#s", "#nr", "#r", "#st", "#ust");
+            "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
+            "#s", "#nr", "#r", "#st", "#ust", "#c");
 
     /** Directives whose header carries an EXPRESSION (condition/iterable) — an implicit $...$ zone for styling and completion. */
     private static final java.util.Set<String> HEADER_EXPR_DIRECTIVES = java.util.Set.of(
