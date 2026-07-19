@@ -701,13 +701,22 @@ public class ModMenuIntegration implements ModMenuApi {
     private static final int TAB_ALIASES = 2;
     private static final int TAB_SCRIPTS = 3;
 
-    /** Rebuild the config screen WITHOUT dumping the user back on the first tab. */
+    /** Rebuild the config screen WITHOUT losing the tab or the scroll position. */
     private static void reopenScreen(int tabIndex) {
+        double scroll = 0;
+        if (Minecraft.getInstance().screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen old
+                && old.listWidget != null) {
+            scroll = old.listWidget.getScroll();
+        }
         Screen screen = createScreen(cachedParent);
         if (screen instanceof me.shedaniel.clothconfig2.gui.AbstractConfigScreen cloth) {
             cloth.selectedCategoryIndex = tabIndex;
         }
-        Minecraft.getInstance().setScreen(screen);
+        Minecraft.getInstance().setScreen(screen); // init() runs synchronously in here
+        if (screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth
+                && cloth.listWidget != null) {
+            cloth.listWidget.capYPosition(scroll); // clamps if the list shrank
+        }
     }
 
     /**

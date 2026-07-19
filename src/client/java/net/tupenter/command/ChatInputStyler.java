@@ -87,9 +87,22 @@ public final class ChatInputStyler {
      * tighter; {@code \} escapes). Always returns at least one segment.
      */
     public static List<Segment> segments(String full) {
+        return segments(full, false);
+    }
+
+    /**
+     * The paren-aware variant keeps a DIRECTIVE segment together with its
+     * whole {@code (...)} group chain — the {@code &&}s inside a group
+     * belong to the group. Styling uses this; the suggestion re-rooter
+     * keeps the flat split so completion still works inside groups.
+     */
+    private static List<Segment> segments(String full, boolean groupAware) {
         List<Segment> result = new ArrayList<>();
         boolean marker = false;
         boolean quoted = false;
+        boolean directiveSegment = false;
+        boolean sawSegmentStart = false;
+        int depth = 0;
         int start = 0;
         int i = 0;
         while (i < full.length()) {
@@ -98,16 +111,28 @@ public final class ChatInputStyler {
                 i += 2;
                 continue;
             }
+            if (!sawSegmentStart && !Character.isWhitespace(c)) {
+                sawSegmentStart = true;
+                directiveSegment = c == '#';
+            }
             if (c == '$') {
                 marker = !marker;
             } else if (!marker) {
                 if (c == '"') {
                     quoted = !quoted;
-                } else if (!quoted && c == '&' && i + 1 < full.length() && full.charAt(i + 1) == '&') {
-                    result.add(makeSegment(full, start, i));
-                    i += 2;
-                    start = i;
-                    continue;
+                } else if (!quoted) {
+                    if (groupAware && directiveSegment && c == '(') {
+                        depth++;
+                    } else if (groupAware && directiveSegment && c == ')') {
+                        depth = Math.max(0, depth - 1);
+                    } else if (c == '&' && depth == 0 && i + 1 < full.length() && full.charAt(i + 1) == '&') {
+                        result.add(makeSegment(full, start, i));
+                        i += 2;
+                        start = i;
+                        sawSegmentStart = false;
+                        directiveSegment = false;
+                        continue;
+                    }
                 }
             }
             i++;
@@ -227,14 +252,21 @@ public final class ChatInputStyler {
 
     /** Per-segment statement-form styling for [from, end) of the text. */
     private static void styleStatements(String text, int from, Style[] styles) {
-        String region = text.substring(from);
-        List<Segment> segments = segments(region);
+        styleStatements(text, from, text.length(), styles, 0);
+    }
+
+    private static void styleStatements(String text, int from, int to, Style[] styles, int depth) {
+        if (depth > 8) {
+            return; // absurd nesting — leave it plain
+        }
+        String region = text.substring(from, to);
+        List<Segment> segments = segments(region, true);
         for (int s = 0; s < segments.size(); s++) {
             Segment local = segments.get(s);
             Segment segment = new Segment(local.start() + from, local.end() + from, local.textStart() + from, local.kind());
             switch (segment.kind()) {
                 case CHAT -> fill(styles, segment.start(), segment.end(), CHAT_TEXT);
-                case DIRECTIVE -> styleDirective(text, styles, segment);
+                case DIRECTIVE -> styleDirective(text, styles, segment, depth);
                 case COMMAND -> styleCommand(text, styles, segment);
             }
             if (s + 1 < segments.size()) {
@@ -286,13 +318,17 @@ public final class ChatInputStyler {
         return FormattedCharSequence.composite(parts);
     }
 
-    private static void styleDirective(String full, Style[] styles, Segment segment) {
-        // gold #words (the leading one and any nested ones), dimmed group
-        // parens — unmatched parens turn red so a truncated or mistyped
-        // definition shows itself before Enter
+    /**
+     * A directive segment: gold #words, dimmed group parens, and the INSIDE
+     * of each statement group styled recursively as statements — so the
+     * commands in {@code #else (/tp a && /tp b)} get real command styling
+     * instead of dragging the closing paren into a red parse error.
+     * Condition groups (content that isn't a statement) stay plain.
+     * Unmatched parens turn red.
+     */
+    private static void styleDirective(String full, Style[] styles, Segment segment, int depth) {
         boolean marker = false;
         boolean quoted = false;
-        java.util.Deque<Integer> openParens = new java.util.ArrayDeque<>();
         for (int i = segment.textStart(); i < segment.end(); i++) {
             char c = full.charAt(i);
             if (c == '\\') {
@@ -317,21 +353,58 @@ public final class ChatInputStyler {
                     fill(styles, i, word, DIRECTIVE_WORD);
                     i = word - 1;
                 } else if (c == '(') {
+                    int close = matchingClose(full, i, segment.end());
+                    if (close < 0) {
+                        styles[i] = ERROR; // never closed
+                        continue;
+                    }
                     styles[i] = GROUP_PAREN;
-                    openParens.push(i);
+                    styles[close] = GROUP_PAREN;
+                    int contentStart = i + 1;
+                    while (contentStart < close && Character.isWhitespace(full.charAt(contentStart))) {
+                        contentStart++;
+                    }
+                    if (contentStart < close
+                            && (full.charAt(contentStart) == '/' || full.charAt(contentStart) == '#')) {
+                        styleStatements(full, i + 1, close, styles, depth + 1); // statement group
+                    }
+                    i = close; // conditions and headers keep default styling
                 } else if (c == ')') {
-                    if (openParens.isEmpty()) {
-                        styles[i] = ERROR; // stray close
-                    } else {
-                        styles[i] = GROUP_PAREN;
-                        openParens.pop();
+                    styles[i] = ERROR; // stray close
+                }
+            }
+        }
+    }
+
+    /** Index of the ')' matching the '(' at {@code open}, honoring nesting, markers, and quotes; -1 if unclosed. */
+    private static int matchingClose(String text, int open, int end) {
+        boolean marker = false;
+        boolean quoted = false;
+        int depth = 0;
+        for (int i = open; i < end; i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+                continue;
+            }
+            if (c == '$') {
+                marker = !marker;
+            } else if (!marker) {
+                if (c == '"') {
+                    quoted = !quoted;
+                } else if (!quoted) {
+                    if (c == '(') {
+                        depth++;
+                    } else if (c == ')') {
+                        depth--;
+                        if (depth == 0) {
+                            return i;
+                        }
                     }
                 }
             }
         }
-        for (int unmatched : openParens) {
-            styles[unmatched] = ERROR; // never closed
-        }
+        return -1;
     }
 
     private static void styleCommand(String full, Style[] styles, Segment segment) {
