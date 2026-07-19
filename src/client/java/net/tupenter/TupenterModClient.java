@@ -201,7 +201,7 @@ public class TupenterModClient implements ClientModInitializer {
         names.addAll(java.util.List.of(
                 "rand", "randf", "pick", "range", "len", "nth", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
-                "blockset", "itemset", "effectset", "block", "true", "false"));
+                "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false"));
         return new java.util.ArrayList<>(names);
     }
 
@@ -224,6 +224,9 @@ public class TupenterModClient implements ClientModInitializer {
         }
         if (function.equals("effectset") || function.isEmpty()) {
             collectTags(connection, net.minecraft.core.registries.Registries.MOB_EFFECT, tags);
+        }
+        if (function.equals("entityset") || function.isEmpty()) {
+            collectTags(connection, net.minecraft.core.registries.Registries.ENTITY_TYPE, tags);
         }
         return new java.util.ArrayList<>(tags);
     }
@@ -399,6 +402,7 @@ public class TupenterModClient implements ClientModInitializer {
             case ITEM -> net.minecraft.core.registries.Registries.ITEM;
             case BLOCK -> net.minecraft.core.registries.Registries.BLOCK;
             case EFFECT -> net.minecraft.core.registries.Registries.MOB_EFFECT;
+            case ENTITY -> net.minecraft.core.registries.Registries.ENTITY_TYPE;
         };
     }
 
@@ -1392,7 +1396,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7range(start, stop[, step])§r — inclusive whole numbers: range(1, 10), range(10, 0, -2)",
                     "§7len(x)§r — list length (or text length) · §7nth(list, i)§r — element i, 0-based · §7contains(list, v)§r — membership test",
                     "§7Cycling:§r nth(list, $i$ % len(list)) walks a list forever — with a #set counter, one step per run: #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset(\"#minecraft:wool\"), i % 16)$",
-                    "§7Registry sets:§r blockset(#minecraft:logs) / itemset(#c:ores) / effectset(#...) = a TAG's members as a list — no quotes needed, and typing # inside the parens TAB-COMPLETES the tags. A CONCRETE id makes a one-element set: blockset(\"stone\") — so block-or-blockset params feed the same functions. NO argument = the whole registry. Needs a live world.",
+                    "§7Registry sets:§r blockset(#minecraft:logs) / itemset(#c:ores) / effectset(#...) / entityset(#minecraft:skeletons) = a TAG's members as a list — no quotes needed, and typing # inside the parens TAB-COMPLETES the tags. A CONCRETE id makes a one-element set: blockset(\"stone\") — so block-or-blockset params feed the same functions. NO argument = the whole registry. Needs a live world.",
                     "§7Use them:§r rand(list) picks one: /effect give @s $rand(effectset())$ 30 1 · #foreach loops: #foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)",
                     "§7Item tags exist too:§r #minecraft:planks, #minecraft:logs, #c:ores, ... — type itemset(# and browse",
                     "§7Also a list:§r $client.effects$ — your active effect ids",
@@ -1702,7 +1706,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "§7Parameters§r go before the body: /customcommand add smite <target:player> /execute at $target$ run summon lightning_bolt — then /smite Steve. Use as $target$ or $1$.",
                 "§7Types:§r <name> or <name:string> = a word or \"anything quoted\" · <n:int> / <n:float> = numbers · <n:word> = one plain token (letters/digits/_-.+ only — no selectors!) · <n:selector> = @e[...] with tab-complete · <n:player> = player name · <n:text> = rest of the line (must be last) · <n:opt1,opt2,...> = one of a fixed list, tab-completed",
                 "§7Position types:§r <n:pos> = whole x y z with ~ support and targeted-block tab-complete · <n:vec3> = decimal x y z with ~ · <n:column_pos> = whole x z with ~ · <n:rotation> = yaw pitch with ~ · <n:angle> = one yaw with ~. Tuples bind $n$ = the joined coords plus $n.x$ $n.y$ $n.z$ (or $n.yaw$ $n.pitch$); angle binds a number.",
-                "§7More types:§r <n:time> = duration (10t / 1.5s / 3d), binds as ticks · <n:dimension> = dimension id, tab-completed · <n:color> = chat color, tab-completed · <n:id> = any namespaced id · <n:item> / <n:block> = item or block with full registry tab-complete (including [components] / [states]) · <n:itemset> / <n:blockset> = an item/block OR a #tag like #minecraft:logs, tab-completed",
+                "§7More types:§r <n:time> = duration (10t / 1.5s / 3d), binds as ticks · <n:dimension> = dimension id, tab-completed · <n:color> = chat color, tab-completed · <n:id> = any namespaced id · <n:item> / <n:block> = item or block with full registry tab-complete (including [components] / [states]) · <n:itemset> / <n:blockset> = an item/block OR a #tag like #minecraft:logs, tab-completed · <n:entity> = entity type id with /summon-style tab-complete",
                 "§7Optional params:§r add =default to make a param optional: <r:int=5>, <p:pos=~ ~ ~>. Defaults may hold $...$ expressions (evaluated when omitted, earlier params visible). Strictly-typed optionals can even be skipped mid-command — /portal to_nether works with <p:pos=~ ~ ~> <dim:...> because to_nether isn't a coordinate. Loose types (string/word/text) always grab the next arg, so put those last.",
                 "§7No natural default?§r Use a SENTINEL the body branches on: <filter:blockset=any> then #if ($filter$ == \"any\") (unfiltered...) #else (filtered...) — that's how an omitted param can mean 'do something else' rather than 'use this value'.",
                 "§7Selectors:§r use <name:selector>, or quote them into a plain <name>: /cmd \"@e[type=!player,limit=1]\"",

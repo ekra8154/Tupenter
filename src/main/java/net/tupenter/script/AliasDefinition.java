@@ -55,7 +55,8 @@ public record AliasDefinition(String body, List<Param> params) {
         ITEM,     // item id + optional [components], registry tab-complete
         BLOCK,    // block id + optional [state], registry tab-complete
         ITEMSET,  // item id OR #item_tag (+ optional [components]), registry tab-complete
-        BLOCKSET; // block id OR #block_tag (+ optional [states]), registry tab-complete
+        BLOCKSET, // block id OR #block_tag (+ optional [states]), registry tab-complete
+        ENTITY;   // entity type id, registry tab-complete (what /summon takes)
 
         public static ParamType fromKeyword(String keyword) {
             return switch (keyword.toLowerCase(Locale.ROOT)) {
@@ -79,8 +80,9 @@ public record AliasDefinition(String body, List<Param> params) {
                 case "block" -> BLOCK;
                 case "itemset" -> ITEMSET;
                 case "blockset" -> BLOCKSET;
+                case "entity" -> ENTITY;
                 default -> throw new IllegalArgumentException("Unknown parameter type '" + keyword
-                        + "' — use int, float, string, word, text, player, selector, pos, vec3, column_pos, rotation, angle, time, dimension, color, id, item, block, itemset, or blockset");
+                        + "' — use int, float, string, word, text, player, selector, pos, vec3, column_pos, rotation, angle, time, dimension, color, id, item, block, itemset, blockset, or entity");
             };
         }
     }

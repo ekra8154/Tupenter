@@ -18,7 +18,8 @@ public interface TagResolver {
     enum TagKind {
         ITEM,
         BLOCK,
-        EFFECT
+        EFFECT,
+        ENTITY
     }
 
     /**

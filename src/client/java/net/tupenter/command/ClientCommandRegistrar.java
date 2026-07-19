@@ -24,6 +24,7 @@ import net.minecraft.commands.arguments.AngleArgument;
 import net.minecraft.commands.arguments.ColorArgument;
 import net.minecraft.commands.arguments.DimensionArgument;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.ResourceArgument;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.commands.arguments.TimeArgument;
 import net.minecraft.commands.arguments.blocks.BlockPredicateArgument;
@@ -118,7 +119,8 @@ public final class ClientCommandRegistrar {
 
     private static ArgumentType<?> argumentTypeFor(AliasDefinition.ParamType type, CommandBuildContext buildContext) {
         if (buildContext == null && (type == AliasDefinition.ParamType.ITEM || type == AliasDefinition.ParamType.BLOCK
-                || type == AliasDefinition.ParamType.ITEMSET || type == AliasDefinition.ParamType.BLOCKSET)) {
+                || type == AliasDefinition.ParamType.ITEMSET || type == AliasDefinition.ParamType.BLOCKSET
+                || type == AliasDefinition.ParamType.ENTITY)) {
             // no registries yet (shouldn't happen — trees are built per-connection); degrade to plain text
             TupenterMod.LOGGER.warn("No registry context for an item/block parameter — falling back to a plain string argument");
             return StringArgumentType.string();
@@ -158,6 +160,7 @@ public final class ClientCommandRegistrar {
             case BLOCK -> BlockStateArgument.block(buildContext); // registry tab-complete incl. [states]
             case ITEMSET -> ItemPredicateArgument.itemPredicate(buildContext);      // item OR #tag
             case BLOCKSET -> BlockPredicateArgument.blockPredicate(buildContext);   // block OR #tag
+            case ENTITY -> ResourceArgument.resource(buildContext, net.minecraft.core.registries.Registries.ENTITY_TYPE); // /summon-style tab-complete
         };
     }
 

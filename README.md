@@ -76,7 +76,8 @@ errors on a miss instead of quietly returning the ray's endpoint.
 ```
 
 Registry sets: `blockset(#minecraft:logs)` / `itemset(#c:ores)` /
-`effectset(#...)` resolve a tag to its member list through the live
+`effectset(#...)` / `entityset(#minecraft:skeletons)` resolve a tag to its
+member list through the live
 connection's registries — no quotes needed, and typing `#` inside the
 parens tab-completes the available tags for that registry (Fabric `c:`
 convention tags included). With **no argument** you get the *entire*
@@ -235,6 +236,7 @@ Available types: `int`, `float`, `string` (the default — a word or
 | `block` | block id + optional `[states]`, full registry tab-complete | verbatim text |
 | `itemset` | item id **or** `#item_tag`, tab-completes both | verbatim text |
 | `blockset` | block id **or** `#block_tag` + optional `[states]`, tab-completes both | verbatim text |
+| `entity` | entity type id, `/summon`-style registry tab-complete | verbatim text |
 
 `blockset`/`itemset` mirror vanilla's block/item *predicate* arguments (the
 filter in `/fill ... replace <filter>`), so they're the right type when the

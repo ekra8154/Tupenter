@@ -516,6 +516,36 @@ class ScriptParserTest {
         assertNotNull(ScriptParser.parse("say $rand(blockset(\"#minecraft:logs\"))$", options(Map.of())).error());
     }
 
+    private static final String LAUNCH_BODY =
+            "<e:entity> <s:float=1.5> "
+            + "#local h = cos(client.pitch) && "
+            + "#local x = -sin(client.yaw) * h && "
+            + "#local y = -sin(client.pitch) && "
+            + "#local z = cos(client.yaw) * h && "
+            + "/summon $e$ ~$round(x*15)/10$ ~$1.5 + round(y*15)/10$ ~$round(z*15)/10$ "
+            + "{Motion:[$round(x*s*1000)/1000$d,$round(y*s*1000)/1000$d,$round(z*s*1000)/1000$d]}";
+
+    @Test
+    void launchRecipeSummonsAlongTheFacingDirection() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.yaw", Value.ofNumber(0));    // facing +z
+        store.set("client.pitch", Value.ofNumber(0));  // level
+        Map<String, String> aliases = Map.of("launch", LAUNCH_BODY);
+
+        // facing +z at speed 2: motion is (0, 0, 2), spawn 1.5 blocks ahead
+        assertEquals(List.of("summon minecraft:fireball ~0 ~1.5 ~1.5 {Motion:[0d,0d,2d]}"),
+                contents(ScriptParser.parse("launch minecraft:fireball 2", options(aliases, store))));
+
+        // default speed 1.5 when omitted
+        assertEquals(List.of("summon minecraft:arrow ~0 ~1.5 ~1.5 {Motion:[0d,0d,1.5d]}"),
+                contents(ScriptParser.parse("launch minecraft:arrow", options(aliases, store))));
+
+        // looking straight down: motion is (0, -s, 0)
+        store.set("client.pitch", Value.ofNumber(90));
+        assertEquals(List.of("summon minecraft:tnt ~0 ~0 ~0 {Motion:[0d,-1d,0d]}"),
+                contents(ScriptParser.parse("launch minecraft:tnt 1", options(aliases, store))));
+    }
+
     private static final String RANDOMFILL_BODY =
             "<a:pos> <b:pos> <set:blockset> <filter:blockset=any> #silent #local choices = blockset(set) && "
             + "#for $x$ in a.x..b.x (#for $y$ in a.y..b.y (#for $z$ in a.z..b.z "

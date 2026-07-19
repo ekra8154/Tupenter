@@ -403,6 +403,7 @@ final class ExpressionEvaluator {
                 case "itemset" -> tagMembers("itemset", TagResolver.TagKind.ITEM, args);
                 case "blockset" -> tagMembers("blockset", TagResolver.TagKind.BLOCK, args);
                 case "effectset" -> tagMembers("effectset", TagResolver.TagKind.EFFECT, args);
+                case "entityset" -> tagMembers("entityset", TagResolver.TagKind.ENTITY, args);
                 case "block" -> blockAt(args);
                 default -> throw new ExpressionException("Unknown function: " + identifier);
             };
@@ -753,7 +754,7 @@ final class ExpressionEvaluator {
             String best = null;
             int bestDistance = 3; // suggest only within edit distance 2
             List<String> candidates = new ArrayList<>(context.variables().names());
-            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "block", "nth", "contains"));
+            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains"));
             for (String candidate : candidates) {
                 int distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
                 if (distance < bestDistance) {
