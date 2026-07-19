@@ -595,7 +595,12 @@ public class TupenterModClient implements ClientModInitializer {
                                                     .executes(TupenterModClient::runVarDeleteCommand))))
                             .then(literal("help")
                                     .executes(context -> runHelpCommand(context, "index"))
-                                    .then(literal("expressions").executes(context -> runHelpCommand(context, "expressions")))
+                                    .then(literal("expressions")
+                                            .executes(context -> runHelpCommand(context, "expressions"))
+                                            .then(argument("topic", StringArgumentType.word())
+                                                    .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
+                                                            new String[]{"math", "text", "logic", "random", "lists", "world"}, b))
+                                                    .executes(context -> runExpressionsHelp(context, StringArgumentType.getString(context, "topic")))))
                                     .then(literal("variables").executes(context -> runHelpCommand(context, "variables")))
                                     .then(literal("flow").executes(context -> runHelpCommand(context, "flow")))
                                     .then(literal("prefixes").executes(context -> runHelpCommand(context, "prefixes")))
@@ -1236,20 +1241,86 @@ public class TupenterModClient implements ClientModInitializer {
         return 1;
     }
 
+    /** /tupenter help expressions <topic> — deep pages, divided by what you're trying to do. */
+    private static int runExpressionsHelp(CommandContext<FabricClientCommandSource> context, String topic) {
+        String[] lines = switch (topic.toLowerCase(java.util.Locale.ROOT)) {
+            case "math" -> new String[]{
+                    "§bExpressions · math:",
+                    "§7Arithmetic:§r + - * / and implicit multiplication: $2(3+4)$ = 14 · /give @s stick $32+5$",
+                    "§7Exact fractions:§r $1/3 * 3$ is exactly 1 — no float drift, ever",
+                    "§7Stacks:§r a number with an s suffix is stacks of 64: $3s$ = 192 · $1.5s$ = 96",
+                    "§7Rounding:§r int(x) truncates · floor / ceil / round · abs, min(a,b,...), max(a,b,...), sqrt",
+                    "§7Trig:§r sin/cos/tan take DEGREES (Minecraft rotations are degrees): $sin(client.yaw)$",
+                    "§7Implicit math:§r with Inline Expressions = Auto-detect, bare math evaluates WITHOUT markers: /give @s stick 64*5 → 320. Numbers-and-operators only, skipped inside {NBT braces}, unparseable text sends as-is (never errors).",
+                    "§7Gotchas:§r write 2*sin(x), not 2sin(x) — a bare s reads as the stack suffix",
+            };
+            case "text" -> new String[]{
+                    "§bExpressions · text:",
+                    "§7Strings:§r \"quoted\" — quotes say what it is: \"air\" is text, air is a variable lookup",
+                    "§7Joining:§r + concatenates: $\"lvl \" + client.xp_level$ → lvl 30",
+                    "§7Comparing:§r == and != work on text: $client.gamemode == \"creative\"$",
+                    "§7Strings that RUN:§r a chat statement that is exactly one $marker$ runs its string result by statement form — #set $cmd$ = \"/tp ~ ~1 ~\" then $cmd$ teleports. Same for /$ expr $ on a whole line.",
+                    "§7Escapes:§r \\\" inside quotes · \\$ for a literal dollar sign",
+            };
+            case "logic" -> new String[]{
+                    "§bExpressions · logic:",
+                    "§7Booleans:§r true / false · comparisons: == != < <= > >=",
+                    "§7Combine:§r && (and) · \\|\\| (or) · ! (not): $client.on_ground && client.light < 8$",
+                    "§7Ternary:§r condition ? then : else — $client.health < 5 ? \"help!\" : \"fine\"$ · nests freely",
+                    "§7#if uses these:§r #if ($client.y$ > 60) (/say high) #elseif (...) (...) #else (...)",
+                    "§7Gotcha:§r a bare boolean can't be substituted into a command — route it through a ternary to pick real text",
+            };
+            case "random" -> new String[]{
+                    "§bExpressions · random:",
+                    "§7rand(min, max)§r — whole number, INCLUSIVE both ends: $rand(1, 64)$",
+                    "§7randf(min, max)§r — decimal in [min, max)",
+                    "§7rand(list)§r — one element of any list: $rand(effectset())$, $rand(range(0, 100, 10))$",
+                    "§7pick(a | b | c)§r — one OPTION, where options are full expressions and nest: pick(rand(1,5) | client.y). Quote literal text: pick(\"say hi\" | \"say nah\") — a single | separates options, || is still boolean-or.",
+                    "§7pick vs rand:§r pick chooses between things YOU wrote; rand samples a range or list",
+                    "§7Re-rolls:§r resend history keeps the original line, so every resend rolls fresh",
+            };
+            case "lists" -> new String[]{
+                    "§bExpressions · lists:",
+                    "§7range(start, stop[, step])§r — inclusive whole numbers: range(1, 10), range(10, 0, -2)",
+                    "§7len(x)§r — list length (or text length)",
+                    "§7Registry sets:§r blockset(\"#minecraft:logs\") / itemset(\"#c:ores\") / effectset(\"#...\") = a TAG's members as a list (# optional). NO argument = the whole registry: effectset() is every effect. Needs a live world.",
+                    "§7Use them:§r rand(list) picks one: /effect give @s $rand(effectset())$ 30 1 · #foreach loops: #foreach $b$ in blockset(\"#minecraft:wool\") (/give @s $b$)",
+                    "§7Discover tags:§r tab-complete a # in a blockset-typed param, or in /fill ... replace",
+                    "§7Also a list:§r $client.effects$ — your active effect ids",
+            };
+            case "world" -> new String[]{
+                    "§bExpressions · world reads:",
+                    "§7block(x, y, z)§r or block(\"x y z\") — the block id at a position: $block(0, 64, 0)$ → minecraft:stone",
+                    "§7No round trip:§r reads come from YOUR client's synced world copy, so #if handles them instantly — this is /execute if block folded into the expression world, with a real #else.",
+                    "§7Crosshair:§r $client.target_hit$ = \"block\"/\"entity\"/\"miss\" · $client.target_block$ = \"x y z\" (errors on a miss — gate with target_hit) · $client.target_entity$ = the entity id",
+                    "§7Pattern:§r #if ($client.target_hit$ == \"block\" && block(client.target_block) == \"minecraft:diamond_ore\"$) (/echo &bfound it)",
+                    "§7Limits:§r loaded chunks only (unloaded = loud error, never a guess) · states/NBT not included, just the id",
+                    "§7Registry sets§r (blockset/itemset/effectset) are under: /tupenter help expressions lists",
+            };
+            default -> new String[]{
+                    "§cUnknown expressions topic '" + topic + "' — try: math, text, logic, random, lists, world",
+            };
+        };
+        for (String line : lines) {
+            context.getSource().sendFeedback(Component.literal(line));
+        }
+        return 1;
+    }
+
     private static int runHelpCommand(CommandContext<FabricClientCommandSource> context, String topic) {
         String[] lines = switch (topic) {
             case "expressions" -> new String[]{
                     "§bExpressions — $...$ evaluates before sending:",
-                    "§7Math:§r /give @s stick $32+5$ · exact fractions, no float drift · $3s$ = 3 stacks (×64)",
-                    "§7Text:§r \"quoted\" · + joins: $\"lvl \" + 5$ · comparisons: == != < <= > >=",
-                    "§7Conditions:§r $client.y > 60 ? 10 : 0$ · true/false · && \\|\\| !",
-                    "§7Functions:§r rand(1,64) randf pick(a | b | c) range(1,10) int float abs floor ceil round min max len sqrt sin cos tan (degrees). pick options are expressions and nest — quote literal text: pick(\"say hi\" | \"say nah\")",
-                    "§7Registry sets:§r blockset(\"#minecraft:logs\") / itemset(\"#c:ores\") / effectset(\"#...\") = the tag's members as a list · NO argument = the whole registry: /effect give @s $rand(effectset())$ 30 · rand(list) picks one, len() counts, #foreach loops: #foreach $b$ in blockset(\"#minecraft:logs\") (/say $b$). Needs a live world.",
-                    "§7World reads:§r block(x, y, z) or block(\"x y z\") = the block id at a position, read from YOUR client's world copy — no server round trip, so #if handles it instantly: #if ($block(client.target_block) == \"minecraft:air\"$) (...) #else (...). Loaded chunks only. Pairs with $client.target_hit$ (block/entity/miss).",
-                    "§7Implicit math:§r with Inline Expressions = Auto-detect (the default), bare math evaluates WITHOUT markers: /give @s stick 64*5 → 320. Numbers-and-operators only (no variables/functions beyond int/float), skipped inside {NBT braces}, and unparseable text is sent as-is (never errors). $...$ is the full language and works everywhere, in every mode except Disabled.",
-                    "§7Gotchas:§r \\$ = literal dollar · write 2*sin(x), not 2sin(x) (bare s = stack suffix)",
-                    "§7Errors:§r a bad $...$ shows a local error and sends NOTHING.",
-                    "§7Try it:§r /calc <expr> evaluates locally. /$ expr $ is top-down: numbers display, but a string result RUNS as a fresh line — \"/...\" = command, \"#...\" = directive, else chat. /$pick(\"hi\" | \"/time set day\")$",
+                    "§7The rule:§r inside $...$ you're writing CODE, not command text — quotes say what it is (\"air\" = text, air = a variable), position says what it becomes.",
+                    "§7Works everywhere:§r commands, chat, directives, custom command bodies, tick scripts. A bad $...$ shows a local error and sends NOTHING. \\$ = literal dollar.",
+                    "§7Try it:§r /calc <expr> evaluates locally · /$ expr $ is top-down: numbers display, a string result RUNS as a fresh line",
+                    "§7Go deeper — /tupenter help expressions <topic>:",
+                    "§7  math§r — arithmetic, exact fractions, stack suffix, rounding, trig",
+                    "§7  text§r — strings, joining, comparisons, strings that run",
+                    "§7  logic§r — booleans, conditions, ternary, #if",
+                    "§7  random§r — rand, randf, pick, and re-roll rules",
+                    "§7  lists§r — range, len, registry sets, #foreach",
+                    "§7  world§r — block(x,y,z) and reading your client's world copy",
             };
             case "variables" -> new String[]{
                     "§bVariables — use anywhere as $name$:",
@@ -1298,7 +1369,7 @@ public class TupenterModClient implements ClientModInitializer {
             };
             default -> new String[]{
                     "§bTupenter help — pick a topic:",
-                    "§7/tupenter help expressions§r — $...$ math, text, conditions, functions",
+                    "§7/tupenter help expressions [topic]§r — the $...$ language: math, text, logic, random, lists, world",
                     "§7/tupenter help variables§r — #set, #local, client.*/world.*/nbt paths, groups",
                     "§7/tupenter help flow§r — && chains, #repeat, #for, #foreach, #if/#elseif",
                     "§7/tupenter help prefixes§r — #silent, #norecord, #stage, /echo",
@@ -1337,7 +1408,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7vars [group]§r — variables overview, or one group with live values",
                     "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
                     "§7dump [client|target] [path]§r — browse entity NBT (the data behind client.nbt.* / target.nbt.*)",
-                    "§7help <topic>§r — topics: expressions, variables, flow, prefixes, scripts, command [name]",
+                    "§7help <topic>§r — topics: expressions [math|text|logic|random|lists|world], variables, flow, prefixes, scripts, command [name]",
             };
             case "customcommand" -> new String[]{
                     "§b/customcommand — make your own commands:",
