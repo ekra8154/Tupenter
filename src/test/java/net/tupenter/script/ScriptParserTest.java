@@ -517,6 +517,34 @@ class ScriptParserTest {
     }
 
     @Test
+    void randomfillRecipeWorks() {
+        // the /randomfill custom command: nested #for over the volume,
+        // each block independently random from the tag's member list
+        TagResolver tags = (kind, tagId) -> kind == TagResolver.TagKind.BLOCK && "minecraft:logs".equals(tagId)
+                ? List.of("minecraft:oak_log", "minecraft:birch_log")
+                : List.of();
+        SessionVariableStore store = new SessionVariableStore();
+        Map<String, AliasDefinition> aliases = aliasMap(Map.of("randomfill",
+                "<a:pos> <b:pos> <set:blockset> #silent #local choices = blockset(set) && "
+                + "#for $x$ in a.x..b.x (#for $y$ in a.y..b.y (#for $z$ in a.z..b.z "
+                + "(/setblock $x$ $y$ $z$ $rand(choices)$)))"));
+        ScriptParser.Options options = new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, aliases,
+                true, true, true, true, 100, 1000, new Random(42), store, store, tags);
+
+        ScriptParser.ParseResult result = ScriptParser.parse("randomfill 0 0 0 1 1 0 #minecraft:logs", options);
+        assertNull(result.error());
+        List<String> sent = contents(result);
+        assertEquals(4, sent.size(), "2x2x1 volume = 4 setblocks");
+        java.util.Set<String> picked = new java.util.HashSet<>();
+        for (String line : sent) {
+            assertTrue(line.matches("setblock \\d \\d \\d minecraft:(oak|birch)_log"), line);
+            picked.add(line.substring(line.lastIndexOf(' ') + 1));
+        }
+        assertTrue(picked.size() > 1, "blocks vary across positions");
+        assertTrue(result.script().statements().get(0).silent(), "feedback is suppressed");
+    }
+
+    @Test
     void itemsetAndBlocksetParamsBindTagsVerbatim() {
         Map<String, String> aliases = Map.of("swap", "<from:blockset> <to:block> /fill ~ ~ ~ ~ ~ ~ $to$ replace $from$");
         ScriptParser.ParseResult result = parse("swap #minecraft:logs[axis=y] minecraft:stone", aliases);
