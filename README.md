@@ -99,8 +99,14 @@ block/item tag to its member list through the live connection's registries
   `/tupenter var delete <name>` removes it.
 - Live client state: `$client.x$` `$client.y$` `$client.z$` (`bx/by/bz` for
   block coords), `yaw` `pitch` `health` `food` `air` `name` `dimension`
-  `held_item` `target_block` — and `$world.difficulty$` `time` `day`
-  `raining` `thundering` `moon_phase`.
+  `held_item` `target_block` `target_hit` `target_entity` — plus
+  environment (`biome`, `light`/`light_block`/`light_sky`, `facing`,
+  `chunk_x`/`chunk_z`), movement (`speed`, `speed_y`, `on_ground`,
+  `sneaking`, `sprinting`, `swimming`, `flying`, `gliding`), stats
+  (`max_health`, `absorption`, `armor`, `saturation`, `xp_level`,
+  `xp_progress`), inventory (`slot`, `offhand_item`), and session
+  (`gamemode`, `ping`, `fps`) — and `$world.difficulty$` `time` `day`
+  `raining` `thundering` `moon_phase` `spawn` `key`.
 - **Everything else** via raw NBT paths: `$client.nbt.Pos.1$`,
   `$client.nbt.Inventory.0.id$`, `$target.nbt.Health$` (entity under your
   crosshair). Browse paths with `/tupenter dump [client|target] [path]`.

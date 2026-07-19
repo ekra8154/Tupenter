@@ -44,6 +44,63 @@ public final class ClientVariableProvider implements VariableProvider {
         });
         register("client.target_block", ClientVariableProvider::targetBlock);
         register("client.target_hit", ClientVariableProvider::targetHit);
+        register("client.target_entity", ClientVariableProvider::targetEntity);
+
+        // movement + orientation
+        register("client.speed", player -> {
+            net.minecraft.world.phys.Vec3 velocity = player.getDeltaMovement();
+            return Value.ofNumber(round2(Math.hypot(velocity.x, velocity.z) * 20)); // horizontal blocks/sec
+        });
+        register("client.speed_y", player -> Value.ofNumber(round2(player.getDeltaMovement().y * 20)));
+        register("client.facing", player -> Value.of(player.getDirection().getName())); // north/south/east/west
+        register("client.on_ground", player -> Value.of(player.onGround()));
+        register("client.sneaking", player -> Value.of(player.isCrouching()));
+        register("client.sprinting", player -> Value.of(player.isSprinting()));
+        register("client.swimming", player -> Value.of(player.isSwimming()));
+        register("client.flying", player -> Value.of(player.getAbilities().flying));
+        register("client.gliding", player -> Value.of(player.isFallFlying())); // elytra
+
+        // position context
+        register("client.biome", player -> player.level().getBiome(player.blockPosition()).unwrapKey()
+                .map(key -> Value.of(key.location().toString()))
+                .orElseThrow(() -> new ExpressionException("client.biome: unregistered biome")));
+        register("client.light", player -> Value.ofNumber(player.level().getMaxLocalRawBrightness(player.blockPosition())));
+        register("client.light_block", player -> Value.ofNumber(
+                player.level().getBrightness(net.minecraft.world.level.LightLayer.BLOCK, player.blockPosition())));
+        register("client.light_sky", player -> Value.ofNumber(
+                player.level().getBrightness(net.minecraft.world.level.LightLayer.SKY, player.blockPosition())));
+        register("client.chunk_x", player -> Value.ofNumber(player.chunkPosition().x));
+        register("client.chunk_z", player -> Value.ofNumber(player.chunkPosition().z));
+
+        // stats
+        register("client.max_health", player -> Value.ofNumber(player.getMaxHealth()));
+        register("client.absorption", player -> Value.ofNumber(player.getAbsorptionAmount()));
+        register("client.armor", player -> Value.ofNumber(player.getArmorValue()));
+        register("client.saturation", player -> Value.ofNumber(player.getFoodData().getSaturationLevel()));
+        register("client.xp_level", player -> Value.ofNumber(player.experienceLevel));
+        register("client.xp_progress", player -> Value.ofNumber(round2(player.experienceProgress))); // 0..1
+
+        // inventory
+        register("client.slot", player -> Value.ofNumber(player.getInventory().getSelectedSlot())); // 0-8, /item-compatible
+        register("client.offhand_item", player -> Value.of(
+                BuiltInRegistries.ITEM.getKey(player.getOffhandItem().getItem()).toString()));
+
+        // connection/session
+        register("client.gamemode", player -> Value.of(playerInfo(player).getGameMode().getName()));
+        register("client.ping", player -> Value.ofNumber(playerInfo(player).getLatency()));
+        register("client.fps", player -> Value.ofNumber(Minecraft.getInstance().getFps()));
+    }
+
+    private static double round2(double value) {
+        return Math.round(value * 100.0) / 100.0;
+    }
+
+    private static net.minecraft.client.multiplayer.PlayerInfo playerInfo(LocalPlayer player) {
+        net.minecraft.client.multiplayer.PlayerInfo info = player.connection.getPlayerInfo(player.getUUID());
+        if (info == null) {
+            throw new ExpressionException("player info isn't synced yet — try again in a moment");
+        }
+        return info;
     }
 
     private void register(String name, Function<LocalPlayer, Value> reader) {
@@ -60,6 +117,14 @@ public final class ClientVariableProvider implements VariableProvider {
             return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
         }
         throw new ExpressionException("client.target_block: no block under the crosshair — check $client.target_hit$ first");
+    }
+
+    /** Entity type id under the crosshair, e.g. "minecraft:zombie". */
+    private static Value targetEntity(LocalPlayer player) {
+        if (Minecraft.getInstance().hitResult instanceof net.minecraft.world.phys.EntityHitResult hit) {
+            return Value.of(BuiltInRegistries.ENTITY_TYPE.getKey(hit.getEntity().getType()).toString());
+        }
+        throw new ExpressionException("client.target_entity: no entity under the crosshair — check $client.target_hit$ first");
     }
 
     /** "block", "entity", or "miss" — what the crosshair ray actually found. */

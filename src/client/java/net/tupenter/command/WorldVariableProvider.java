@@ -28,6 +28,18 @@ public final class WorldVariableProvider implements VariableProvider {
         register("world.thundering", level -> Value.of(level.isThundering()));
         register("world.moon_phase", level -> Value.ofNumber(level.getMoonPhase()));
         register("world.dimension", level -> Value.of(level.dimension().location().toString()));
+        register("world.spawn", level -> {
+            net.minecraft.core.BlockPos pos = level.getLevelData().getRespawnData().pos();
+            return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
+        });
+        // the per-world scripts identity key: "server:<address>" / "world:<folder>"
+        register("world.key", level -> {
+            String key = net.tupenter.TupenterModClient.currentWorldKey();
+            if (key == null) {
+                throw new ExpressionException("world.key is only available in-game");
+            }
+            return Value.of(key);
+        });
     }
 
     private void register(String name, Function<ClientLevel, Value> reader) {
