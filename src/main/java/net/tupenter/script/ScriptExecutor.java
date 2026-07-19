@@ -160,6 +160,24 @@ public final class ScriptExecutor {
         return running.size();
     }
 
+    /** One human-readable line per running instance: its source line + wait state. */
+    public java.util.List<String> runningSummaries() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (Instance instance : running) {
+            String state;
+            if (instance.waitTicks > 0) {
+                state = "waiting " + instance.waitTicks + "t";
+            } else if (instance.waitUntilMillis > 0) {
+                long secs = Math.max(0, (instance.waitUntilMillis - System.currentTimeMillis() + 999) / 1000);
+                state = "waiting " + secs + "s (realtime)";
+            } else {
+                state = "active";
+            }
+            out.add(preview(instance.script.originalLine()) + " — " + state);
+        }
+        return out;
+    }
+
     private void cancelSameSource(String originalLine) {
         for (Iterator<Instance> iterator = running.iterator(); iterator.hasNext(); ) {
             Instance instance = iterator.next();
@@ -178,7 +196,7 @@ public final class ScriptExecutor {
         for (Iterator<Instance> iterator = running.iterator(); iterator.hasNext(); ) {
             Instance instance = iterator.next();
 
-            while (instance.waitTicks == 0
+            while (instance.isReady()
                     && budgetUsedThisTick < limits.maxCommandsPerTick()
                     && pullsLeft-- > 0) {
                 Script.SendStatement statement;
@@ -210,7 +228,14 @@ public final class ScriptExecutor {
                             sender.sendChat(statement.content());
                         }
                     }
-                    case WAIT -> instance.waitTicks = statement.waitTicks();
+                    case WAIT -> {
+                        if (statement.waitRealtime()) {
+                            // wall-clock: 50ms per tick, immune to TPS/lag
+                            instance.waitUntilMillis = System.currentTimeMillis() + statement.waitTicks() * 50L;
+                        } else {
+                            instance.waitTicks = statement.waitTicks();
+                        }
+                    }
                     case NOTICE -> sender.info(statement.content());
                 }
 
@@ -236,11 +261,26 @@ public final class ScriptExecutor {
     private static final class Instance {
         private final Script script;
         private final Script.StatementSource source;
-        private int waitTicks;
+        private int waitTicks;         // gametime wait: client ticks remaining
+        private long waitUntilMillis;  // realtime wait: wall-clock deadline (0 = none)
 
         private Instance(Script script) {
             this.script = script;
             this.source = script.source();
+        }
+
+        /** Ready to pull the next statement — no gametime or realtime wait pending. */
+        private boolean isReady() {
+            if (waitTicks > 0) {
+                return false;
+            }
+            if (waitUntilMillis > 0) {
+                if (System.currentTimeMillis() < waitUntilMillis) {
+                    return false;
+                }
+                waitUntilMillis = 0; // deadline reached — resume
+            }
+            return true;
         }
 
         private Script.SendStatement next() {

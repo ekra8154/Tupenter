@@ -366,6 +366,21 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /** /tupenter scripts — what would run right here, right now. */
+    /** /tupenter running — currently executing/parked script instances (tick scripts and ad-hoc alike). */
+    private static int runRunningCommand(CommandContext<FabricClientCommandSource> context) {
+        java.util.List<String> summaries = SCRIPT_EXECUTOR.runningSummaries();
+        if (summaries.isEmpty()) {
+            context.getSource().sendFeedback(Component.literal("No scripts running right now.").withStyle(ChatFormatting.GRAY));
+            return 1;
+        }
+        context.getSource().sendFeedback(Component.literal(
+                "Running scripts (" + summaries.size() + ") — /tupenter abort stops all:").withStyle(ChatFormatting.AQUA));
+        for (String summary : summaries) {
+            context.getSource().sendFeedback(Component.literal(" • " + summary).withStyle(ChatFormatting.GRAY));
+        }
+        return 1;
+    }
+
     private static int runScriptsStatusCommand(CommandContext<FabricClientCommandSource> context) {
         TupenterConfig config = TupenterConfig.INSTANCE;
         String key = currentWorldKey();
@@ -738,6 +753,8 @@ public class TupenterModClient implements ClientModInitializer {
                                                 .withStyle(ChatFormatting.YELLOW));
                                         return 1;
                                     }))
+                            .then(literal("running")
+                                    .executes(TupenterModClient::runRunningCommand))
                             .then(literal("scripts")
                                     .executes(TupenterModClient::runScriptsStatusCommand)
                                     .then(literal("on").executes(context -> runScriptsMasterCommand(context, true)))
@@ -1560,6 +1577,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Foreach:§r #foreach $m$ in (zombie | skeleton) (/summon $m$) — or in range(1, 10)",
                     "§7If:§r #if ($client.y$ > 60) (/say high) #elseif ($client.y$ > 30) (/say mid) #else (/say low)",
                     "§7Wait:§r #wait 10t / 1.5s / 2m / 3d (ticks/seconds/minutes/days) — pause the script mid-line without freezing anything else. Scripts run LAZILY: $...$ evaluates when its statement runs, so /attribute ... && #wait 2t && /tp @s $client.target_block$ reads the target AFTER the boost landed. Works in chains, groups, loops, and custom command bodies. Max 72000t.",
+                    "§7Wait clock:§r default counts CLIENT TICKS (pauses/slows with the game). Add §7realtime§r for wall-clock instead: #wait 5m realtime fires after 5 real minutes no matter the TPS. §7gametime§r is the explicit default.",
                     "§7Overlap:§r re-running the same line restarts it (resend = restart, not stack) · different lines run concurrently · /tupenter abort stops all",
                     "§7Groups (...) nest and can hold chains. Parens elsewhere are literal text.",
                     "§7Caps:§r loops ≤ Max Loop Iterations · scripts ≤ Max Commands Per Script · sends spread over ticks past Max Commands Per Tick",
@@ -1613,7 +1631,7 @@ public class TupenterModClient implements ClientModInitializer {
         String[] lines = switch (name) {
             case "all", "commands" -> new String[]{
                     "§bCommands Tupenter adds (all client-side) — detail: /tupenter help command <name>:",
-                    "§7/tupenter§r — abort · vars · var save/delete · dump · help",
+                    "§7/tupenter§r — running · abort · scripts · vars · var save/delete · dump · help",
                     "§7/customcommand§r — add · update · remove · list · make your own commands",
                     "§7/echo <text>§r — local-only output, &-colors, evaluates $...$",
                     "§7/calc <expr>§r · §7/$ expr $§r — local calculator / top-down shorthand",
@@ -1622,6 +1640,7 @@ public class TupenterModClient implements ClientModInitializer {
             };
             case "tupenter" -> new String[]{
                     "§b/tupenter — mod control:",
+                    "§7running§r — list scripts executing right now (parked at #wait, mid-loop, ...) with their wait state",
                     "§7abort§r — stop all running scripts + the resend queue, and disable tick scripts (panic switch)",
                     "§7scripts§r — what's armed in THIS world · §7scripts on|off§r — tick-script master switch",
                     "§7vars [group]§r — variables overview, or one group with live values",

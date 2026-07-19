@@ -35,22 +35,27 @@ public final class Script {
      * @param silent true when this statement is inside a #silent scope —
      *               server feedback around its send is suppressed locally
      */
-    public record SendStatement(String content, Kind kind, boolean silent, int waitTicks) {
+    public record SendStatement(String content, Kind kind, boolean silent, int waitTicks, boolean waitRealtime) {
 
         public SendStatement(String content, Kind kind) {
-            this(content, kind, false, 0);
+            this(content, kind, false, 0, false);
         }
 
         public SendStatement(String content, Kind kind, boolean silent) {
-            this(content, kind, silent, 0);
+            this(content, kind, silent, 0, false);
         }
 
         public static SendStatement waitFor(int ticks) {
-            return new SendStatement("", Kind.WAIT, false, ticks);
+            return waitFor(ticks, false);
+        }
+
+        /** @param realtime true = wall-clock (immune to TPS/lag); false = client ticks (default) */
+        public static SendStatement waitFor(int ticks, boolean realtime) {
+            return new SendStatement("", Kind.WAIT, false, ticks, realtime);
         }
 
         public static SendStatement notice(String text) {
-            return new SendStatement(text, Kind.NOTICE, false, 0);
+            return new SendStatement(text, Kind.NOTICE, false, 0, false);
         }
 
         public boolean isCommand() {

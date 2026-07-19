@@ -692,13 +692,28 @@ public final class ScriptParser {
                     throw new ParseAbort("#wait: " + ex.getMessage());
                 }
             }
-            long ticks = parseWaitTicks(header.trim());
+            // optional trailing mode: realtime (wall-clock) or gametime (client ticks, default)
+            boolean realtime = false;
+            String durationText = header.trim();
+            String[] parts = durationText.split("\\s+");
+            if (parts.length == 2) {
+                String mode = parts[1].toLowerCase(Locale.ROOT);
+                if (mode.equals("realtime") || mode.equals("real")) {
+                    realtime = true;
+                } else if (!mode.equals("gametime") && !mode.equals("game")) {
+                    throw new ParseAbort("#wait mode must be 'realtime' or 'gametime', got '" + parts[1] + "'");
+                }
+                durationText = parts[0];
+            } else if (parts.length > 2) {
+                throw new ParseAbort("#wait takes a duration and optional mode, e.g. #wait 5m realtime");
+            }
+            long ticks = parseWaitTicks(durationText);
             if (ticks > MAX_WAIT_TICKS) {
                 throw new ParseAbort("#wait is capped at " + MAX_WAIT_TICKS + " ticks (one hour)");
             }
             changed = true;
             if (ticks > 0) {
-                emit(Script.SendStatement.waitFor((int) ticks));
+                emit(Script.SendStatement.waitFor((int) ticks, realtime));
             }
         }
 
