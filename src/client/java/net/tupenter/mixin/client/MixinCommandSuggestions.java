@@ -186,6 +186,24 @@ public abstract class MixinCommandSuggestions {
         return second.getReader().getCursor() > first.getReader().getCursor() ? second : first;
     }
 
+    /**
+     * Guard the vanilla completion call: with a rerooted parse (chains,
+     * #directives), dragging the cursor before the parse's start node makes
+     * Brigadier's findSuggestionContext throw "Can't find node before cursor"
+     * — which crashed the game mid-drag. No suggestions for that frame is the
+     * right outcome (you're selecting text, not completing), so swallow it.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    @Redirect(method = "updateCommandInfo", at = @At(value = "INVOKE",
+            target = "Lcom/mojang/brigadier/CommandDispatcher;getCompletionSuggestions(Lcom/mojang/brigadier/ParseResults;I)Ljava/util/concurrent/CompletableFuture;"))
+    private CompletableFuture<Suggestions> tupenter$safeCompletion(CommandDispatcher dispatcher, ParseResults parse, int cursor) {
+        try {
+            return dispatcher.getCompletionSuggestions(parse, cursor);
+        } catch (RuntimeException ex) {
+            return Suggestions.empty(); // Brigadier's empty() is already a completed future
+        }
+    }
+
     @Inject(method = "formatChat", at = @At("HEAD"), cancellable = true)
     private void tupenter$formatChat(String partial, int offset, CallbackInfoReturnable<FormattedCharSequence> cir) {
         String full = this.input.getValue();
