@@ -69,6 +69,10 @@ public final class ChatInputStyler {
             "#set", "#local", "#wait", "#repeat", "#if", "#elseif", "#else", "#for", "#foreach",
             "#silent", "#norecord", "#record", "#stage", "#unstage");
 
+    /** Directives whose header carries an EXPRESSION (condition/iterable) — an implicit $...$ zone for styling and completion. */
+    private static final java.util.Set<String> HEADER_EXPR_DIRECTIVES = java.util.Set.of(
+            "#repeat", "#if", "#elseif", "#for", "#foreach");
+
     public enum Kind {
         COMMAND,
         DIRECTIVE,
@@ -570,7 +574,137 @@ public final class ChatInputStyler {
             fill(styles, rest, segment.end(), CHAT_TEXT); // prefixed chat
             return;
         }
+        int wordEnd = rest;
+        while (wordEnd < segment.end() && !Character.isWhitespace(full.charAt(wordEnd)) && full.charAt(wordEnd) != '(') {
+            wordEnd++;
+        }
+        String dir = full.substring(rest, wordEnd).toLowerCase(java.util.Locale.ROOT);
+        if (HEADER_EXPR_DIRECTIVES.contains(dir)) {
+            styleScannerHeader(full, styles, rest, wordEnd, segment.end(), dir, depth);
+            return;
+        }
         styleDirectiveCore(full, styles, rest, segment.end(), depth);
+    }
+
+    /**
+     * A scanner directive (#repeat/#if/#for/#foreach): the header's condition
+     * or iterable is an EXPRESSION, styled aqua like a $...$ marker (function
+     * names, tags, and operators all read as "code"); the loop variable and
+     * 'in' keyword get their own colors; and the trailing (...) body recurses
+     * as statements. Foreach's literal (a | b | c) list is styled as a list,
+     * not an expression.
+     */
+    private static void styleScannerHeader(String full, Style[] styles, int wordStart, int wordEnd,
+                                           int end, String directive, int depth) {
+        fill(styles, wordStart, wordEnd, DIRECTIVE_WORD);
+        int bodyOpen = lastTopLevelGroupOpen(full, wordEnd, end);
+        int headerEnd = bodyOpen >= 0 ? bodyOpen : end;
+        while (headerEnd > wordEnd && Character.isWhitespace(full.charAt(headerEnd - 1))) {
+            headerEnd--;
+        }
+        int exprFrom = skipWhitespace(full, wordEnd);
+        if (directive.equals("#foreach") || directive.equals("#for")) {
+            int varEnd = varTokenEnd(full, exprFrom, headerEnd);
+            fill(styles, exprFrom, varEnd, MARKER); // loop variable, $-wrapped or bare
+            int afterVar = skipWhitespace(full, varEnd);
+            int inEnd = skipWord(full, afterVar);
+            if (afterVar < headerEnd
+                    && full.substring(afterVar, Math.min(inEnd, headerEnd)).equalsIgnoreCase("in")) {
+                fill(styles, afterVar, inEnd, DIRECTIVE_WORD); // the 'in' keyword
+                exprFrom = skipWhitespace(full, inEnd);
+            } else {
+                exprFrom = afterVar;
+            }
+        }
+        if (directive.equals("#foreach") && exprFrom < headerEnd && full.charAt(exprFrom) == '(') {
+            styleLiteralList(full, styles, exprFrom, headerEnd); // (a | b | c)
+        } else {
+            fill(styles, exprFrom, headerEnd, MARKER); // condition/iterable expression
+        }
+        if (bodyOpen >= 0) {
+            int close = matchingClose(full, bodyOpen, end);
+            if (close < 0) {
+                styles[bodyOpen] = ERROR;
+            } else {
+                styles[bodyOpen] = GROUP_PAREN;
+                styles[close] = GROUP_PAREN;
+                styleStatements(full, bodyOpen + 1, close, styles, depth + 1);
+            }
+        }
+    }
+
+    /** #foreach's literal iterable: dim parens, gold '|' separators, gray items. */
+    private static void styleLiteralList(String full, Style[] styles, int from, int end) {
+        int close = matchingClose(full, from, end);
+        if (close < 0) {
+            styles[from] = ERROR;
+            return;
+        }
+        styles[from] = GROUP_PAREN;
+        styles[close] = GROUP_PAREN;
+        boolean marker = false;
+        for (int i = from + 1; i < close; i++) {
+            char c = full.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '$') {
+                marker = !marker;
+            } else if (!marker && c == '|') {
+                styles[i] = SEPARATOR;
+            } else if (!marker && !Character.isWhitespace(c)) {
+                styles[i] = COMMAND_LITERAL;
+            }
+        }
+    }
+
+    /** End index of a loop variable token at {@code from} ($x$ or bare x), bounded by {@code end}. */
+    private static int varTokenEnd(String text, int from, int end) {
+        int i = from;
+        boolean wrapped = i < end && text.charAt(i) == '$';
+        if (wrapped) {
+            i++;
+        }
+        while (i < end && (Character.isLetterOrDigit(text.charAt(i)) || text.charAt(i) == '_')) {
+            i++;
+        }
+        if (wrapped && i < end && text.charAt(i) == '$') {
+            i++;
+        }
+        return i;
+    }
+
+    /** Open-paren index of the last top-level (...) group in [from, end), or -1. Marker/quote/nesting aware. */
+    private static int lastTopLevelGroupOpen(String text, int from, int end) {
+        boolean marker = false;
+        boolean quoted = false;
+        int depth = 0;
+        int open = -1;
+        int lastOpen = -1;
+        for (int i = from; i < end; i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '$') {
+                marker = !marker;
+            } else if (!marker) {
+                if (c == '"') {
+                    quoted = !quoted;
+                } else if (!quoted) {
+                    if (c == '(') {
+                        if (depth == 0) {
+                            open = i;
+                        }
+                        depth++;
+                    } else if (c == ')') {
+                        depth = Math.max(0, depth - 1);
+                        if (depth == 0) {
+                            lastOpen = open;
+                        }
+                    }
+                }
+            }
+        }
+        return lastOpen;
     }
 
     private static void styleDirectiveCore(String full, Style[] styles, int from, int end, int depth) {
@@ -831,6 +965,78 @@ public final class ChatInputStyler {
             i--;
         }
         return end > i + 1 ? text.substring(i + 1, end).toLowerCase(java.util.Locale.ROOT) : null;
+    }
+
+    /**
+     * When the cursor sits in the condition/iterable EXPRESSION of a scanner
+     * directive (#repeat/#if/#for/#foreach — outside its body group and any
+     * literal (a|b) list), the identifier start for expression/tag
+     * completion; -1 otherwise. The header expression is an implicit $...$
+     * zone, so it completes the same way marker interiors do.
+     */
+    public static int headerExprTokenStart(String text, int cursor) {
+        if (markerTokenStart(text, cursor) >= 0) {
+            return -1; // a real marker owns the cursor
+        }
+        List<Segment> segs = segments(text, true);
+        Segment seg = segmentAt(segs, Math.min(cursor, text.length()));
+        int rest = statementStartAfterPrefixes(text, seg.textStart(), Math.min(seg.end(), text.length()));
+        if (rest >= seg.end() || text.charAt(rest) != '#') {
+            return -1;
+        }
+        int wordEnd = rest;
+        while (wordEnd < seg.end() && !Character.isWhitespace(text.charAt(wordEnd)) && text.charAt(wordEnd) != '(') {
+            wordEnd++;
+        }
+        String dir = text.substring(rest, wordEnd).toLowerCase(java.util.Locale.ROOT);
+        if (!HEADER_EXPR_DIRECTIVES.contains(dir)) {
+            return -1;
+        }
+        int bodyOpen = lastTopLevelGroupOpen(text, wordEnd, seg.end());
+        int headerEnd = bodyOpen >= 0 ? bodyOpen : seg.end();
+        int exprFrom = skipWhitespace(text, wordEnd);
+        if (dir.equals("#foreach") || dir.equals("#for")) {
+            int varEnd = varTokenEnd(text, exprFrom, headerEnd);
+            int afterVar = skipWhitespace(text, varEnd);
+            int inEnd = skipWord(text, afterVar);
+            if (afterVar < headerEnd
+                    && text.substring(afterVar, Math.min(inEnd, headerEnd)).equalsIgnoreCase("in")) {
+                exprFrom = skipWhitespace(text, inEnd);
+            } else {
+                exprFrom = afterVar;
+            }
+        }
+        if (dir.equals("#foreach") && exprFrom < headerEnd && text.charAt(exprFrom) == '(') {
+            return -1; // literal (a|b) list — not an expression
+        }
+        if (cursor < exprFrom || cursor > headerEnd) {
+            return -1;
+        }
+        // anchor: broad walk first (tag ids carry : and /), '#' wins, else identifier
+        int broad = cursor;
+        while (broad > exprFrom) {
+            char c = text.charAt(broad - 1);
+            if (Character.isLetterOrDigit(c) || c == '_' || c == '.' || c == ':' || c == '/' || c == '#') {
+                broad--;
+            } else {
+                break;
+            }
+        }
+        for (int i = broad; i < cursor; i++) {
+            if (text.charAt(i) == '#') {
+                return i;
+            }
+        }
+        int start = cursor;
+        while (start > exprFrom) {
+            char c = text.charAt(start - 1);
+            if (Character.isLetterOrDigit(c) || c == '_' || c == '.') {
+                start--;
+            } else {
+                break;
+            }
+        }
+        return start;
     }
 
     /**
