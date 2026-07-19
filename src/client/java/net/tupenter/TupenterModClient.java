@@ -295,9 +295,30 @@ public class TupenterModClient implements ClientModInitializer {
                 VARIABLE_REGISTRY,
                 SESSION_VARIABLES,
                 TAG_RESOLVER,
+                BLOCK_READER,
                 TupenterConfig.INSTANCE.lazyExecutionEnabled
         );
     }
+
+    /**
+     * Backs block(x, y, z) with the client's synced world — the reason
+     * block conditions need no server round trip. Null (a clear error, not
+     * a guess) when there's no world or the chunk isn't loaded.
+     */
+    public static final net.tupenter.script.BlockReader BLOCK_READER = (x, y, z) -> {
+        net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
+        if (level == null || x < Integer.MIN_VALUE || x > Integer.MAX_VALUE
+                || y < Integer.MIN_VALUE || y > Integer.MAX_VALUE
+                || z < Integer.MIN_VALUE || z > Integer.MAX_VALUE) {
+            return null;
+        }
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos((int) x, (int) y, (int) z);
+        if (!level.hasChunkAt(pos)) {
+            return null;
+        }
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                .getKey(level.getBlockState(pos).getBlock()).toString();
+    };
 
     /**
      * Backs blockset("#...")/itemset("#...") with the connection's synced
@@ -980,12 +1001,8 @@ public class TupenterModClient implements ClientModInitializer {
             return 0;
         }
 
-        ScriptParser.Options base = parserOptions();
-        ScriptParser.Options options = new ScriptParser.Options(
-                base.chainingEnabled(), base.mathMode(), base.aliases(), base.silentDirectiveEnabled(),
-                base.variablesEnabled(), base.loopsEnabled(), base.conditionalsEnabled(),
-                base.maxLoopIterations(), base.maxCommandsPerScript(), base.random(), base.variables(),
-                null, base.tags()); // dry run — #set writes stay out of the session
+        // dry run — eager walk, #set writes stay out of the session
+        ScriptParser.Options options = parserOptions().withSessionVariables(null).withLazyExecution(false);
 
         ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(line, line, options);
         if (result.error() != null) {
@@ -1217,6 +1234,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Conditions:§r $client.y > 60 ? 10 : 0$ · true/false · && \\|\\| !",
                     "§7Functions:§r rand(1,64) randf pick(a | b | c) range(1,10) int float abs floor ceil round min max len sqrt sin cos tan (degrees). pick options are expressions and nest — quote literal text: pick(\"say hi\" | \"say nah\")",
                     "§7Tag sets:§r blockset(\"#minecraft:logs\") / itemset(\"#c:ores\") = the tag's members as a list (needs a live world) · rand(list) picks one: /setblock ~ ~ ~ $rand(blockset(\"#minecraft:logs\"))$ · loops too: #foreach $b$ in blockset(\"#minecraft:logs\") (/say $b$)",
+                    "§7World reads:§r block(x, y, z) or block(\"x y z\") = the block id at a position, read from YOUR client's world copy — no server round trip, so #if handles it instantly: #if ($block(client.target_block) == \"minecraft:air\"$) (...) #else (...). Loaded chunks only. Pairs with $client.target_hit$ (block/entity/miss).",
                     "§7Implicit math:§r with Inline Expressions = Auto-detect (the default), bare math evaluates WITHOUT markers: /give @s stick 64*5 → 320. Numbers-and-operators only (no variables/functions beyond int/float), skipped inside {NBT braces}, and unparseable text is sent as-is (never errors). $...$ is the full language and works everywhere, in every mode except Disabled.",
                     "§7Gotchas:§r \\$ = literal dollar · write 2*sin(x), not 2sin(x) (bare s = stack suffix)",
                     "§7Errors:§r a bad $...$ shows a local error and sends NOTHING.",
@@ -1226,7 +1244,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§bVariables — use anywhere as $name$:",
                     "§7Yours:§r #set $x$ = 5 (session, cleared on join) · #local $x$ = 5 (this line only, silent) · dotted groups allowed: #set $hitlist.bob$ = \"wanted\"",
                     "§7Persistent:§r /tupenter var save <name> keeps it forever · /tupenter var delete <name>",
-                    "§7Built-in:§r $client.x/y/z/health/held_item/target_block...$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$",
+                    "§7Built-in:§r $client.x/y/z/health/held_item/target_block/target_hit...$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$ — target_hit = \"block\"/\"entity\"/\"miss\"; target_block errors on a miss (gate it with target_hit)",
                     "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · browse with /tupenter dump",
                     "§7Discover:§r /tupenter vars — groups overview · /tupenter vars <group> — live values",
                     "§7In custom commands:§r declared params bind as $name$ or $1$..$n$",
@@ -1452,7 +1470,7 @@ public class TupenterModClient implements ClientModInitializer {
                 && TupenterConfig.INSTANCE.numberMathMode != net.tupenter.script.NumberMathMode.DISABLED) {
             try {
                 text = MathEvaluator.applyNumberMath(text, net.tupenter.script.NumberMathMode.EXPLICIT_ONLY,
-                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER));
+                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER));
             } catch (IllegalArgumentException ex) {
                 context.getSource().sendError(Component.literal(ex.getMessage()));
                 return 0;
@@ -1518,7 +1536,7 @@ public class TupenterModClient implements ClientModInitializer {
         String expression = input.substring(0, input.length() - 1).trim();
         net.tupenter.script.Value value;
         try {
-            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER));
+            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER));
         } catch (IllegalArgumentException ex) {
             sendLocalCalcError(Component.literal("Invalid math expression: " + ex.getMessage()));
             return true;
@@ -1567,7 +1585,7 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static int evaluateLocalCalcExpression(String expression, java.util.function.Consumer<Component> feedback, java.util.function.Consumer<Component> error) {
         try {
-            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER));
+            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER));
             feedback.accept(Component.literal(result).withStyle(ChatFormatting.AQUA));
             return 1;
         } catch (IllegalArgumentException ex) {

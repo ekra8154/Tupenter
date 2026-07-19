@@ -62,6 +62,19 @@ Exact rational math (no float drift), `int(...)`/`float(...)` casts,
 sign. **Auto-detect mode** also solves bare math like `32+4` outside NBT
 braces. A bad `$...$` expression shows a local error and sends nothing.
 
+World reads: `block(x, y, z)` (or `block("x y z")`) returns the block id at
+a position, read from **your client's copy of the world** — no server round
+trip, no delay, so `#if`/`#else` handle "is that block air?" instantly
+(this is `/execute if block` folded into the expression world). Loaded
+chunks only. `$client.target_hit$` ("block"/"entity"/"miss") tells you
+whether the crosshair actually found something; `$client.target_block$` now
+errors on a miss instead of quietly returning the ray's endpoint.
+
+```
+#if ($client.target_hit$ == "block") (/tp @s $client.target_block$)
+#else (/echo &cnothing in range)
+```
+
 Tag sets: `blockset("#minecraft:logs")` / `itemset("#c:ores")` resolve a
 block/item tag to its member list through the live connection's registries
 (the leading `#` is optional, Fabric `c:` convention tags included), and

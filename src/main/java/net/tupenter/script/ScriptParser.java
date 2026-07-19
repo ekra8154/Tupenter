@@ -57,7 +57,7 @@ public final class ScriptParser {
     private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
             "rand", "randf", "pick", "int", "float", "range", "true", "false",
             "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len",
-            "itemset", "blockset");
+            "itemset", "blockset", "block");
 
     private ScriptParser() {
     }
@@ -76,19 +76,20 @@ public final class ScriptParser {
             VariableProvider variables,
             SessionVariableStore sessionVariables,
             TagResolver tags,
+            BlockReader blocks,
             boolean lazyExecution
     ) {
-        /** Convenience without tag lookup (tests, contexts with no live world). */
+        /** Convenience without world lookups (tests, contexts with no live world). */
         public Options(boolean chainingEnabled, NumberMathMode mathMode, Map<String, AliasDefinition> aliases,
                        boolean silentDirectiveEnabled, boolean variablesEnabled, boolean loopsEnabled,
                        boolean conditionalsEnabled, int maxLoopIterations, int maxCommandsPerScript,
                        Random random, VariableProvider variables, SessionVariableStore sessionVariables) {
             this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
                     conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
-                    TagResolver.NONE, false);
+                    TagResolver.NONE, BlockReader.NONE, false);
         }
 
-        /** Convenience with tag lookup but eager execution (unroll, tick scripts, tests). */
+        /** Convenience with tag lookup but no block reader and eager execution. */
         public Options(boolean chainingEnabled, NumberMathMode mathMode, Map<String, AliasDefinition> aliases,
                        boolean silentDirectiveEnabled, boolean variablesEnabled, boolean loopsEnabled,
                        boolean conditionalsEnabled, int maxLoopIterations, int maxCommandsPerScript,
@@ -96,13 +97,19 @@ public final class ScriptParser {
                        TagResolver tags) {
             this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
                     conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
-                    tags, false);
+                    tags, BlockReader.NONE, false);
         }
 
         public Options withLazyExecution(boolean lazy) {
             return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
                     loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
-                    sessionVariables, tags, lazy);
+                    sessionVariables, tags, blocks, lazy);
+        }
+
+        public Options withSessionVariables(SessionVariableStore store) {
+            return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
+                    loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
+                    store, tags, blocks, lazyExecution);
         }
     }
 
@@ -489,7 +496,7 @@ public final class ScriptParser {
                     return options.variables().resolve(name);
                 }
             };
-            this.context = new EvalContext(options.random(), lookup, options.tags());
+            this.context = new EvalContext(options.random(), lookup, options.tags(), options.blocks());
         }
 
         private void processStatements(String text) {

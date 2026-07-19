@@ -352,6 +352,7 @@ final class ExpressionEvaluator {
                 case "range" -> range(args);
                 case "itemset" -> tagMembers("itemset", TagResolver.TagKind.ITEM, args);
                 case "blockset" -> tagMembers("blockset", TagResolver.TagKind.BLOCK, args);
+                case "block" -> blockAt(args);
                 default -> throw new ExpressionException("Unknown function: " + identifier);
             };
         }
@@ -538,6 +539,47 @@ final class ExpressionEvaluator {
         }
 
         /**
+         * block(x, y, z) or block("x y z") — the block id at a position,
+         * read from the CLIENT's copy of the world (no server round trip,
+         * no delay — this is /execute if block folded into the expression
+         * world, where #if/#else handle it naturally). Coordinates floor to
+         * block positions; the string form accepts what client.target_block
+         * and pos params bind: block(client.target_block) == "minecraft:air".
+         */
+        private Value blockAt(List<Value> args) {
+            long[] position = new long[3];
+            if (args.size() == 1 && args.get(0) instanceof Value.StringValue string) {
+                String[] parts = string.value().trim().split("\\s+");
+                if (parts.length != 3) {
+                    throw new ExpressionException("block(\"x y z\") needs three coordinates, got \"" + string.value() + "\"");
+                }
+                for (int i = 0; i < 3; i++) {
+                    try {
+                        position[i] = Rational.parse(parts[i]).floor().wholeValue().longValueExact();
+                    } catch (IllegalArgumentException | ArithmeticException ex) {
+                        throw new ExpressionException("block(...): bad coordinate '" + parts[i] + "'");
+                    }
+                }
+            } else if (args.size() == 3) {
+                for (int i = 0; i < 3; i++) {
+                    try {
+                        position[i] = asNumber(args.get(i), "block(...)").floor().wholeValue().longValueExact();
+                    } catch (ArithmeticException ex) {
+                        throw new ExpressionException("block(...): coordinate out of range");
+                    }
+                }
+            } else {
+                throw new ExpressionException("block(x, y, z) or block(\"x y z\") — e.g. block(client.target_block)");
+            }
+
+            String id = context.blocks().blockAt(position[0], position[1], position[2]);
+            if (id == null) {
+                throw new ExpressionException("block(...): that position isn't loaded (or there's no world)");
+            }
+            return Value.of(id);
+        }
+
+        /**
          * pick(a | b | c) — options are full expressions separated by
          * top-level '|' ('||' is still boolean or inside an option), so
          * picks nest and compute: pick(rand(1,5) | client.y | pick(1 | 2)).
@@ -604,7 +646,7 @@ final class ExpressionEvaluator {
             String best = null;
             int bestDistance = 3; // suggest only within edit distance 2
             List<String> candidates = new ArrayList<>(context.variables().names());
-            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset"));
+            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "block"));
             for (String candidate : candidates) {
                 int distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
                 if (distance < bestDistance) {

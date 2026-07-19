@@ -43,6 +43,7 @@ public final class ClientVariableProvider implements VariableProvider {
             return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
         });
         register("client.target_block", ClientVariableProvider::targetBlock);
+        register("client.target_hit", ClientVariableProvider::targetHit);
     }
 
     private void register(String name, Function<LocalPlayer, Value> reader) {
@@ -50,11 +51,24 @@ public final class ClientVariableProvider implements VariableProvider {
     }
 
     private static Value targetBlock(LocalPlayer player) {
-        if (Minecraft.getInstance().hitResult instanceof BlockHitResult hit) {
+        // a MISS is still a BlockHitResult (holding the ray's endpoint) —
+        // returning that would silently teleport people into the air, so
+        // only an actual block hit counts; gate with $client.target_hit$
+        if (Minecraft.getInstance().hitResult instanceof BlockHitResult hit
+                && hit.getType() != net.minecraft.world.phys.HitResult.Type.MISS) {
             BlockPos pos = hit.getBlockPos();
             return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
         }
-        throw new ExpressionException("client.target_block: no block under the crosshair");
+        throw new ExpressionException("client.target_block: no block under the crosshair — check $client.target_hit$ first");
+    }
+
+    /** "block", "entity", or "miss" — what the crosshair ray actually found. */
+    private static Value targetHit(LocalPlayer player) {
+        net.minecraft.world.phys.HitResult hit = Minecraft.getInstance().hitResult;
+        if (hit == null || hit.getType() == net.minecraft.world.phys.HitResult.Type.MISS) {
+            return Value.of("miss");
+        }
+        return Value.of(hit.getType() == net.minecraft.world.phys.HitResult.Type.ENTITY ? "entity" : "block");
     }
 
     @Override

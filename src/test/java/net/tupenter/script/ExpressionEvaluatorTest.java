@@ -171,6 +171,36 @@ class ExpressionEvaluatorTest {
         assertThrows(ExpressionException.class, () -> eval("rand(1)"));
     }
 
+    // --- block(x, y, z) ---
+
+    private static final BlockReader STUB_BLOCKS = (x, y, z) ->
+            y >= 64 ? "minecraft:air" : (x == 1 && y == 2 && z == 3 ? "minecraft:oak_log" : "minecraft:stone");
+
+    private static EvalContext blockContext() {
+        return new EvalContext(new Random(7), VariableProvider.EMPTY, TagResolver.NONE, STUB_BLOCKS);
+    }
+
+    @Test
+    void blockReadsThePositionInBothForms() {
+        assertEquals("minecraft:oak_log", ExpressionEvaluator.evaluate("block(1, 2, 3)", blockContext()).displayString());
+        assertEquals("minecraft:oak_log", ExpressionEvaluator.evaluate("block(\"1 2 3\")", blockContext()).displayString());
+        // decimal coordinates floor to block positions
+        assertEquals("minecraft:oak_log", ExpressionEvaluator.evaluate("block(1.9, 2.5, 3.2)", blockContext()).displayString());
+        // composes into conditions
+        assertEquals("high", ExpressionEvaluator.evaluate(
+                "block(0, 70, 0) == \"minecraft:air\" ? \"high\" : \"low\"", blockContext()).displayString());
+    }
+
+    @Test
+    void blockErrors() {
+        // no world / unloaded position
+        assertThrows(ExpressionException.class, () -> eval("block(1, 2, 3)"));
+        // wrong shapes
+        assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("block(1, 2)", blockContext()));
+        assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("block(\"1 2\")", blockContext()));
+        assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("block(\"a b c\")", blockContext()));
+    }
+
     // --- pick ---
 
     @Test
