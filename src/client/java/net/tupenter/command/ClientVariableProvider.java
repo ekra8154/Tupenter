@@ -89,6 +89,52 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.gamemode", player -> Value.of(playerInfo(player).getGameMode().getName()));
         register("client.ping", player -> Value.ofNumber(playerInfo(player).getLatency()));
         register("client.fps", player -> Value.ofNumber(Minecraft.getInstance().getFps()));
+        register("client.uuid", player -> Value.of(player.getStringUUID()));
+
+        // hazards + surroundings
+        register("client.in_water", player -> Value.of(player.isInWater()));
+        register("client.underwater", player -> Value.of(player.isUnderWater())); // eyes submerged
+        register("client.in_lava", player -> Value.of(player.isInLava()));
+        register("client.on_fire", player -> Value.of(player.isOnFire()));
+        register("client.fall_distance", player -> Value.ofNumber(round2(player.fallDistance)));
+        register("client.eye_y", player -> Value.ofNumber(round2(player.getEyeY())));
+
+        // effects — a list, so len(), rand(), and #foreach all compose
+        register("client.effects", player -> {
+            java.util.List<Value> ids = new java.util.ArrayList<>();
+            for (net.minecraft.world.effect.MobEffectInstance effect : player.getActiveEffects()) {
+                effect.getEffect().unwrapKey().ifPresent(key -> ids.add(Value.of(key.location().toString())));
+            }
+            return new Value.ListValue(java.util.List.copyOf(ids));
+        });
+
+        // riding
+        register("client.riding", player -> Value.of(player.getVehicle() != null));
+        register("client.vehicle", player -> {
+            net.minecraft.world.entity.Entity vehicle = player.getVehicle();
+            if (vehicle == null) {
+                throw new ExpressionException("client.vehicle: not riding anything — check $client.riding$ first");
+            }
+            return Value.of(BuiltInRegistries.ENTITY_TYPE.getKey(vehicle.getType()).toString());
+        });
+
+        // held-item detail
+        register("client.held_count", player -> Value.ofNumber(player.getMainHandItem().getCount()));
+        register("client.offhand_count", player -> Value.ofNumber(player.getOffhandItem().getCount()));
+        register("client.held_durability", player -> {
+            net.minecraft.world.item.ItemStack stack = player.getMainHandItem();
+            if (!stack.isDamageableItem()) {
+                throw new ExpressionException("client.held_durability: the held item has no durability");
+            }
+            return Value.ofNumber(stack.getMaxDamage() - stack.getDamageValue());
+        });
+        register("client.held_max_durability", player -> {
+            net.minecraft.world.item.ItemStack stack = player.getMainHandItem();
+            if (!stack.isDamageableItem()) {
+                throw new ExpressionException("client.held_max_durability: the held item has no durability");
+            }
+            return Value.ofNumber(stack.getMaxDamage());
+        });
     }
 
     private static double round2(double value) {

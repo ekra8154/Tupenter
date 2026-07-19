@@ -32,6 +32,9 @@ public final class WorldVariableProvider implements VariableProvider {
             net.minecraft.core.BlockPos pos = level.getLevelData().getRespawnData().pos();
             return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
         });
+        register("world.time_total", level -> Value.ofNumber(level.getGameTime())); // total ticks, never wraps
+        register("world.min_y", level -> Value.ofNumber(level.getMinY()));
+        register("world.max_y", level -> Value.ofNumber(level.getMaxY()));
         // the per-world scripts identity key: "server:<address>" / "world:<folder>"
         register("world.key", level -> {
             String key = net.tupenter.TupenterModClient.currentWorldKey();
