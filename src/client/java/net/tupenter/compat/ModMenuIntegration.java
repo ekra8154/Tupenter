@@ -614,6 +614,25 @@ public class ModMenuIntegration implements ModMenuApi {
             return List.of();
         }
 
+        /**
+         * The entry list never tells OTHER rows to unfocus, so clicking a
+         * second box used to leave two blinking cursors. Any click anywhere
+         * on a row first blurs every editor box, then normal handling
+         * focuses the one actually hit.
+         */
+        @Override
+        public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+            blurAllEditorBoxes();
+            return super.mouseClicked(event, doubleClick);
+        }
+
+        void blurBoxes() {
+            singleBox.setFocused(false);
+            if (multiBox != null) {
+                multiBox.setFocused(false);
+            }
+        }
+
         @Override
         public int getItemHeight() {
             return expanded ? BOX_HEIGHT_EXPANDED + 6 : 24;
@@ -708,6 +727,19 @@ public class ModMenuIntegration implements ModMenuApi {
     // getOrCreateCategory order in createScreen: general, scripting, aliases, scripts
     private static final int TAB_ALIASES = 2;
     private static final int TAB_SCRIPTS = 3;
+
+    /** Exactly one editor cursor at a time, across every row and both tabs. */
+    private static void blurAllEditorBoxes() {
+        for (WrapRowEntry row : commandRows) {
+            row.blurBoxes();
+        }
+        for (WrapRowEntry row : globalScriptRows) {
+            row.blurBoxes();
+        }
+        for (WrapRowEntry row : worldScriptRows) {
+            row.blurBoxes();
+        }
+    }
 
     /** Rebuild the config screen WITHOUT losing the tab or the scroll position. */
     private static void reopenScreen(int tabIndex) {

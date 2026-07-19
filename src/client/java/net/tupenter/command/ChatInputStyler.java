@@ -49,6 +49,10 @@ public final class ChatInputStyler {
             "#set", "#local", "#wait", "#repeat", "#if", "#for", "#foreach",
             "#silent", "#norecord", "#record", "#stage", "#unstage");
 
+    /** Line/statement prefixes — a statement-starter may legally follow these without &&: #silent #local x = ... */
+    private static final java.util.Set<String> PREFIX_WORDS = java.util.Set.of(
+            "#silent", "#norecord", "#record", "#stage");
+
     public enum Kind {
         COMMAND,
         DIRECTIVE,
@@ -334,14 +338,17 @@ public final class ChatInputStyler {
     private static void styleDirective(String full, Style[] styles, Segment segment, int depth) {
         boolean marker = false;
         boolean quoted = false;
+        boolean contentSeen = false; // prefix words (#silent ...) don't count as content
         for (int i = segment.textStart(); i < segment.end(); i++) {
             char c = full.charAt(i);
             if (c == '\\') {
                 i++;
+                contentSeen = true;
                 continue;
             }
             if (c == '$') {
                 marker = !marker;
+                contentSeen = true;
                 continue;
             }
             if (marker) {
@@ -349,17 +356,22 @@ public final class ChatInputStyler {
             }
             if (c == '"') {
                 quoted = !quoted;
+                contentSeen = true;
             } else if (!quoted) {
                 if (c == '#') {
                     int word = i;
                     while (word < segment.end() && !Character.isWhitespace(full.charAt(word)) && full.charAt(word) != '(') {
                         word++;
                     }
-                    // a statement-STARTING directive mid-statement means a
-                    // missing && before it (newlines don't chain!) — red
+                    // a statement-STARTING directive after real content means
+                    // a missing && before it (newlines don't chain!) — red.
+                    // After only prefixes (#silent #local x = ...) it's fine.
                     String directive = full.substring(i, word).toLowerCase(java.util.Locale.ROOT);
-                    boolean midStatement = i != segment.textStart() && STATEMENT_STARTERS.contains(directive);
+                    boolean midStatement = contentSeen && STATEMENT_STARTERS.contains(directive);
                     fill(styles, i, word, midStatement ? ERROR : DIRECTIVE_WORD);
+                    if (!PREFIX_WORDS.contains(directive)) {
+                        contentSeen = true;
+                    }
                     i = word - 1;
                 } else if (c == '(') {
                     int close = matchingClose(full, i, segment.end());
@@ -377,9 +389,13 @@ public final class ChatInputStyler {
                             && (full.charAt(contentStart) == '/' || full.charAt(contentStart) == '#')) {
                         styleStatements(full, i + 1, close, styles, depth + 1); // statement group
                     }
+                    contentSeen = true;
                     i = close; // conditions and headers keep default styling
                 } else if (c == ')') {
                     styles[i] = ERROR; // stray close
+                    contentSeen = true;
+                } else if (!Character.isWhitespace(c)) {
+                    contentSeen = true; // ordinary header text
                 }
             }
         }
