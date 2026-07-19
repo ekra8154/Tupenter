@@ -515,9 +515,12 @@ public final class ChatInputStyler {
             }
             if (c == '$') {
                 styles[i] = MARKER;
-                marker = !marker;
                 if (marker) {
+                    flagUnbalancedParens(text, styles, lastOpen + 1, i); // validate the expression
+                    marker = false;
+                } else {
                     lastOpen = i;
+                    marker = true;
                 }
             } else if (marker) {
                 styles[i] = MARKER;
@@ -525,6 +528,43 @@ public final class ChatInputStyler {
         }
         if (marker && lastOpen >= 0) {
             styles[lastOpen] = ERROR; // unclosed marker — its opening $ turns red
+        }
+    }
+
+    /**
+     * Within an expression span [from, to) (a $...$ interior or a scanner
+     * header), turns any unmatched '(' or ')' red — the same live-paren
+     * feedback commands get, but for Tupenter's expression grammar. Nested
+     * $...$ markers and "quoted" strings are skipped.
+     */
+    private static void flagUnbalancedParens(String text, Style[] styles, int from, int to) {
+        java.util.Deque<Integer> opens = new java.util.ArrayDeque<>();
+        boolean quoted = false;
+        boolean marker = false;
+        for (int i = Math.max(0, from); i < Math.min(to, text.length()); i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '$') {
+                marker = !marker;
+            } else if (marker) {
+                // skip nested marker interiors
+            } else if (c == '"') {
+                quoted = !quoted;
+            } else if (!quoted) {
+                if (c == '(') {
+                    opens.push(i);
+                } else if (c == ')') {
+                    if (opens.isEmpty()) {
+                        styles[i] = ERROR; // stray close
+                    } else {
+                        opens.pop();
+                    }
+                }
+            }
+        }
+        while (!opens.isEmpty()) {
+            styles[opens.pop()] = ERROR; // never closed
         }
     }
 
@@ -620,6 +660,7 @@ public final class ChatInputStyler {
             styleLiteralList(full, styles, exprFrom, headerEnd); // (a | b | c)
         } else {
             fill(styles, exprFrom, headerEnd, MARKER); // condition/iterable expression
+            flagUnbalancedParens(full, styles, exprFrom, headerEnd);
         }
         if (bodyOpen >= 0) {
             int close = matchingClose(full, bodyOpen, end);
@@ -989,8 +1030,8 @@ public final class ChatInputStyler {
             wordEnd++;
         }
         String dir = text.substring(rest, wordEnd).toLowerCase(java.util.Locale.ROOT);
-        if (!HEADER_EXPR_DIRECTIVES.contains(dir)) {
-            return -1;
+        if (!HEADER_EXPR_DIRECTIVES.contains(dir) || cursor <= wordEnd) {
+            return -1; // still typing the directive word — let #-word completion cycle
         }
         int bodyOpen = lastTopLevelGroupOpen(text, wordEnd, seg.end());
         int headerEnd = bodyOpen >= 0 ? bodyOpen : seg.end();
@@ -999,12 +1040,12 @@ public final class ChatInputStyler {
             int varEnd = varTokenEnd(text, exprFrom, headerEnd);
             int afterVar = skipWhitespace(text, varEnd);
             int inEnd = skipWord(text, afterVar);
-            if (afterVar < headerEnd
-                    && text.substring(afterVar, Math.min(inEnd, headerEnd)).equalsIgnoreCase("in")) {
-                exprFrom = skipWhitespace(text, inEnd);
-            } else {
-                exprFrom = afterVar;
+            boolean foundIn = afterVar < headerEnd
+                    && text.substring(afterVar, Math.min(inEnd, headerEnd)).equalsIgnoreCase("in");
+            if (!foundIn) {
+                return -1; // still on the loop variable (a fresh name) — nothing to complete
             }
+            exprFrom = skipWhitespace(text, inEnd);
         }
         if (dir.equals("#foreach") && exprFrom < headerEnd && text.charAt(exprFrom) == '(') {
             return -1; // literal (a|b) list — not an expression
