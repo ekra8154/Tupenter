@@ -176,7 +176,7 @@ public abstract class MixinCommandSuggestions {
             return first;
         }
         String text = reader.getString();
-        String masked = ChatInputStyler.maskMarkers(text);
+        String masked = TupenterModClient.smartMaskMarkers(text);
         if (masked.equals(text)) {
             return first;
         }

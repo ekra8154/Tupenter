@@ -393,6 +393,11 @@ final class ExpressionEvaluator {
                 case "nth" -> nth(args);
                 case "contains" -> contains(args);
                 case "indexof" -> indexof(args);
+                case "trim" -> new Value.StringValue(single(args, "trim").displayString().trim());
+                case "upper" -> new Value.StringValue(single(args, "upper").displayString().toUpperCase(java.util.Locale.ROOT));
+                case "lower" -> new Value.StringValue(single(args, "lower").displayString().toLowerCase(java.util.Locale.ROOT));
+                case "substr" -> substr(args);
+                case "replace" -> replace(args);
                 case "randf" -> randf(args);
                 // trig takes DEGREES — Minecraft rotations (client.yaw/pitch) are degrees
                 case "sin" -> mathFunction("sin", args, degrees -> Math.sin(Math.toRadians(degrees)));
@@ -474,6 +479,48 @@ final class ExpressionEvaluator {
                 }
             }
             return new Value.NumberValue(Rational.of(-1));
+        }
+
+        /** substr(text, start[, count]) — 0-based, clamped to the string; omit count for "to the end". */
+        private Value substr(List<Value> args) {
+            if (args.size() < 2 || args.size() > 3) {
+                throw new ExpressionException("substr(text, start[, count]) takes a 0-based start and an optional length");
+            }
+            String s = args.get(0).displayString();
+            int len = s.length();
+            long startL;
+            try {
+                startL = asNumber(args.get(1), "substr start").wholeValue().longValueExact();
+            } catch (ArithmeticException ex) {
+                throw new ExpressionException("substr start is out of range");
+            }
+            int start = (int) Math.max(0, Math.min(startL, len));
+            int end = len;
+            if (args.size() == 3) {
+                long countL;
+                try {
+                    countL = asNumber(args.get(2), "substr count").wholeValue().longValueExact();
+                } catch (ArithmeticException ex) {
+                    throw new ExpressionException("substr count is out of range");
+                }
+                if (countL < 0) {
+                    throw new ExpressionException("substr count can't be negative");
+                }
+                end = (int) Math.min((long) start + countL, len);
+            }
+            return new Value.StringValue(s.substring(start, end));
+        }
+
+        /** replace(text, find, replacement) — replaces every occurrence (literal, not regex). */
+        private Value replace(List<Value> args) {
+            if (args.size() != 3) {
+                throw new ExpressionException("replace(text, find, replacement) takes three arguments");
+            }
+            String find = args.get(1).displayString();
+            if (find.isEmpty()) {
+                throw new ExpressionException("replace(...): the text to find can't be empty");
+            }
+            return new Value.StringValue(args.get(0).displayString().replace(find, args.get(2).displayString()));
         }
 
         /** nth(list, i) — 0-based element access; pairs with % for cycling. */
@@ -776,7 +823,7 @@ final class ExpressionEvaluator {
             String best = null;
             int bestDistance = 3; // suggest only within edit distance 2
             List<String> candidates = new ArrayList<>(context.variables().names());
-            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains", "indexof"));
+            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains", "indexof", "trim", "upper", "lower", "substr", "replace"));
             for (String candidate : candidates) {
                 int distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
                 if (distance < bestDistance) {

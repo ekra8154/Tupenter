@@ -201,8 +201,93 @@ public class TupenterModClient implements ClientModInitializer {
         names.addAll(java.util.List.of(
                 "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
-                "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false"));
+                "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
+                "trim", "upper", "lower", "substr", "replace"));
         return new java.util.ArrayList<>(names);
+    }
+
+    /**
+     * Like ChatInputStyler.maskMarkers, but each complete $...$ is replaced by
+     * a SAME-LENGTH mask whose token count matches the marker's evaluated
+     * value — so a position marker like $client.target_block$ (three coords)
+     * masks to three numeric tokens and a command's later arguments still
+     * parse and complete (/setblock $client.target_block$ mine|). Positions
+     * stay 1:1 with the real input; an eval failure (no world, bad expr) falls
+     * back to a single zero-blob, the old behavior.
+     */
+    public static String smartMaskMarkers(String text) {
+        StringBuilder out = null;
+        net.tupenter.script.EvalContext ctx = null;
+        int i = 0;
+        while (i < text.length()) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i += 2;
+                continue;
+            }
+            if (c != '$') {
+                i++;
+                continue;
+            }
+            int close = -1;
+            for (int j = i + 1; j < text.length(); j++) {
+                char d = text.charAt(j);
+                if (d == '\\') {
+                    j++;
+                } else if (d == '$') {
+                    close = j;
+                    break;
+                }
+            }
+            if (close < 0) {
+                break; // unclosed marker — the variable-suggestion path owns the cursor there
+            }
+            if (out == null) {
+                out = new StringBuilder(text);
+            }
+            int tokens = 1;
+            try {
+                if (ctx == null) {
+                    ctx = new net.tupenter.script.EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER);
+                }
+                String value = MathEvaluator.evaluateValue(text.substring(i + 1, close), ctx).substitutionString();
+                tokens = tokenCount(value);
+            } catch (RuntimeException ignored) {
+                tokens = 1; // eval failed — single blob, as before
+            }
+            writeTokenMask(out, i, close - i + 1, tokens);
+            i = close + 1;
+        }
+        return out == null ? text : out.toString();
+    }
+
+    private static int tokenCount(String value) {
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? 1 : trimmed.split("\\s+").length;
+    }
+
+    /** Fills [start, start+len) with {@code tokens} runs of '0' joined by single spaces — length preserved. */
+    private static void writeTokenMask(StringBuilder out, int start, int len, int tokens) {
+        int spaces = Math.max(0, tokens - 1);
+        if (tokens < 1 || len - spaces < tokens) {
+            for (int k = 0; k < len; k++) {
+                out.setCharAt(start + k, '0');
+            }
+            return;
+        }
+        int zeros = len - spaces;
+        int base = zeros / tokens;
+        int extra = zeros % tokens;
+        int pos = start;
+        for (int t = 0; t < tokens; t++) {
+            int count = base + (t < extra ? 1 : 0);
+            for (int k = 0; k < count; k++) {
+                out.setCharAt(pos++, '0');
+            }
+            if (t < tokens - 1) {
+                out.setCharAt(pos++, ' ');
+            }
+        }
     }
 
     /**
@@ -1378,6 +1463,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Strings:§r \"quoted\" — quotes say what it is: \"air\" is text, air is a variable lookup",
                     "§7Joining:§r + concatenates: $\"lvl \" + client.xp_level$ → lvl 30",
                     "§7Comparing:§r == and != work on text: $client.gamemode == \"creative\"$",
+                    "§7Functions:§r trim(s) · upper(s) / lower(s) · substr(s, start[, count]) — 0-based, clamped · replace(s, find, new) — all occurrences · len(s) — length",
                     "§7Strings that RUN:§r a chat statement that is exactly one $marker$ runs its string result by statement form — #set $cmd$ = \"/tp ~ ~1 ~\" then $cmd$ teleports. Same for /$ expr $ on a whole line.",
                     "§7Escapes:§r \\\" inside quotes · \\$ for a literal dollar sign",
             };
