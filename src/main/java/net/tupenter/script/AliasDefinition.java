@@ -157,6 +157,40 @@ public record AliasDefinition(String body, List<Param> params) {
         return new AliasDefinition(rest, List.copyOf(params));
     }
 
+    /**
+     * The index of the {@code =} separating a stored definition's signature
+     * from its body — the first {@code =} outside {@code <...>} declarations
+     * and {@code $...$} markers ({@code \} escapes). Handles both formats:
+     * {@code blink <distance:int=5> = body} (signature = body, canonical)
+     * and the older {@code blink = <distance:int=5> body}. -1 when absent.
+     */
+    public static int signatureSeparator(String definition) {
+        boolean inMarker = false;
+        int angleDepth = 0;
+        for (int i = 0; i < definition.length(); i++) {
+            char c = definition.charAt(i);
+            if (c == '\\') {
+                i++;
+                continue;
+            }
+            if (c == '$') {
+                inMarker = !inMarker;
+                continue;
+            }
+            if (inMarker) {
+                continue;
+            }
+            if (c == '<') {
+                angleDepth++;
+            } else if (c == '>') {
+                angleDepth = Math.max(0, angleDepth - 1);
+            } else if (c == '=' && angleDepth == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     /** First index of {@code target} that isn't inside a $...$ span ({@code \} escapes the next char). */
     private static int indexOfOutsideMarkers(String text, char target) {
         boolean inMarker = false;

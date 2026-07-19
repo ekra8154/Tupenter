@@ -9,6 +9,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AliasDefinitionTest {
 
     @Test
+    void signatureSeparatorSkipsDeclarationsAndMarkers() {
+        // canonical: declarations in the signature — the = inside <...> is not the separator
+        assertEquals("blink <distance:int=5> ".length(),
+                AliasDefinition.signatureSeparator("blink <distance:int=5> = /attribute $distance$"));
+        // legacy: declarations after the = — first top-level = wins
+        assertEquals("blink ".length(),
+                AliasDefinition.signatureSeparator("blink = <distance:int=5> /attribute $distance$"));
+        // = and == inside a $...$ default expression stay invisible
+        assertEquals("portal <dim:a,b=$x == 1 ? \"a\" : \"b\"$> ".length(),
+                AliasDefinition.signatureSeparator("portal <dim:a,b=$x == 1 ? \"a\" : \"b\"$> = /say $dim$"));
+        assertEquals(-1, AliasDefinition.signatureSeparator("no separator here"));
+    }
+
+    @Test
     void bareParamDefaultsToQuotableString() {
         AliasDefinition def = AliasDefinition.parse("<target> /execute at $target$ run summon lightning_bolt");
         assertEquals(1, def.params().size());

@@ -104,7 +104,21 @@ public final class CommandAliasManager {
         return removed;
     }
 
+    /**
+     * Canonical stored form is signature = body — parameter declarations sit
+     * with the name, like a function definition:
+     * {@code blink <distance:int=5> = /attribute ...}
+     */
     public static String formatDefinition(String name, String command) {
+        try {
+            AliasDefinition parsed = AliasDefinition.parse(toSingleLine(command).trim());
+            String declarations = parsed.declarationPrefix().trim();
+            if (!declarations.isEmpty()) {
+                return name + " " + declarations + " = " + parsed.body();
+            }
+        } catch (IllegalArgumentException ignored) {
+            // unparseable — store as typed; the plain form at least round-trips
+        }
         return name + " = " + command;
     }
 
@@ -117,8 +131,12 @@ public final class CommandAliasManager {
         for (String definition : TupenterConfig.INSTANCE.aliases) {
             ParsedAlias parsed = parseDefinition(definition);
             if (parsed != null && parsed.name().equals(name)) {
-                int separator = definition.indexOf('=');
-                return toSingleLine(definition.substring(separator + 1)).trim();
+                Split split = split(definition);
+                // declarations + body, whichever side of the = they were on —
+                // this is what /customcommand update <name> ... prefills with
+                return split.declarations().isEmpty()
+                        ? split.body()
+                        : split.declarations() + " " + split.body();
             }
         }
         return null;
@@ -129,26 +147,51 @@ public final class CommandAliasManager {
         return text.replaceAll("\\s*[\\r\\n]+\\s*", " ");
     }
 
+    /** A stored definition cut at its signature separator (see {@link AliasDefinition#signatureSeparator}). */
+    private record Split(String rawName, String declarations, String body) {
+    }
+
+    /**
+     * Splits a stored definition around the first {@code =} outside
+     * declarations and markers: {@code name <params> = body}. Declarations
+     * that lead the body instead also work, because AliasDefinition.parse
+     * strips them there (that's the /customcommand add syntax).
+     */
+    private static Split split(String definition) {
+        String single = toSingleLine(definition);
+        int separator = AliasDefinition.signatureSeparator(single);
+        if (separator < 0) {
+            return null;
+        }
+        String signature = single.substring(0, separator).trim();
+        String body = single.substring(separator + 1).trim();
+
+        int space = -1;
+        for (int i = 0; i < signature.length(); i++) {
+            if (Character.isWhitespace(signature.charAt(i))) {
+                space = i;
+                break;
+            }
+        }
+        String rawName = space >= 0 ? signature.substring(0, space) : signature;
+        String declarations = space >= 0 ? signature.substring(space).trim() : "";
+        return new Split(rawName, declarations, body);
+    }
+
     public static ParsedAlias parseDefinition(String definition) {
         if (definition == null) {
             return null;
         }
-        definition = toSingleLine(definition);
-
-        int separator = definition.indexOf('=');
-        if (separator < 0) {
+        Split split = split(definition);
+        if (split == null || split.rawName().isEmpty() || split.body().isEmpty()) {
             return null;
         }
-
-        String rawName = definition.substring(0, separator).trim();
-        String rawCommand = definition.substring(separator + 1).trim();
-
-        if (rawName.isEmpty() || rawCommand.isEmpty()) {
-            return null;
-        }
+        String rawCommand = split.declarations().isEmpty()
+                ? split.body()
+                : split.declarations() + " " + split.body();
 
         try {
-            String name = normalizeName(rawName);
+            String name = normalizeName(split.rawName());
             validateName(name);
             return new ParsedAlias(name, AliasDefinition.parse(rawCommand));
         } catch (IllegalArgumentException ex) {
