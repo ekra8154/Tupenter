@@ -71,6 +71,7 @@ public final class ScriptExecutor {
     private final Deque<Instance> running = new ArrayDeque<>();
     private int budgetUsedThisTick;
     private int silenceGraceTicks;
+    private long clock; // last world game-time seen — the gametime #wait clock
 
     public ScriptExecutor(PacketSender sender, Limits limits) {
         this.sender = sender;
@@ -97,7 +98,7 @@ public final class ScriptExecutor {
         }
 
         running.addLast(new Instance(script));
-        drain();
+        drain(clock);
     }
 
     /**
@@ -120,22 +121,29 @@ public final class ScriptExecutor {
             return false;
         }
         running.addLast(new Instance(script));
-        drain();
+        drain(clock);
         return true;
     }
 
-    /** Called once per client tick. */
-    public void tick() {
+    /**
+     * Called once per client tick with the current world game-time
+     * ({@code level.getGameTime()}) — the gametime #wait clock. Because it's
+     * world time, a gametime wait speeds up under /tick sprint, freezes under
+     * /tick freeze, and pauses when the world is paused; it does NOT track
+     * /time set|add (that only moves the day-time, not elapsed ticks).
+     */
+    public void tick(long gameTime) {
+        this.clock = gameTime;
         budgetUsedThisTick = 0;
         if (silenceGraceTicks > 0) {
             silenceGraceTicks--;
         }
-        for (Instance instance : running) {
-            if (instance.waitTicks > 0) {
-                instance.waitTicks--;
-            }
-        }
-        drain();
+        drain(gameTime);
+    }
+
+    /** Test/fallback tick: advances the game-time clock by one. */
+    public void tick() {
+        tick(clock + 1);
     }
 
     public void abortAll() {
@@ -165,9 +173,9 @@ public final class ScriptExecutor {
         java.util.List<String> out = new java.util.ArrayList<>();
         for (Instance instance : running) {
             String state;
-            if (instance.waitTicks > 0) {
-                state = "waiting " + instance.waitTicks + "t";
-            } else if (instance.waitUntilMillis > 0) {
+            if (instance.waitUntilGameTime > clock) {
+                state = "waiting " + (instance.waitUntilGameTime - clock) + "t";
+            } else if (instance.waitUntilMillis > System.currentTimeMillis()) {
                 long secs = Math.max(0, (instance.waitUntilMillis - System.currentTimeMillis() + 999) / 1000);
                 state = "waiting " + secs + "s (realtime)";
             } else {
@@ -188,7 +196,7 @@ public final class ScriptExecutor {
         }
     }
 
-    private void drain() {
+    private void drain(long clock) {
         // waits and notices are free, but bound total pulls so a
         // pathological script can't spin the loop forever within one tick
         int pullsLeft = limits.maxCommandsPerTick() * 8 + 32;
@@ -196,7 +204,7 @@ public final class ScriptExecutor {
         for (Iterator<Instance> iterator = running.iterator(); iterator.hasNext(); ) {
             Instance instance = iterator.next();
 
-            while (instance.isReady()
+            while (instance.isReady(clock)
                     && budgetUsedThisTick < limits.maxCommandsPerTick()
                     && pullsLeft-- > 0) {
                 Script.SendStatement statement;
@@ -230,10 +238,11 @@ public final class ScriptExecutor {
                     }
                     case WAIT -> {
                         if (statement.waitRealtime()) {
-                            // wall-clock: 50ms per tick, immune to TPS/lag
+                            // wall-clock: 50ms per tick, immune to TPS/lag/freeze
                             instance.waitUntilMillis = System.currentTimeMillis() + statement.waitTicks() * 50L;
                         } else {
-                            instance.waitTicks = statement.waitTicks();
+                            // gametime: a deadline in world ticks (sprint/freeze-aware)
+                            instance.waitUntilGameTime = clock + statement.waitTicks();
                         }
                     }
                     case NOTICE -> sender.info(statement.content());
@@ -261,8 +270,8 @@ public final class ScriptExecutor {
     private static final class Instance {
         private final Script script;
         private final Script.StatementSource source;
-        private int waitTicks;         // gametime wait: client ticks remaining
-        private long waitUntilMillis;  // realtime wait: wall-clock deadline (0 = none)
+        private long waitUntilGameTime; // gametime wait: world-tick deadline (0 = none)
+        private long waitUntilMillis;   // realtime wait: wall-clock deadline (0 = none)
 
         private Instance(Script script) {
             this.script = script;
@@ -270,15 +279,18 @@ public final class ScriptExecutor {
         }
 
         /** Ready to pull the next statement — no gametime or realtime wait pending. */
-        private boolean isReady() {
-            if (waitTicks > 0) {
-                return false;
+        private boolean isReady(long clock) {
+            if (waitUntilGameTime > 0) {
+                if (clock < waitUntilGameTime) {
+                    return false;
+                }
+                waitUntilGameTime = 0; // deadline reached — resume
             }
             if (waitUntilMillis > 0) {
                 if (System.currentTimeMillis() < waitUntilMillis) {
                     return false;
                 }
-                waitUntilMillis = 0; // deadline reached — resume
+                waitUntilMillis = 0;
             }
             return true;
         }

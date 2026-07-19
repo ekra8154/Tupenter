@@ -366,19 +366,39 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /** /tupenter scripts — what would run right here, right now. */
-    /** /tupenter running — currently executing/parked script instances (tick scripts and ad-hoc alike). */
+    /** /tupenter running — what's active now: armed tick scripts (every tick) + ad-hoc/parked instances. */
     private static int runRunningCommand(CommandContext<FabricClientCommandSource> context) {
-        java.util.List<String> summaries = SCRIPT_EXECUTOR.runningSummaries();
-        if (summaries.isEmpty()) {
-            context.getSource().sendFeedback(Component.literal("No scripts running right now.").withStyle(ChatFormatting.GRAY));
+        FabricClientCommandSource source = context.getSource();
+        TupenterConfig config = TupenterConfig.INSTANCE;
+        String key = currentWorldKey();
+        java.util.List<String> armed = (config.tickScriptsEnabled && key != null)
+                ? new java.util.ArrayList<>(config.armedScriptLines(key)) : java.util.List.of();
+        java.util.List<String> instances = SCRIPT_EXECUTOR.runningSummaries();
+
+        if (armed.isEmpty() && instances.isEmpty()) {
+            source.sendFeedback(Component.literal(
+                    "Nothing active — no tick scripts armed here, nothing running.").withStyle(ChatFormatting.GRAY));
             return 1;
         }
-        context.getSource().sendFeedback(Component.literal(
-                "Running scripts (" + summaries.size() + ") — /tupenter abort stops all:").withStyle(ChatFormatting.AQUA));
-        for (String summary : summaries) {
-            context.getSource().sendFeedback(Component.literal(" • " + summary).withStyle(ChatFormatting.GRAY));
+        if (!armed.isEmpty()) {
+            source.sendFeedback(Component.literal(
+                    "Tick scripts (" + armed.size() + ") — evaluated every tick:").withStyle(ChatFormatting.AQUA));
+            for (String line : armed) {
+                source.sendFeedback(Component.literal(" • " + previewLine(line)).withStyle(ChatFormatting.GRAY));
+            }
+        }
+        if (!instances.isEmpty()) {
+            source.sendFeedback(Component.literal(
+                    "Running now (" + instances.size() + ") — /tupenter abort stops all:").withStyle(ChatFormatting.AQUA));
+            for (String summary : instances) {
+                source.sendFeedback(Component.literal(" • " + summary).withStyle(ChatFormatting.GRAY));
+            }
         }
         return 1;
+    }
+
+    private static String previewLine(String line) {
+        return line.length() > 50 ? line.substring(0, 50) + "…" : line;
     }
 
     private static int runScriptsStatusCommand(CommandContext<FabricClientCommandSource> context) {
@@ -869,8 +889,10 @@ public class TupenterModClient implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
 
-            // Drain any scripts still holding statements (budget-stretched ones)
-            SCRIPT_EXECUTOR.tick();
+            // Drain any scripts still holding statements (budget-stretched ones).
+            // Feed the WORLD game-time so gametime #waits track /tick sprint,
+            // /tick freeze, and world pause rather than client render ticks.
+            SCRIPT_EXECUTOR.tick(client.level != null ? client.level.getGameTime() : 0L);
 
             // Mod Menu "Scripts" list — runs every tick while enabled
             TICK_SCRIPTS.tick(SCRIPT_EXECUTOR);
@@ -1577,7 +1599,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Foreach:§r #foreach $m$ in (zombie | skeleton) (/summon $m$) — or in range(1, 10)",
                     "§7If:§r #if ($client.y$ > 60) (/say high) #elseif ($client.y$ > 30) (/say mid) #else (/say low)",
                     "§7Wait:§r #wait 10t / 1.5s / 2m / 3d (ticks/seconds/minutes/days) — pause the script mid-line without freezing anything else. Scripts run LAZILY: $...$ evaluates when its statement runs, so /attribute ... && #wait 2t && /tp @s $client.target_block$ reads the target AFTER the boost landed. Works in chains, groups, loops, and custom command bodies. Max 72000t.",
-                    "§7Wait clock:§r default counts CLIENT TICKS (pauses/slows with the game). Add §7realtime§r for wall-clock instead: #wait 5m realtime fires after 5 real minutes no matter the TPS. §7gametime§r is the explicit default.",
+                    "§7Wait clock:§r default is §7gametime§r — WORLD ticks, so it speeds up under /tick sprint, halts under /tick freeze, and pauses when the world is paused (but /time set|add doesn't move it — that's only the day-time). Add §7realtime§r for wall-clock instead: #wait 5m realtime fires after 5 real minutes no matter the TPS.",
                     "§7Overlap:§r re-running the same line restarts it (resend = restart, not stack) · different lines run concurrently · /tupenter abort stops all",
                     "§7Groups (...) nest and can hold chains. Parens elsewhere are literal text.",
                     "§7Caps:§r loops ≤ Max Loop Iterations · scripts ≤ Max Commands Per Script · sends spread over ticks past Max Commands Per Tick",
