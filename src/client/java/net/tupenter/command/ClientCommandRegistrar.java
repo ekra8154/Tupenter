@@ -161,6 +161,7 @@ public final class ClientCommandRegistrar {
             case ITEMSET -> ItemPredicateArgument.itemPredicate(buildContext);      // item OR #tag
             case BLOCKSET -> BlockPredicateArgument.blockPredicate(buildContext);   // block OR #tag
             case ENTITY -> ResourceArgument.resource(buildContext, net.minecraft.core.registries.Registries.ENTITY_TYPE); // /summon-style tab-complete
+            case BOOL -> com.mojang.brigadier.arguments.BoolArgumentType.bool(); // true/false tab-complete
         };
     }
 

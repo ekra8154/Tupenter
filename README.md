@@ -237,6 +237,7 @@ Available types: `int`, `float`, `string` (the default — a word or
 | `itemset` | item id **or** `#item_tag`, tab-completes both | verbatim text |
 | `blockset` | block id **or** `#block_tag` + optional `[states]`, tab-completes both | verbatim text |
 | `entity` | entity type id, `/summon`-style registry tab-complete | verbatim text |
+| `bool` | `true`/`false`, tab-completed | a boolean — for `#if` and ternaries |
 
 `blockset`/`itemset` mirror vanilla's block/item *predicate* arguments (the
 filter in `/fill ... replace <filter>`), so they're the right type when the

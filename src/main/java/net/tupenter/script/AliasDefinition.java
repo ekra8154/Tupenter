@@ -56,7 +56,8 @@ public record AliasDefinition(String body, List<Param> params) {
         BLOCK,    // block id + optional [state], registry tab-complete
         ITEMSET,  // item id OR #item_tag (+ optional [components]), registry tab-complete
         BLOCKSET, // block id OR #block_tag (+ optional [states]), registry tab-complete
-        ENTITY;   // entity type id, registry tab-complete (what /summon takes)
+        ENTITY,   // entity type id, registry tab-complete (what /summon takes)
+        BOOL;     // true/false, tab-completed; binds as a boolean for #if and ternaries
 
         public static ParamType fromKeyword(String keyword) {
             return switch (keyword.toLowerCase(Locale.ROOT)) {
@@ -81,8 +82,9 @@ public record AliasDefinition(String body, List<Param> params) {
                 case "itemset" -> ITEMSET;
                 case "blockset" -> BLOCKSET;
                 case "entity" -> ENTITY;
+                case "bool", "boolean" -> BOOL;
                 default -> throw new IllegalArgumentException("Unknown parameter type '" + keyword
-                        + "' — use int, float, string, word, text, player, selector, pos, vec3, column_pos, rotation, angle, time, dimension, color, id, item, block, itemset, blockset, or entity");
+                        + "' — use int, float, string, word, text, player, selector, pos, vec3, column_pos, rotation, angle, time, dimension, color, id, item, block, itemset, blockset, entity, or bool");
             };
         }
     }

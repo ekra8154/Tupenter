@@ -1075,6 +1075,12 @@ public final class ScriptParser {
                     }
                     return Value.of(color);
                 }
+                case BOOL -> {
+                    if (token.equalsIgnoreCase("true") || token.equalsIgnoreCase("false")) {
+                        return new Value.BoolValue(token.equalsIgnoreCase("true"));
+                    }
+                    throw new ParseAbort("<" + param.name() + "> must be true or false, got '" + token + "'. " + usage);
+                }
                 default -> {
                     return Value.of(token);
                 }

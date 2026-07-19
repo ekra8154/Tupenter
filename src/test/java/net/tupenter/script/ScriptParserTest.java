@@ -547,16 +547,17 @@ class ScriptParserTest {
     }
 
     private static final String LAUNCH2_BODY =
-            "<e:entity> <s:float=1.5> "
+            "<e:entity> <s:float=1.5> <g:bool=false> "
             + "#local h = cos(client.pitch) && "
             + "#local x = -sin(client.yaw) * h && "
             + "#local y = -sin(client.pitch) && "
             + "#local z = cos(client.yaw) * h && "
             + "#local p = \"~\" + round(x*15)/10 + \" ~\" + (1.5 + round(y*15)/10) + \" ~\" + round(z*15)/10 && "
             + "#local m = round(x*s*1000)/1000 + \"d,\" + round(y*s*1000)/1000 + \"d,\" + round(z*s*1000)/1000 + \"d\" && "
-            + "#if (e == \"minecraft:fireball\") (/summon $e$ $p$ {Motion:[$m$],ExplosionPower:50b}) "
-            + "#elseif (e == \"minecraft:ender_pearl\") (/summon $e$ $p$ {Motion:[$m$],Owner:$client.uuid_nbt$}) "
-            + "#else (/summon $e$ $p$ {Motion:[$m$]})";
+            + "#local n = g ? \",NoGravity:1b\" : \"\" && "
+            + "#if (e == \"minecraft:fireball\") (/summon $e$ $p$ {Motion:[$m$],ExplosionPower:50b$n$}) "
+            + "#elseif (e == \"minecraft:ender_pearl\") (/summon $e$ $p$ {Motion:[$m$],Owner:$client.uuid_nbt$$n$}) "
+            + "#else (/summon $e$ $p$ {Motion:[$m$]$n$})";
 
     @Test
     void launchSpecialCasesForFireballAndEnderPearl() {
@@ -572,6 +573,24 @@ class ScriptParserTest {
                 contents(ScriptParser.parse("launch minecraft:ender_pearl", options(aliases, store))));
         assertEquals(List.of("summon minecraft:arrow ~0 ~1.5 ~1.5 {Motion:[0d,0d,3d]}"),
                 contents(ScriptParser.parse("launch minecraft:arrow 3", options(aliases, store))));
+    }
+
+    @Test
+    void launchNoGravityBoolCanSkipTheSpeed() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.yaw", Value.ofNumber(0));
+        store.set("client.pitch", Value.ofNumber(0));
+        store.set("client.uuid_nbt", Value.of("[I;1,2,3,4]"));
+        Map<String, String> aliases = Map.of("launch", LAUNCH2_BODY);
+
+        // "true" isn't a float, so the optional speed is skipped: /launch snowball true
+        assertEquals(List.of("summon minecraft:snowball ~0 ~1.5 ~1.5 {Motion:[0d,0d,1.5d],NoGravity:1b}"),
+                contents(ScriptParser.parse("launch minecraft:snowball true", options(aliases, store))));
+        // fully spelled out
+        assertEquals(List.of("summon minecraft:snowball ~0 ~1.5 ~1.5 {Motion:[0d,0d,4d],NoGravity:1b}"),
+                contents(ScriptParser.parse("launch minecraft:snowball 4 true", options(aliases, store))));
+        // bad bool errors clearly
+        assertNotNull(ScriptParser.parse("launch minecraft:snowball maybe", options(aliases, store)).error());
     }
 
     private static final String RANDOMFILL_BODY =
