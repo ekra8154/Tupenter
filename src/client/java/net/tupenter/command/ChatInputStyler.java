@@ -33,6 +33,9 @@ public final class ChatInputStyler {
     private static final Style SEPARATOR = Style.EMPTY.withColor(ChatFormatting.GOLD);
     private static final Style MARKER = Style.EMPTY.withColor(ChatFormatting.AQUA);
     private static final Style DIRECTIVE_WORD = Style.EMPTY.withColor(ChatFormatting.GOLD);
+    // line modifiers (#silent #norecord #record #stage #unstage) — annotations
+    // about how the line is sent/recorded, distinct from control-flow keywords
+    private static final Style PREFIX_WORD = Style.EMPTY.withColor(ChatFormatting.LIGHT_PURPLE);
     private static final Style GROUP_PAREN = Style.EMPTY.withColor(ChatFormatting.DARK_GRAY);
     private static final Style CHAT_TEXT = Style.EMPTY.withColor(ChatFormatting.YELLOW);
     private static final Style ERROR = Style.EMPTY.withColor(ChatFormatting.RED).withUnderlined(true);
@@ -56,6 +59,10 @@ public final class ChatInputStyler {
     /** Line/statement prefixes — a statement-starter may legally follow these without &&: #silent #local x = ... */
     private static final java.util.Set<String> PREFIX_WORDS = java.util.Set.of(
             "#silent", "#norecord", "#record", "#stage");
+
+    /** Line modifiers — colored as annotations (PREFIX_WORD), not control-flow keywords. */
+    private static final java.util.Set<String> LINE_MODIFIERS = java.util.Set.of(
+            "#silent", "#norecord", "#record", "#stage", "#unstage");
 
     /** Everything tab-completion should offer for a '#' word. */
     private static final List<String> DIRECTIVE_WORDS = List.of(
@@ -103,7 +110,21 @@ public final class ChatInputStyler {
             boolean chained = TupenterConfig.INSTANCE.commandChainingEnabled && segments(full).size() > 1;
             return chained || containsMarker(full);
         }
-        return ScriptParser.isDirectiveLine(full);
+        return ScriptParser.isDirectiveLine(full) || isModifierLine(full);
+    }
+
+    /**
+     * #stage / #unstage lines are handled entirely client-side and aren't
+     * known to the parser's isDirectiveLine, so they'd otherwise never get
+     * styled. Recognize them here (covers the other modifiers too).
+     */
+    private static boolean isModifierLine(String full) {
+        String trimmed = full.trim();
+        if (!trimmed.startsWith("#")) {
+            return false;
+        }
+        String word = trimmed.substring(0, skipWord(trimmed, 0)).toLowerCase(java.util.Locale.ROOT);
+        return LINE_MODIFIERS.contains(word);
     }
 
     /**
@@ -534,7 +555,7 @@ public final class ChatInputStyler {
         int rest = statementStartAfterPrefixes(full, segment.textStart(), segment.end());
         for (int i = segment.textStart(); i < rest; i++) {
             if (!Character.isWhitespace(full.charAt(i))) {
-                styles[i] = DIRECTIVE_WORD;
+                styles[i] = PREFIX_WORD; // leading words here are all line modifiers
             }
         }
         if (rest >= segment.end()) {
@@ -585,7 +606,8 @@ public final class ChatInputStyler {
                     // After only prefixes (#silent #local x = ...) it's fine.
                     String directive = full.substring(i, word).toLowerCase(java.util.Locale.ROOT);
                     boolean midStatement = contentSeen && STATEMENT_STARTERS.contains(directive);
-                    fill(styles, i, word, midStatement ? ERROR : DIRECTIVE_WORD);
+                    Style wordStyle = LINE_MODIFIERS.contains(directive) ? PREFIX_WORD : DIRECTIVE_WORD;
+                    fill(styles, i, word, midStatement ? ERROR : wordStyle);
                     if (!PREFIX_WORDS.contains(directive)) {
                         contentSeen = true;
                     }
