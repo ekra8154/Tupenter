@@ -253,7 +253,9 @@ public class TupenterModClient implements ClientModInitializer {
                 String value = MathEvaluator.evaluateValue(text.substring(i + 1, close), ctx).substitutionString();
                 tokens = tokenCount(value);
             } catch (RuntimeException ignored) {
-                tokens = 1; // eval failed — single blob, as before
+                // eval failed (e.g. target_block off-crosshair while chat is open) —
+                // fall back to the known arity of a position variable, else one blob
+                tokens = positionalArity(text.substring(i + 1, close));
             }
             writeTokenMask(out, i, close - i + 1, tokens);
             i = close + 1;
@@ -264,6 +266,14 @@ public class TupenterModClient implements ClientModInitializer {
     private static int tokenCount(String value) {
         String trimmed = value.trim();
         return trimmed.isEmpty() ? 1 : trimmed.split("\\s+").length;
+    }
+
+    /** Variables that resolve to a 3-coordinate position — used to size a mask when the marker can't currently evaluate. */
+    private static final java.util.Set<String> POSITIONAL_VARS = java.util.Set.of(
+            "client.pos", "client.target_block", "client.motion");
+
+    private static int positionalArity(String inner) {
+        return POSITIONAL_VARS.contains(inner.trim().toLowerCase(java.util.Locale.ROOT)) ? 3 : 1;
     }
 
     /** Fills [start, start+len) with {@code tokens} runs of '0' joined by single spaces — length preserved. */
@@ -1535,7 +1545,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Persistent:§r /tupenter var save <name> keeps it forever · /tupenter var delete <name> removes it",
                     "§7Built-in:§r $client.x/y/z/health/held_item/target_block/target_hit...$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$ — target_hit = \"block\"/\"entity\"/\"miss\"; target_block errors on a miss (gate it with target_hit)",
                     "§7Environment:§r $client.biome$ · $client.light / light_block / light_sky$ · $client.facing$ · $client.chunk_x/chunk_z$ · $world.spawn$ · $world.key$ (the per-world scripts id)",
-                    "§7Movement:§r $client.speed$ (horizontal b/s) · $client.speed_y$ · booleans: on_ground, sneaking, sprinting, swimming, flying, gliding",
+                    "§7Movement:§r $client.speed$ (= speed_xz, horizontal b/s) · $client.speed_y$ (vertical) · $client.motion$ (vec3 \"vx vy vz\" b/s) · booleans: on_ground, sneaking, sprinting, swimming, flying, gliding",
                     "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · slot (0-8), offhand_item, target_entity · gamemode, ping, fps, uuid",
                     "§7Hazards & held:§r in_water, underwater, in_lava, on_fire, fall_distance, eye_y · riding + vehicle · effects (a LIST — #foreach $e$ in client.effects works) · held_count, offhand_count, held_durability/held_max_durability (error on non-damageable — guard with held_item)",
                     "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · browse with /tupenter dump",
@@ -1549,7 +1559,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7For:§r #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~) — inclusive, counts down automatically",
                     "§7Foreach:§r #foreach $m$ in (zombie | skeleton) (/summon $m$) — or in range(1, 10)",
                     "§7If:§r #if ($client.y$ > 60) (/say high) #elseif ($client.y$ > 30) (/say mid) #else (/say low)",
-                    "§7Wait:§r #wait 10t / 1.5s / 3d — pause the script mid-line without freezing anything else. Scripts run LAZILY: $...$ evaluates when its statement runs, so /attribute ... && #wait 2t && /tp @s $client.target_block$ reads the target AFTER the boost landed. Works in chains, groups, loops, and custom command bodies. Max 72000t.",
+                    "§7Wait:§r #wait 10t / 1.5s / 2m / 3d (ticks/seconds/minutes/days) — pause the script mid-line without freezing anything else. Scripts run LAZILY: $...$ evaluates when its statement runs, so /attribute ... && #wait 2t && /tp @s $client.target_block$ reads the target AFTER the boost landed. Works in chains, groups, loops, and custom command bodies. Max 72000t.",
                     "§7Overlap:§r re-running the same line restarts it (resend = restart, not stack) · different lines run concurrently · /tupenter abort stops all",
                     "§7Groups (...) nest and can hold chains. Parens elsewhere are literal text.",
                     "§7Caps:§r loops ≤ Max Loop Iterations · scripts ≤ Max Commands Per Script · sends spread over ticks past Max Commands Per Tick",
@@ -1801,7 +1811,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "§7Parameters§r go before the body: /customcommand add smite <target:player> /execute at $target$ run summon lightning_bolt — then /smite Steve. Use as $target$ or $1$.",
                 "§7Types:§r <name> or <name:string> = a word or \"anything quoted\" · <n:int> / <n:float> = numbers · <n:word> = one plain token (letters/digits/_-.+ only — no selectors!) · <n:selector> = @e[...] with tab-complete · <n:player> = player name · <n:text> = rest of the line (must be last) · <n:opt1,opt2,...> = one of a fixed list, tab-completed",
                 "§7Position types:§r <n:pos> = whole x y z with ~ support and targeted-block tab-complete · <n:vec3> = decimal x y z with ~ · <n:column_pos> = whole x z with ~ · <n:rotation> = yaw pitch with ~ · <n:angle> = one yaw with ~. Tuples bind $n$ = the joined coords plus $n.x$ $n.y$ $n.z$ (or $n.yaw$ $n.pitch$); angle binds a number.",
-                "§7More types:§r <n:time> = duration (10t / 1.5s / 3d), binds as ticks · <n:dimension> = dimension id, tab-completed · <n:color> = chat color, tab-completed · <n:id> = any namespaced id · <n:item> / <n:block> = item or block with full registry tab-complete (including [components] / [states]) · <n:itemset> / <n:blockset> = an item/block OR a #tag like #minecraft:logs, tab-completed · <n:entity> = entity type id with /summon-style tab-complete · <n:bool> = true/false, binds a boolean for #if/ternaries (a strictly-typed <g:bool=false> optional is skippable: /launch snowball true)",
+                "§7More types:§r <n:time> = duration (10t / 1.5s / 2m / 3d), binds as ticks · <n:dimension> = dimension id, tab-completed · <n:color> = chat color, tab-completed · <n:id> = any namespaced id · <n:item> / <n:block> = item or block with full registry tab-complete (including [components] / [states]) · <n:itemset> / <n:blockset> = an item/block OR a #tag like #minecraft:logs, tab-completed · <n:entity> = entity type id with /summon-style tab-complete · <n:bool> = true/false, binds a boolean for #if/ternaries (a strictly-typed <g:bool=false> optional is skippable: /launch snowball true)",
                 "§7Optional params:§r add =default to make a param optional: <r:int=5>, <p:pos=~ ~ ~>. Defaults may hold $...$ expressions (evaluated when omitted, earlier params visible). Strictly-typed optionals can even be skipped mid-command — /portal to_nether works with <p:pos=~ ~ ~> <dim:...> because to_nether isn't a coordinate. Loose types (string/word/text) always grab the next arg, so put those last.",
                 "§7No natural default?§r Use a SENTINEL the body branches on: <filter:blockset=any> then #if ($filter$ == \"any\") (unfiltered...) #else (filtered...) — that's how an omitted param can mean 'do something else' rather than 'use this value'.",
                 "§7Selectors:§r use <name:selector>, or quote them into a plain <name>: /cmd \"@e[type=!player,limit=1]\"",

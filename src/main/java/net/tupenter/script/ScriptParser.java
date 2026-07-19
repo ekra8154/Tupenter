@@ -683,7 +683,7 @@ public final class ScriptParser {
         private void handleWait(String content) {
             String header = content.substring(WAIT.length()).trim();
             if (header.isEmpty()) {
-                throw new ParseAbort("#wait needs a duration, e.g. #wait 10t / 0.5s (ticks/seconds/days)");
+                throw new ParseAbort("#wait needs a duration, e.g. #wait 10t / 0.5s / 2m (ticks/seconds/minutes/days)");
             }
             if (options.mathMode() != NumberMathMode.DISABLED) {
                 try {
@@ -707,8 +707,13 @@ public final class ScriptParser {
             String text = token;
             if (!text.isEmpty()) {
                 char suffix = Character.toLowerCase(text.charAt(text.length() - 1));
-                if (suffix == 't' || suffix == 's' || suffix == 'd') {
-                    unit = suffix == 't' ? 1 : suffix == 's' ? 20 : 24000;
+                if (suffix == 't' || suffix == 's' || suffix == 'm' || suffix == 'd') {
+                    unit = switch (suffix) {
+                        case 't' -> 1;
+                        case 's' -> 20;
+                        case 'm' -> 1200;  // 60 seconds
+                        default -> 24000;  // 'd' — one MC day
+                    };
                     text = text.substring(0, text.length() - 1);
                 }
             }
@@ -716,7 +721,7 @@ public final class ScriptParser {
             try {
                 amount = Rational.parse(text);
             } catch (IllegalArgumentException | ArithmeticException ex) {
-                throw new ParseAbort("#wait needs a duration like 10t, 1.5s, or 3d — got '" + token + "'");
+                throw new ParseAbort("#wait needs a duration like 10t, 1.5s, 2m, or 3d — got '" + token + "'");
             }
             if (amount.signum() < 0) {
                 throw new ParseAbort("#wait can't be negative");
@@ -1135,8 +1140,13 @@ public final class ScriptParser {
             String text = token;
             if (!text.isEmpty()) {
                 char suffix = Character.toLowerCase(text.charAt(text.length() - 1));
-                if (suffix == 't' || suffix == 's' || suffix == 'd') {
-                    unit = suffix == 't' ? 1 : suffix == 's' ? 20 : 24000;
+                if (suffix == 't' || suffix == 's' || suffix == 'm' || suffix == 'd') {
+                    unit = switch (suffix) {
+                        case 't' -> 1;
+                        case 's' -> 20;
+                        case 'm' -> 1200;  // 60 seconds
+                        default -> 24000;  // 'd' — one MC day
+                    };
                     text = text.substring(0, text.length() - 1);
                 }
             }
@@ -1144,7 +1154,7 @@ public final class ScriptParser {
             try {
                 amount = Rational.parse(text);
             } catch (IllegalArgumentException | ArithmeticException ex) {
-                throw new ParseAbort("<" + param.name() + "> must be a duration like 10t, 1.5s, or 3d (ticks/seconds/days), got '" + token + "'. " + usage);
+                throw new ParseAbort("<" + param.name() + "> must be a duration like 10t, 1.5s, 2m, or 3d (ticks/seconds/minutes/days), got '" + token + "'. " + usage);
             }
             if (amount.signum() < 0) {
                 throw new ParseAbort("<" + param.name() + "> can't be a negative duration. " + usage);

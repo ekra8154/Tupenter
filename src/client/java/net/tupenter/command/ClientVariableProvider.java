@@ -52,6 +52,14 @@ public final class ClientVariableProvider implements VariableProvider {
             return Value.ofNumber(round2(Math.hypot(velocity.x, velocity.z) * 20)); // horizontal blocks/sec
         });
         register("client.speed_y", player -> Value.ofNumber(round2(player.getDeltaMovement().y * 20)));
+        register("client.speed_xz", player -> {
+            net.minecraft.world.phys.Vec3 velocity = player.getDeltaMovement();
+            return Value.ofNumber(round2(Math.hypot(velocity.x, velocity.z) * 20)); // alias for client.speed
+        });
+        register("client.motion", player -> {
+            net.minecraft.world.phys.Vec3 v = player.getDeltaMovement();
+            return Value.of(round2(v.x * 20) + " " + round2(v.y * 20) + " " + round2(v.z * 20)); // vec3, blocks/sec
+        });
         register("client.facing", player -> Value.of(player.getDirection().getName())); // north/south/east/west
         register("client.on_ground", player -> Value.of(player.onGround()));
         register("client.sneaking", player -> Value.of(player.isCrouching()));
