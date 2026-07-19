@@ -207,7 +207,6 @@ public class TupenterConfig {
                     INSTANCE.globalScripts = loaded.globalScripts != null ? loaded.globalScripts : new ArrayList<>();
                     INSTANCE.worldScripts = loaded.worldScripts != null ? loaded.worldScripts : new java.util.LinkedHashMap<>();
                     INSTANCE.tickScriptsMigrationNoticePending = loaded.tickScriptsMigrationNoticePending;
-                    migrateTickScripts();
                     INSTANCE.numberMathMode = loaded.numberMathMode != null ? loaded.numberMathMode : NumberMathMode.AUTO_DETECT;
                     INSTANCE.aliases = loaded.aliases != null ? loaded.aliases : new ArrayList<>();
                     INSTANCE.maxCommandsPerTick = clamp(loaded.maxCommandsPerTick, 1, 512, 16);
@@ -215,10 +214,16 @@ public class TupenterConfig {
                     INSTANCE.maxConcurrentScripts = clamp(loaded.maxConcurrentScripts, 1, 64, 8);
                     INSTANCE.resendAmount = Math.max(1, loaded.resendAmount); // Ensure at least 1
                     INSTANCE.permanentMessages = loaded.permanentMessages != null ? loaded.permanentMessages : new ArrayList<>();
+                    // MUST run after every field above is copied — it may
+                    // save(), and a save from a half-populated INSTANCE
+                    // writes defaults over the user's data (aliases were
+                    // once lost to exactly this)
+                    migrateTickScripts();
                 }
             } catch (Exception e) {
-                System.err.println("Failed to load config, resetting to defaults: " + e.getMessage());
-                save();
+                // deliberately NOT save() here: overwriting the file because
+                // one load failed would destroy whatever is still in it
+                System.err.println("Failed to load Tupenter config, using defaults for this session: " + e.getMessage());
             }
         } else {
             save();
