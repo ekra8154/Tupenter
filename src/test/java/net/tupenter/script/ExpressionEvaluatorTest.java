@@ -118,6 +118,31 @@ class ExpressionEvaluatorTest {
         }
     }
 
+    // --- % and nth ---
+
+    @Test
+    void moduloIsFloored() {
+        assertEquals("1", eval("7 % 3"));
+        assertEquals("0", eval("9 % 3"));
+        // floored: the result follows the divisor's sign — cycling stays in range
+        assertEquals("2", eval("-1 % 3"));
+        assertEquals("0.5", eval("7.5 % 3.5"));
+        assertThrows(ExpressionException.class, () -> eval("5 % 0"));
+        // precedence: multiplicative, same as * and /
+        assertEquals("1", eval("1 + 6 % 3"));
+    }
+
+    @Test
+    void nthIndexesLists() {
+        assertEquals("3", eval("nth(range(1, 5), 2)"));
+        assertEquals("1", eval("nth(range(1, 5), 0)"));
+        // the cycling idiom: nth(list, i % len(list))
+        assertEquals("2", eval("nth(range(1, 3), 4 % len(range(1, 3)))"));
+        assertThrows(ExpressionException.class, () -> eval("nth(range(1, 3), 3)"));
+        assertThrows(ExpressionException.class, () -> eval("nth(range(1, 3), -1)"));
+        assertThrows(ExpressionException.class, () -> eval("nth(5, 0)"));
+    }
+
     // --- tag sets ---
 
     private static final TagResolver STUB_TAGS = (kind, tagId) -> {

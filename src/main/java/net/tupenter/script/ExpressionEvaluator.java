@@ -183,13 +183,20 @@ final class ExpressionEvaluator {
                 }
 
                 char operator = peek();
-                if (operator == '*' || operator == '/') {
+                if (operator == '*' || operator == '/' || operator == '%') {
                     // "||" is handled a level up; a lone '/' here is division
                     index++;
                     Value right = parseUnary();
                     Rational l = asNumber(value, "left of " + operator);
                     Rational r = asNumber(right, "right of " + operator);
-                    value = new Value.NumberValue(operator == '*' ? l.multiply(r) : l.divide(r));
+                    value = new Value.NumberValue(switch (operator) {
+                        case '*' -> l.multiply(r);
+                        case '/' -> l.divide(r);
+                        // floored modulo (like scoreboard %=): the result
+                        // follows the divisor's sign, so cycling never
+                        // steps out of range even with negative inputs
+                        default -> l.subtract(r.multiply(l.divide(r).floor()));
+                    });
                     continue;
                 }
 
@@ -342,6 +349,7 @@ final class ExpressionEvaluator {
                 case "min" -> minMax("min", args, true);
                 case "max" -> minMax("max", args, false);
                 case "len" -> len(args);
+                case "nth" -> nth(args);
                 case "randf" -> randf(args);
                 // trig takes DEGREES — Minecraft rotations (client.yaw/pitch) are degrees
                 case "sin" -> mathFunction("sin", args, degrees -> Math.sin(Math.toRadians(degrees)));
@@ -381,6 +389,27 @@ final class ExpressionEvaluator {
                 return Value.ofNumber(string.value().length());
             }
             throw new ExpressionException("len(...) takes a list or text");
+        }
+
+        /** nth(list, i) — 0-based element access; pairs with % for cycling. */
+        private Value nth(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("nth(list, index) takes a list and a 0-based index");
+            }
+            if (!(args.get(0) instanceof Value.ListValue list)) {
+                throw new ExpressionException("nth(list, index): the first argument must be a list, e.g. nth(blockset(\"#minecraft:wool\"), 0)");
+            }
+            long index;
+            try {
+                index = asNumber(args.get(1), "nth index").wholeValue().longValueExact();
+            } catch (ArithmeticException ex) {
+                throw new ExpressionException("nth index is out of range");
+            }
+            if (index < 0 || index >= list.values().size()) {
+                throw new ExpressionException("nth index " + index + " is out of range (list has "
+                        + list.values().size() + " elements, 0-based — wrap with % len(list))");
+            }
+            return list.values().get((int) index);
         }
 
         private Value randf(List<Value> args) {
@@ -652,7 +681,7 @@ final class ExpressionEvaluator {
             String best = null;
             int bestDistance = 3; // suggest only within edit distance 2
             List<String> candidates = new ArrayList<>(context.variables().names());
-            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "block"));
+            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "block", "nth"));
             for (String candidate : candidates) {
                 int distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
                 if (distance < bestDistance) {

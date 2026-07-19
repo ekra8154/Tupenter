@@ -191,6 +191,20 @@ public class TupenterModClient implements ClientModInitializer {
         TICK_SCRIPTS.reset();
     }
 
+    /** Everything worth tab-completing inside a $...$ marker. */
+    public static java.util.List<String> expressionCompletions() {
+        java.util.TreeSet<String> names = new java.util.TreeSet<>();
+        names.addAll(VARIABLE_REGISTRY.names());
+        names.addAll(SESSION_VARIABLES.names());
+        names.add("client.nbt.");
+        names.add("target.nbt.");
+        names.addAll(java.util.List.of(
+                "rand", "randf", "pick", "range", "len", "nth", "int", "float",
+                "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
+                "blockset", "itemset", "effectset", "block", "true", "false"));
+        return new java.util.ArrayList<>(names);
+    }
+
     /** Names to check /customcommand bodies against at save time. */
     public static java.util.Set<String> knownDottedVariableNames() {
         java.util.Set<String> names = new java.util.HashSet<>(CLIENT_VARIABLES.names());
@@ -1246,7 +1260,7 @@ public class TupenterModClient implements ClientModInitializer {
         String[] lines = switch (topic.toLowerCase(java.util.Locale.ROOT)) {
             case "math" -> new String[]{
                     "§bExpressions · math:",
-                    "§7Arithmetic:§r + - * / and implicit multiplication: $2(3+4)$ = 14 · /give @s stick $32+5$",
+                    "§7Arithmetic:§r + - * / % and implicit multiplication: $2(3+4)$ = 14 · % is floored modulo (like scoreboard %=): $-1 % 3$ = 2",
                     "§7Exact fractions:§r $1/3 * 3$ is exactly 1 — no float drift, ever",
                     "§7Stacks:§r a number with an s suffix is stacks of 64: $3s$ = 192 · $1.5s$ = 96",
                     "§7Rounding:§r int(x) truncates · floor / ceil / round · abs, min(a,b,...), max(a,b,...), sqrt",
@@ -1282,7 +1296,8 @@ public class TupenterModClient implements ClientModInitializer {
             case "lists" -> new String[]{
                     "§bExpressions · lists:",
                     "§7range(start, stop[, step])§r — inclusive whole numbers: range(1, 10), range(10, 0, -2)",
-                    "§7len(x)§r — list length (or text length)",
+                    "§7len(x)§r — list length (or text length) · §7nth(list, i)§r — element i, 0-based",
+                    "§7Cycling:§r nth(list, $i$ % len(list)) walks a list forever — with a #set counter, one step per run: #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset(\"#minecraft:wool\"), i % 16)$",
                     "§7Registry sets:§r blockset(\"#minecraft:logs\") / itemset(\"#c:ores\") / effectset(\"#...\") = a TAG's members as a list (# optional). NO argument = the whole registry: effectset() is every effect. Needs a live world.",
                     "§7Use them:§r rand(list) picks one: /effect give @s $rand(effectset())$ 30 1 · #foreach loops: #foreach $b$ in blockset(\"#minecraft:wool\") (/give @s $b$)",
                     "§7Discover tags:§r tab-complete a # in a blockset-typed param, or in /fill ... replace",

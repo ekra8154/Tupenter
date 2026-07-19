@@ -3,10 +3,14 @@ package net.tupenter.mixin.client;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.ParseResults;
 import com.mojang.brigadier.StringReader;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.minecraft.client.gui.components.CommandSuggestions;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.util.FormattedCharSequence;
+import net.tupenter.TupenterModClient;
 import net.tupenter.command.ChatInputStyler;
+import net.tupenter.config.TupenterConfig;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -14,9 +18,12 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Two Tupenter upgrades to the chat bar:
@@ -32,11 +39,24 @@ import java.util.List;
  *    (ChatInputStyler decides and styles).
  */
 @Mixin(CommandSuggestions.class)
-public class MixinCommandSuggestions {
+public abstract class MixinCommandSuggestions {
 
     @Shadow
     @Final
     private EditBox input;
+
+    @Shadow
+    private CompletableFuture<Suggestions> pendingSuggestions;
+
+    @Shadow
+    @Final
+    private List<FormattedCharSequence> commandUsage;
+
+    @Shadow
+    private boolean allowSuggestions;
+
+    @Shadow
+    public abstract void showSuggestions(boolean narrated);
 
     @Unique
     private boolean tupenter$reroot;
@@ -44,6 +64,37 @@ public class MixinCommandSuggestions {
     private int tupenter$cmdStart;
     @Unique
     private int tupenter$segEnd;
+
+    /**
+     * Inside an open $...$ marker, the command tree has nothing useful to
+     * say — suggest Tupenter's variables and functions instead, anchored at
+     * the identifier being typed ($clien| completes to client.*).
+     */
+    @Inject(method = "updateCommandInfo", at = @At("HEAD"), cancellable = true)
+    private void tupenter$markerSuggestions(CallbackInfo ci) {
+        if (!TupenterConfig.INSTANCE.enhancedCommandParsingEnabled) {
+            return;
+        }
+        String text = this.input.getValue();
+        int cursor = this.input.getCursorPosition();
+        int tokenStart = ChatInputStyler.markerTokenStart(text, cursor);
+        if (tokenStart < 0) {
+            return;
+        }
+        String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
+        SuggestionsBuilder builder = new SuggestionsBuilder(text.substring(0, cursor), tokenStart);
+        for (String name : TupenterModClient.expressionCompletions()) {
+            if (name.toLowerCase(Locale.ROOT).startsWith(prefix)) {
+                builder.suggest(name);
+            }
+        }
+        this.commandUsage.clear();
+        this.pendingSuggestions = CompletableFuture.completedFuture(builder.build());
+        if (this.allowSuggestions) {
+            showSuggestions(false);
+        }
+        ci.cancel();
+    }
 
     @Redirect(method = "updateCommandInfo", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/gui/components/EditBox;getValue()Ljava/lang/String;"))
@@ -84,6 +135,13 @@ public class MixinCommandSuggestions {
         return Math.min(Math.max(cursor, tupenter$cmdStart + 1), tupenter$segEnd);
     }
 
+    /**
+     * Parse for suggestions — twice when markers are involved: the real
+     * text first, then with every $...$ span masked to same-length '0's,
+     * keeping whichever parse got further. Numeric argument slots accept
+     * the mask, so /setblock ~ ~ ~$1+2$ mine| still completes the block
+     * argument; positions stay 1:1 with the real input either way.
+     */
     @SuppressWarnings({"unchecked", "rawtypes"})
     @Redirect(method = "updateCommandInfo", at = @At(value = "INVOKE",
             target = "Lcom/mojang/brigadier/CommandDispatcher;parse(Lcom/mojang/brigadier/StringReader;Ljava/lang/Object;)Lcom/mojang/brigadier/ParseResults;"))
@@ -91,7 +149,20 @@ public class MixinCommandSuggestions {
         if (tupenter$reroot) {
             reader.setCursor(tupenter$cmdStart + 1); // just past the segment's '/'
         }
-        return dispatcher.parse(reader, source);
+        int start = reader.getCursor();
+        ParseResults first = dispatcher.parse(reader, source);
+        if (!TupenterConfig.INSTANCE.enhancedCommandParsingEnabled) {
+            return first;
+        }
+        String text = reader.getString();
+        String masked = ChatInputStyler.maskMarkers(text);
+        if (masked.equals(text)) {
+            return first;
+        }
+        StringReader maskedReader = new StringReader(masked);
+        maskedReader.setCursor(start);
+        ParseResults second = dispatcher.parse(maskedReader, source);
+        return second.getReader().getCursor() > first.getReader().getCursor() ? second : first;
     }
 
     @Inject(method = "formatChat", at = @At("HEAD"), cancellable = true)

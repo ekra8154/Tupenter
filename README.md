@@ -88,6 +88,17 @@ registry. Either way it's a plain list, so `rand(list)`, `len(list)`, and
 #foreach $b$ in blockset("#minecraft:wool") (/give @s $b$)
 ```
 
+`nth(list, i)` (0-based) plus the `%` operator (floored modulo) make lists
+cyclable — a custom command that steps through the wool colors, one block
+per run:
+
+```
+woolstep = #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset("#minecraft:wool"), i % len(blockset("#minecraft:wool")))$
+```
+
+(`#set $i$ = 0` once to start it; `/tupenter var save i` keeps the counter
+across sessions.)
+
 ### Variables
 
 ```

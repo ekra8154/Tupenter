@@ -57,7 +57,7 @@ public final class ScriptParser {
     private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
             "rand", "randf", "pick", "int", "float", "range", "true", "false",
             "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len",
-            "itemset", "blockset", "effectset", "block");
+            "itemset", "blockset", "effectset", "block", "nth");
 
     private ScriptParser() {
     }

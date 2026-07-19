@@ -288,6 +288,82 @@ public final class ChatInputStyler {
         }
     }
 
+    /**
+     * When the cursor sits inside an (open) $...$ marker, the start index of
+     * the identifier being typed — where variable/function suggestions
+     * anchor. -1 when the cursor isn't inside a marker.
+     */
+    public static int markerTokenStart(String text, int cursor) {
+        boolean inMarker = false;
+        int open = -1;
+        int limit = Math.min(cursor, text.length());
+        for (int i = 0; i < limit; i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '$') {
+                inMarker = !inMarker;
+                open = i;
+            }
+        }
+        if (!inMarker) {
+            return -1;
+        }
+        int start = cursor;
+        while (start > open + 1) {
+            char c = text.charAt(start - 1);
+            if (Character.isLetterOrDigit(c) || c == '_' || c == '.') {
+                start--;
+            } else {
+                break;
+            }
+        }
+        return start;
+    }
+
+    /**
+     * Every complete $...$ span replaced by same-length '0's, so a Brigadier
+     * parse for SUGGESTIONS can get past evaluated markers — positions stay
+     * 1:1 with the real text. /setblock ~ ~ ~$1+2$ mine| : the masked z
+     * coordinate ~00000 parses, and the block argument completes normally.
+     */
+    public static String maskMarkers(String text) {
+        StringBuilder out = null;
+        int i = 0;
+        while (i < text.length()) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i += 2;
+                continue;
+            }
+            if (c == '$') {
+                int close = -1;
+                for (int j = i + 1; j < text.length(); j++) {
+                    char d = text.charAt(j);
+                    if (d == '\\') {
+                        j++;
+                    } else if (d == '$') {
+                        close = j;
+                        break;
+                    }
+                }
+                if (close < 0) {
+                    break; // unclosed marker — leave it; the variable-suggestion path owns the cursor there
+                }
+                if (out == null) {
+                    out = new StringBuilder(text);
+                }
+                for (int j = i; j <= close; j++) {
+                    out.setCharAt(j, '0');
+                }
+                i = close + 1;
+                continue;
+            }
+            i++;
+        }
+        return out == null ? text : out.toString();
+    }
+
     private static boolean containsMarker(String text) {
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
