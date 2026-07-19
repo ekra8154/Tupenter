@@ -302,6 +302,14 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.chatSelectionEnabled = newValue)
                 .build());
 
+        general.addEntry(entryBuilder.startIntField(Component.translatable("option.tupenter.chat_input_length"), TupenterConfig.INSTANCE.chatInputLength)
+                .setDefaultValue(256)
+                .setMin(256)
+                .setMax(32766)
+                .setTooltip(Component.translatable("tooltip.tupenter.chat_input_length"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.chatInputLength = newValue)
+                .build());
+
         general.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.advanced"),
                 List.of(historyDepthEntry, resendDelayEntry, batchModeEntry, resendAmountEntry, resendOrderEntry))
                 .setExpanded(false)

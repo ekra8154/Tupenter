@@ -35,6 +35,8 @@ public class TupenterConfig {
     public boolean chatHighlightingEnabled = true;
     public boolean chatSelectionEnabled = true;
     public boolean lazyExecutionEnabled = true;
+    /** Chat-bar typing limit. What's SENT still obeys the protocol: chat 256, commands 32766. */
+    public int chatInputLength = 256;
     public boolean silentDirectiveEnabled = true;
     public boolean variablesEnabled = true;
     public boolean loopsEnabled = true;
@@ -196,6 +198,7 @@ public class TupenterConfig {
                     INSTANCE.chatHighlightingEnabled = loaded.chatHighlightingEnabled;
                     INSTANCE.chatSelectionEnabled = loaded.chatSelectionEnabled;
                     INSTANCE.lazyExecutionEnabled = loaded.lazyExecutionEnabled;
+                    INSTANCE.chatInputLength = clamp(loaded.chatInputLength, 256, 32766, 256);
                     INSTANCE.silentDirectiveEnabled = loaded.silentDirectiveEnabled;
                     INSTANCE.variablesEnabled = loaded.variablesEnabled;
                     INSTANCE.loopsEnabled = loaded.loopsEnabled;

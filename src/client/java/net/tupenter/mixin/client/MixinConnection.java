@@ -18,6 +18,30 @@ public class MixinConnection {
 
 	@Inject(method = "send(Lnet/minecraft/network/protocol/Packet;)V", at = @At("HEAD"), cancellable = true)
 	private void onSend(Packet<?> packet, CallbackInfo ci) {
+        // wire-limit guard, ALWAYS (script sends included): an over-limit
+        // string would blow up the codec and drop the whole connection —
+        // fail locally with a clear message instead. Chat caps at 256;
+        // signed commands (/say, /msg — signable chat args) too; plain
+        // commands go to the packet limit.
+        if (packet instanceof ServerboundChatPacket chat && chat.message().length() > 256) {
+            TupenterModClient.sendEnhancedParsingError("Chat messages cap at 256 characters — this one is "
+                    + chat.message().length() + ". Nothing was sent.");
+            ci.cancel();
+            return;
+        }
+        if (packet instanceof ServerboundChatCommandSignedPacket signedCommand && signedCommand.command().length() > 256) {
+            TupenterModClient.sendEnhancedParsingError("Commands with chat arguments (/say, /msg, ...) cap at 256 characters — this one is "
+                    + signedCommand.command().length() + ". Nothing was sent.");
+            ci.cancel();
+            return;
+        }
+        if (packet instanceof ServerboundChatCommandPacket plainCommand && plainCommand.command().length() > 32766) {
+            TupenterModClient.sendEnhancedParsingError("Commands cap at 32766 characters — this one is "
+                    + plainCommand.command().length() + ". Nothing was sent.");
+            ci.cancel();
+            return;
+        }
+
         if (!TupenterModClient.isForwardingScriptSend()) {
             // Commands travel in two packet types: plain, and signed (for
             // commands with signable chat args like /say and /msg). Both are

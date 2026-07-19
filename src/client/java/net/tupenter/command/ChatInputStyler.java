@@ -44,6 +44,11 @@ public final class ChatInputStyler {
             Style.EMPTY.withColor(ChatFormatting.LIGHT_PURPLE),
             Style.EMPTY.withColor(ChatFormatting.GOLD));
 
+    /** Directives that START a statement — seeing one mid-statement means a missing && (#else/#elseif legitimately continue). */
+    private static final java.util.Set<String> STATEMENT_STARTERS = java.util.Set.of(
+            "#set", "#local", "#wait", "#repeat", "#if", "#for", "#foreach",
+            "#silent", "#norecord", "#record", "#stage", "#unstage");
+
     public enum Kind {
         COMMAND,
         DIRECTIVE,
@@ -350,7 +355,11 @@ public final class ChatInputStyler {
                     while (word < segment.end() && !Character.isWhitespace(full.charAt(word)) && full.charAt(word) != '(') {
                         word++;
                     }
-                    fill(styles, i, word, DIRECTIVE_WORD);
+                    // a statement-STARTING directive mid-statement means a
+                    // missing && before it (newlines don't chain!) — red
+                    String directive = full.substring(i, word).toLowerCase(java.util.Locale.ROOT);
+                    boolean midStatement = i != segment.textStart() && STATEMENT_STARTERS.contains(directive);
+                    fill(styles, i, word, midStatement ? ERROR : DIRECTIVE_WORD);
                     i = word - 1;
                 } else if (c == '(') {
                     int close = matchingClose(full, i, segment.end());

@@ -25,6 +25,8 @@
   "text.tupenter.scripts_world": "Editing script states for: %s",
   "text.tupenter.scripts_no_world": "Not in a world — arming toggles are locked (each world keeps its own). Global script text can still be edited.",
   "text.tupenter.world_scripts_no_world": "Join a world or server to see and edit its scripts.",
+  "option.tupenter.chat_input_length": "Chat Input Length",
+  "tooltip.tupenter.chat_input_length": "How many characters the chat bar accepts (vanilla: 256). What actually gets SENT still obeys the protocol — plain chat and /say-style commands cap at 256, other commands at 32766 — but Tupenter blocks over-limit sends with a local error instead of crashing your connection. Raise this to type long /customcommand definitions in chat, long client-side commands (no wire limit at all), or lines whose $...$ expressions evaluate to something short enough to send.",
   "option.tupenter.chat_selection": "Selectable Chat Text",
   "tooltip.tupenter.chat_selection": "Click and drag over chat messages (with chat open) to select text, then Ctrl+C to copy it. Selections span multiple messages — soft-wrapped lines join with a space, message boundaries become newlines. Plain clicks still trigger chat links and click-events; only an actual drag selects.",
   "option.tupenter.lazy_execution": "Lazy Execution",

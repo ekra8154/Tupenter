@@ -1,6 +1,7 @@
 package net.tupenter.mixin.client;
 
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
@@ -23,8 +24,25 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(ChatScreen.class)
 public abstract class MixinChatScreen extends Screen {
 
+    @org.spongepowered.asm.mixin.Shadow
+    protected EditBox input;
+
     protected MixinChatScreen(Component title) {
         super(title);
+    }
+
+    /**
+     * Raise the typing limit past vanilla's 256 (Chat Input Length config).
+     * The wire limits still hold — MixinConnection blocks over-limit FINAL
+     * packets with a local error — but a long line that EVALUATES short, or
+     * a client-side command of any length, now fits in the box.
+     */
+    @Inject(method = "init", at = @At("TAIL"))
+    private void tupenter$raiseInputLimit(CallbackInfo ci) {
+        int limit = net.tupenter.config.TupenterConfig.INSTANCE.chatInputLength;
+        if (limit > 256) {
+            this.input.setMaxLength(limit);
+        }
     }
 
     @Inject(method = "mouseClicked", at = @At("HEAD"))
