@@ -292,11 +292,39 @@ final class ExpressionEvaluator {
                 return resolveVariable(name);
             }
 
+            if (current == '#') {
+                return parseTagLiteral();
+            }
+
             if (Character.isLetter(current)) {
                 return parseFunctionCall();
             }
 
             return parseNumber();
+        }
+
+        /**
+         * #minecraft:wool — a tag literal, no quotes needed. It's just a
+         * string value starting with '#', which is exactly what
+         * blockset/itemset/effectset accept: blockset(#minecraft:wool).
+         * (In a ternary, a ':' directly after a tag reads as part of the
+         * tag — quote the tag there.)
+         */
+        private Value parseTagLiteral() {
+            int start = index;
+            index++; // '#'
+            while (!atEnd()) {
+                char c = peek();
+                if (Character.isLetterOrDigit(c) || c == '_' || c == ':' || c == '/' || c == '.') {
+                    index++;
+                } else {
+                    break;
+                }
+            }
+            if (index == start + 1) {
+                throw new ExpressionException("Expected a tag id after '#', e.g. #minecraft:wool");
+            }
+            return new Value.StringValue(input.substring(start, index));
         }
 
         private Value parseStringLiteral() {

@@ -309,6 +309,22 @@ public final class ChatInputStyler {
         if (!inMarker) {
             return -1;
         }
+        // walk back broadly first (tag ids contain : and /), then anchor:
+        // a token with a '#' starts AT the '#'; a plain identifier re-trims
+        // to letters/digits/_/. so "1/clien" still anchors at "clien"
+        int broad = cursor;
+        while (broad > open + 1) {
+            char c = text.charAt(broad - 1);
+            if (Character.isLetterOrDigit(c) || c == '_' || c == '.' || c == ':' || c == '/' || c == '#') {
+                broad--;
+            } else {
+                break;
+            }
+        }
+        int hash = text.indexOf('#', broad);
+        if (hash >= 0 && hash < cursor) {
+            return hash;
+        }
         int start = cursor;
         while (start > open + 1) {
             char c = text.charAt(start - 1);
@@ -319,6 +335,26 @@ public final class ChatInputStyler {
             }
         }
         return start;
+    }
+
+    /** The function name whose '(' immediately precedes tokenStart, or null — blockset(#| knows it wants block tags. */
+    public static String enclosingCallName(String text, int tokenStart) {
+        int i = tokenStart - 1;
+        while (i >= 0 && Character.isWhitespace(text.charAt(i))) {
+            i--;
+        }
+        if (i < 0 || text.charAt(i) != '(') {
+            return null;
+        }
+        i--;
+        while (i >= 0 && Character.isWhitespace(text.charAt(i))) {
+            i--;
+        }
+        int end = i + 1;
+        while (i >= 0 && (Character.isLetterOrDigit(text.charAt(i)) || text.charAt(i) == '_')) {
+            i--;
+        }
+        return end > i + 1 ? text.substring(i + 1, end).toLowerCase(java.util.Locale.ROOT) : null;
     }
 
     /**

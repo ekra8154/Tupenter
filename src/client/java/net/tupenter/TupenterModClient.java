@@ -205,6 +205,36 @@ public class TupenterModClient implements ClientModInitializer {
         return new java.util.ArrayList<>(names);
     }
 
+    /**
+     * Tag ids ("#minecraft:wool") for completion inside a set function —
+     * scoped to the function's registry when known, all three otherwise.
+     */
+    public static java.util.List<String> tagCompletions(String functionName) {
+        net.minecraft.client.multiplayer.ClientPacketListener connection = Minecraft.getInstance().getConnection();
+        if (connection == null) {
+            return java.util.List.of();
+        }
+        java.util.TreeSet<String> tags = new java.util.TreeSet<>();
+        String function = functionName == null ? "" : functionName;
+        if (function.equals("blockset") || function.isEmpty()) {
+            collectTags(connection, net.minecraft.core.registries.Registries.BLOCK, tags);
+        }
+        if (function.equals("itemset") || function.isEmpty()) {
+            collectTags(connection, net.minecraft.core.registries.Registries.ITEM, tags);
+        }
+        if (function.equals("effectset") || function.isEmpty()) {
+            collectTags(connection, net.minecraft.core.registries.Registries.MOB_EFFECT, tags);
+        }
+        return new java.util.ArrayList<>(tags);
+    }
+
+    private static <T> void collectTags(net.minecraft.client.multiplayer.ClientPacketListener connection,
+                                        net.minecraft.resources.ResourceKey<net.minecraft.core.Registry<T>> registryKey,
+                                        java.util.Set<String> out) {
+        connection.registryAccess().lookupOrThrow(registryKey).getTags()
+                .forEach(named -> out.add("#" + named.key().location()));
+    }
+
     /** Names to check /customcommand bodies against at save time. */
     public static java.util.Set<String> knownDottedVariableNames() {
         java.util.Set<String> names = new java.util.HashSet<>(CLIENT_VARIABLES.names());
@@ -1298,9 +1328,9 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7range(start, stop[, step])§r — inclusive whole numbers: range(1, 10), range(10, 0, -2)",
                     "§7len(x)§r — list length (or text length) · §7nth(list, i)§r — element i, 0-based",
                     "§7Cycling:§r nth(list, $i$ % len(list)) walks a list forever — with a #set counter, one step per run: #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset(\"#minecraft:wool\"), i % 16)$",
-                    "§7Registry sets:§r blockset(\"#minecraft:logs\") / itemset(\"#c:ores\") / effectset(\"#...\") = a TAG's members as a list (# optional). NO argument = the whole registry: effectset() is every effect. Needs a live world.",
-                    "§7Use them:§r rand(list) picks one: /effect give @s $rand(effectset())$ 30 1 · #foreach loops: #foreach $b$ in blockset(\"#minecraft:wool\") (/give @s $b$)",
-                    "§7Discover tags:§r tab-complete a # in a blockset-typed param, or in /fill ... replace",
+                    "§7Registry sets:§r blockset(#minecraft:logs) / itemset(#c:ores) / effectset(#...) = a TAG's members as a list — no quotes needed, and typing # inside the parens TAB-COMPLETES the tags. NO argument = the whole registry: effectset() is every effect. Needs a live world.",
+                    "§7Use them:§r rand(list) picks one: /effect give @s $rand(effectset())$ 30 1 · #foreach loops: #foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)",
+                    "§7Item tags exist too:§r #minecraft:planks, #minecraft:logs, #c:ores, ... — type itemset(# and browse",
                     "§7Also a list:§r $client.effects$ — your active effect ids",
             };
             case "world" -> new String[]{

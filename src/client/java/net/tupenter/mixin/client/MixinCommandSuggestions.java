@@ -83,7 +83,11 @@ public abstract class MixinCommandSuggestions {
         }
         String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
         SuggestionsBuilder builder = new SuggestionsBuilder(text.substring(0, cursor), tokenStart);
-        for (String name : TupenterModClient.expressionCompletions()) {
+        // a '#' token completes tag ids, scoped by the enclosing set function
+        List<String> candidates = prefix.startsWith("#")
+                ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
+                : TupenterModClient.expressionCompletions();
+        for (String name : candidates) {
             if (name.toLowerCase(Locale.ROOT).startsWith(prefix)) {
                 builder.suggest(name);
             }

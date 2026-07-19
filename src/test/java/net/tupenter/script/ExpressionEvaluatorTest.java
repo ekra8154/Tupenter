@@ -172,6 +172,14 @@ class ExpressionEvaluatorTest {
     }
 
     @Test
+    void tagLiteralsWorkWithoutQuotes() {
+        assertEquals("2", ExpressionEvaluator.evaluate("len(blockset(#minecraft:logs))", tagContext()).displayString());
+        assertEquals("minecraft:iron_ore", ExpressionEvaluator.evaluate("rand(itemset(#c:ores))", tagContext()).displayString());
+        // a bare # is an error, not an empty tag
+        assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("blockset(#)", tagContext()));
+    }
+
+    @Test
     void noArgSetsEnumerateTheWholeRegistry() {
         assertEquals("3", ExpressionEvaluator.evaluate("len(effectset())", tagContext()).displayString());
         assertEquals("minecraft:everything", ExpressionEvaluator.evaluate("rand(blockset())", tagContext()).displayString());

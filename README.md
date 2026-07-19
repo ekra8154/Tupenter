@@ -75,18 +75,22 @@ errors on a miss instead of quietly returning the ray's endpoint.
 #else (/echo &cnothing in range)
 ```
 
-Registry sets: `blockset("#minecraft:logs")` / `itemset("#c:ores")` /
-`effectset("#...")` resolve a tag to its member list through the live
-connection's registries (the leading `#` is optional, Fabric `c:`
+Registry sets: `blockset(#minecraft:logs)` / `itemset(#c:ores)` /
+`effectset(#...)` resolve a tag to its member list through the live
+connection's registries — no quotes needed, and typing `#` inside the
+parens tab-completes the available tags for that registry (Fabric `c:`
 convention tags included). With **no argument** you get the *entire*
-registry. Either way it's a plain list, so `rand(list)`, `len(list)`, and
-`#foreach` all apply:
+registry. Either way it's a plain list, so `rand(list)`, `len(list)`,
+`nth(list, i)`, and `#foreach` all apply:
 
 ```
-/setblock ~ ~-1 ~ $rand(blockset("#minecraft:logs"))$
+/setblock ~ ~-1 ~ $rand(blockset(#minecraft:logs))$
 /effect give @s $rand(effectset())$ 30 1
-#foreach $b$ in blockset("#minecraft:wool") (/give @s $b$)
+#foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)
 ```
+
+(Quoted tags still work; quote them when a tag sits right before a
+ternary's `:`.)
 
 `nth(list, i)` (0-based) plus the `%` operator (floored modulo) make lists
 cyclable — a custom command that steps through the wool colors, one block
