@@ -75,13 +75,16 @@ errors on a miss instead of quietly returning the ray's endpoint.
 #else (/echo &cnothing in range)
 ```
 
-Tag sets: `blockset("#minecraft:logs")` / `itemset("#c:ores")` resolve a
-block/item tag to its member list through the live connection's registries
-(the leading `#` is optional, Fabric `c:` convention tags included), and
-`rand(list)` picks one member:
+Registry sets: `blockset("#minecraft:logs")` / `itemset("#c:ores")` /
+`effectset("#...")` resolve a tag to its member list through the live
+connection's registries (the leading `#` is optional, Fabric `c:`
+convention tags included). With **no argument** you get the *entire*
+registry. Either way it's a plain list, so `rand(list)`, `len(list)`, and
+`#foreach` all apply:
 
 ```
 /setblock ~ ~-1 ~ $rand(blockset("#minecraft:logs"))$
+/effect give @s $rand(effectset())$ 30 1
 #foreach $b$ in blockset("#minecraft:wool") (/give @s $b$)
 ```
 

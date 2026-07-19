@@ -121,6 +121,11 @@ class ExpressionEvaluatorTest {
     // --- tag sets ---
 
     private static final TagResolver STUB_TAGS = (kind, tagId) -> {
+        if (tagId == null) { // whole-registry enumeration
+            return kind == TagResolver.TagKind.EFFECT
+                    ? java.util.List.of("minecraft:speed", "minecraft:slowness", "minecraft:levitation")
+                    : java.util.List.of("minecraft:everything");
+        }
         if (kind == TagResolver.TagKind.BLOCK && tagId.equals("minecraft:logs")) {
             return java.util.List.of("minecraft:oak_log", "minecraft:birch_log");
         }
@@ -139,6 +144,19 @@ class ExpressionEvaluatorTest {
         assertEquals("2", ExpressionEvaluator.evaluate("len(blockset(\"#minecraft:logs\"))", tagContext()).displayString());
         // single-member set: rand() is deterministic, and the # prefix is optional
         assertEquals("minecraft:iron_ore", ExpressionEvaluator.evaluate("rand(itemset(\"c:ores\"))", tagContext()).displayString());
+    }
+
+    @Test
+    void noArgSetsEnumerateTheWholeRegistry() {
+        assertEquals("3", ExpressionEvaluator.evaluate("len(effectset())", tagContext()).displayString());
+        assertEquals("minecraft:everything", ExpressionEvaluator.evaluate("rand(blockset())", tagContext()).displayString());
+        Set<String> effects = Set.of("minecraft:speed", "minecraft:slowness", "minecraft:levitation");
+        for (int i = 0; i < 20; i++) {
+            assertTrue(effects.contains(
+                    ExpressionEvaluator.evaluate("rand(effectset())", tagContext()).displayString()));
+        }
+        // still needs a live world
+        assertThrows(ExpressionException.class, () -> eval("effectset()"));
     }
 
     @Test

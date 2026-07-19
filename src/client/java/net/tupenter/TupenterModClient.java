@@ -321,33 +321,44 @@ public class TupenterModClient implements ClientModInitializer {
     };
 
     /**
-     * Backs blockset("#...")/itemset("#...") with the connection's synced
-     * registries. Null when not in-game (the functions error clearly then);
-     * an unknown tag resolves to an empty list.
+     * Backs blockset/itemset/effectset with the connection's synced
+     * registries: a "#tag" resolves to its members, a null tag enumerates
+     * the whole registry (rand(effectset()) = a random effect). Null when
+     * not in-game; an unknown tag resolves to an empty list.
      */
     public static final net.tupenter.script.TagResolver TAG_RESOLVER = (kind, tagId) -> {
         net.minecraft.client.multiplayer.ClientPacketListener connection = Minecraft.getInstance().getConnection();
         if (connection == null) {
             return null;
         }
+        return switch (kind) {
+            case ITEM -> registryIds(connection, net.minecraft.core.registries.Registries.ITEM, tagId);
+            case BLOCK -> registryIds(connection, net.minecraft.core.registries.Registries.BLOCK, tagId);
+            case EFFECT -> registryIds(connection, net.minecraft.core.registries.Registries.MOB_EFFECT, tagId);
+        };
+    };
+
+    private static <T> java.util.List<String> registryIds(
+            net.minecraft.client.multiplayer.ClientPacketListener connection,
+            net.minecraft.resources.ResourceKey<net.minecraft.core.Registry<T>> registryKey,
+            String tagId) {
+        net.minecraft.core.Registry<T> registry = connection.registryAccess().lookupOrThrow(registryKey);
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        if (tagId == null) {
+            for (net.minecraft.resources.ResourceLocation id : registry.keySet()) {
+                ids.add(id.toString());
+            }
+            return ids;
+        }
         net.minecraft.resources.ResourceLocation location = net.minecraft.resources.ResourceLocation.tryParse(tagId);
         if (location == null) {
-            return java.util.List.of();
+            return ids;
         }
-        java.util.List<String> ids = new java.util.ArrayList<>();
-        if (kind == net.tupenter.script.TagResolver.TagKind.ITEM) {
-            var registry = connection.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ITEM);
-            for (var holder : registry.getTagOrEmpty(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, location))) {
-                holder.unwrapKey().ifPresent(key -> ids.add(key.location().toString()));
-            }
-        } else {
-            var registry = connection.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BLOCK);
-            for (var holder : registry.getTagOrEmpty(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.BLOCK, location))) {
-                holder.unwrapKey().ifPresent(key -> ids.add(key.location().toString()));
-            }
+        for (var holder : registry.getTagOrEmpty(net.minecraft.tags.TagKey.create(registryKey, location))) {
+            holder.unwrapKey().ifPresent(key -> ids.add(key.location().toString()));
         }
         return ids;
-    };
+    }
 
     public static void savePersistentVariables() {
         TupenterConfig.INSTANCE.persistentVariables = PERSISTENT_VARIABLES.serialize();
@@ -1233,7 +1244,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Text:§r \"quoted\" · + joins: $\"lvl \" + 5$ · comparisons: == != < <= > >=",
                     "§7Conditions:§r $client.y > 60 ? 10 : 0$ · true/false · && \\|\\| !",
                     "§7Functions:§r rand(1,64) randf pick(a | b | c) range(1,10) int float abs floor ceil round min max len sqrt sin cos tan (degrees). pick options are expressions and nest — quote literal text: pick(\"say hi\" | \"say nah\")",
-                    "§7Tag sets:§r blockset(\"#minecraft:logs\") / itemset(\"#c:ores\") = the tag's members as a list (needs a live world) · rand(list) picks one: /setblock ~ ~ ~ $rand(blockset(\"#minecraft:logs\"))$ · loops too: #foreach $b$ in blockset(\"#minecraft:logs\") (/say $b$)",
+                    "§7Registry sets:§r blockset(\"#minecraft:logs\") / itemset(\"#c:ores\") / effectset(\"#...\") = the tag's members as a list · NO argument = the whole registry: /effect give @s $rand(effectset())$ 30 · rand(list) picks one, len() counts, #foreach loops: #foreach $b$ in blockset(\"#minecraft:logs\") (/say $b$). Needs a live world.",
                     "§7World reads:§r block(x, y, z) or block(\"x y z\") = the block id at a position, read from YOUR client's world copy — no server round trip, so #if handles it instantly: #if ($block(client.target_block) == \"minecraft:air\"$) (...) #else (...). Loaded chunks only. Pairs with $client.target_hit$ (block/entity/miss).",
                     "§7Implicit math:§r with Inline Expressions = Auto-detect (the default), bare math evaluates WITHOUT markers: /give @s stick 64*5 → 320. Numbers-and-operators only (no variables/functions beyond int/float), skipped inside {NBT braces}, and unparseable text is sent as-is (never errors). $...$ is the full language and works everywhere, in every mode except Disabled.",
                     "§7Gotchas:§r \\$ = literal dollar · write 2*sin(x), not 2sin(x) (bare s = stack suffix)",

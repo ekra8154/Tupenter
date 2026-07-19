@@ -352,6 +352,7 @@ final class ExpressionEvaluator {
                 case "range" -> range(args);
                 case "itemset" -> tagMembers("itemset", TagResolver.TagKind.ITEM, args);
                 case "blockset" -> tagMembers("blockset", TagResolver.TagKind.BLOCK, args);
+                case "effectset" -> tagMembers("effectset", TagResolver.TagKind.EFFECT, args);
                 case "block" -> blockAt(args);
                 default -> throw new ExpressionException("Unknown function: " + identifier);
             };
@@ -507,29 +508,34 @@ final class ExpressionEvaluator {
         }
 
         /**
-         * itemset("#minecraft:logs") / blockset("#c:ores") — the tag's member
-         * ids as a list (leading # optional). Registry lookup comes from the
-         * EvalContext's TagResolver, so this needs a live world.
+         * itemset("#minecraft:logs") / blockset("#c:ores") /
+         * effectset("#...") — the tag's member ids as a list (leading #
+         * optional). With NO argument, the entire registry:
+         * rand(effectset()) is a random effect. Registry lookup comes from
+         * the EvalContext's TagResolver, so this needs a live world.
          */
         private Value tagMembers(String name, TagResolver.TagKind kind, List<Value> args) {
-            Value arg = single(args, name);
-            if (!(arg instanceof Value.StringValue string)) {
-                throw new ExpressionException(name + "(...) takes a tag id string, e.g. " + name + "(\"#minecraft:logs\")");
-            }
-            String tag = string.value().trim();
-            if (tag.startsWith("#")) {
-                tag = tag.substring(1);
-            }
-            if (tag.isEmpty()) {
-                throw new ExpressionException(name + "(...) needs a tag id, e.g. " + name + "(\"#minecraft:logs\")");
+            String tag = null; // null = every entry in the registry
+            if (!args.isEmpty()) {
+                Value arg = single(args, name);
+                if (!(arg instanceof Value.StringValue string)) {
+                    throw new ExpressionException(name + "(...) takes a tag id string — " + name + "(\"#minecraft:logs\") — or no argument for the whole registry");
+                }
+                tag = string.value().trim();
+                if (tag.startsWith("#")) {
+                    tag = tag.substring(1);
+                }
+                if (tag.isEmpty()) {
+                    throw new ExpressionException(name + "(...) needs a tag id, e.g. " + name + "(\"#minecraft:logs\") — or no argument for the whole registry");
+                }
             }
             List<String> ids = context.tags().resolve(kind, tag);
             if (ids == null) {
-                throw new ExpressionException(name + "(...) needs a live world to look up tags");
+                throw new ExpressionException(name + "(...) needs a live world to look up the registry");
             }
             if (ids.isEmpty()) {
                 throw new ExpressionException("Unknown or empty "
-                        + (kind == TagResolver.TagKind.ITEM ? "item" : "block") + " tag: #" + tag);
+                        + kind.name().toLowerCase(java.util.Locale.ROOT) + " tag: #" + tag);
             }
             List<Value> values = new ArrayList<>(ids.size());
             for (String id : ids) {
@@ -646,7 +652,7 @@ final class ExpressionEvaluator {
             String best = null;
             int bestDistance = 3; // suggest only within edit distance 2
             List<String> candidates = new ArrayList<>(context.variables().names());
-            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "block"));
+            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "block"));
             for (String candidate : candidates) {
                 int distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
                 if (distance < bestDistance) {

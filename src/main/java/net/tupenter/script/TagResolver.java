@@ -4,7 +4,8 @@ import java.util.List;
 
 /**
  * Resolves a registry tag (e.g. {@code minecraft:logs}, {@code c:ores}) to
- * its member ids for the {@code blockset(...)} / {@code itemset(...)}
+ * its member ids — or, with a null tag, enumerates the whole registry — for
+ * the {@code blockset(...)} / {@code itemset(...)} / {@code effectset(...)}
  * expression functions. The client backs this with the live connection's
  * synced registries; tests stub it; {@link #NONE} means no lookup available.
  */
@@ -16,13 +17,15 @@ public interface TagResolver {
 
     enum TagKind {
         ITEM,
-        BLOCK
+        BLOCK,
+        EFFECT
     }
 
     /**
-     * @param tagId namespaced tag id, without the leading '#'
+     * @param tagId namespaced tag id without the leading '#', or null for
+     *              every entry in the registry
      * @return member ids; empty when the tag is unknown or empty; null when
-     *         tag lookup is unavailable (not in-game)
+     *         lookup is unavailable (not in-game)
      */
     List<String> resolve(TagKind kind, String tagId);
 }
