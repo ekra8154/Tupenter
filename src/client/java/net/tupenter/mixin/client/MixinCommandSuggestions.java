@@ -78,15 +78,23 @@ public abstract class MixinCommandSuggestions {
         String text = this.input.getValue();
         int cursor = this.input.getCursorPosition();
         int tokenStart = ChatInputStyler.markerTokenStart(text, cursor);
-        if (tokenStart < 0) {
-            return;
+        List<String> candidates;
+        if (tokenStart >= 0) {
+            // inside a $...$ marker: variables/functions, or tags after '#'
+            String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
+            candidates = prefix.startsWith("#")
+                    ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
+                    : TupenterModClient.expressionCompletions();
+        } else {
+            // typing a directive word (#norec... / after-')' #elseif)
+            tokenStart = ChatInputStyler.directiveTokenStart(text, cursor);
+            if (tokenStart < 0) {
+                return;
+            }
+            candidates = ChatInputStyler.directiveWordSuggestions(text, tokenStart);
         }
         String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
         SuggestionsBuilder builder = new SuggestionsBuilder(text.substring(0, cursor), tokenStart);
-        // a '#' token completes tag ids, scoped by the enclosing set function
-        List<String> candidates = prefix.startsWith("#")
-                ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
-                : TupenterModClient.expressionCompletions();
         for (String name : candidates) {
             if (name.toLowerCase(Locale.ROOT).startsWith(prefix)) {
                 builder.suggest(name);
@@ -105,28 +113,30 @@ public abstract class MixinCommandSuggestions {
     private String tupenter$chainAwareValue(EditBox box) {
         String full = box.getValue();
         tupenter$reroot = false;
-        if (!ChatInputStyler.chainRerootEnabled() || !full.startsWith("/")) {
+        if (!ChatInputStyler.chainRerootEnabled() || full.isEmpty()) {
             return full;
         }
-        List<ChatInputStyler.Segment> segments = ChatInputStyler.segments(full);
-        if (segments.size() < 2) {
-            return full;
-        }
-        ChatInputStyler.Segment segment = ChatInputStyler.segmentAt(segments, box.getCursorPosition());
-        // a chat/directive segment has no command tree to complete against;
-        // fall back to the nearest command segment to its left (segment 1 is
-        // always a command on a '/'-line)
-        int index = segments.indexOf(segment);
-        while (index > 0 && segment.kind() != ChatInputStyler.Kind.COMMAND) {
-            segment = segments.get(--index);
-        }
-        if (segment.kind() != ChatInputStyler.Kind.COMMAND || segment.textStart() >= segment.end()) {
+        int[] target = ChatInputStyler.rerootTarget(full, box.getCursorPosition());
+        if (target == null) {
             return full;
         }
         tupenter$reroot = true;
-        tupenter$cmdStart = segment.textStart();
-        tupenter$segEnd = segment.end();
-        return full.substring(0, segment.end());
+        tupenter$cmdStart = target[0];
+        tupenter$segEnd = target[1];
+        String truncated = full.substring(0, target[1]);
+        // '#'-led lines (prefixes, directives) must still take vanilla's
+        // COMMAND branch: mask everything before the inner '/' with spaces
+        // and force a '/' at position 0 — the parse redirect starts at the
+        // real command anyway, and positions stay 1:1 with the input
+        if (truncated.charAt(0) != '/') {
+            char[] chars = truncated.toCharArray();
+            chars[0] = '/';
+            for (int i = 1; i < target[0]; i++) {
+                chars[i] = ' ';
+            }
+            truncated = new String(chars);
+        }
+        return truncated;
     }
 
     @Redirect(method = "updateCommandInfo", at = @At(value = "INVOKE",

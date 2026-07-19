@@ -53,6 +53,11 @@ public final class ChatInputStyler {
     private static final java.util.Set<String> PREFIX_WORDS = java.util.Set.of(
             "#silent", "#norecord", "#record", "#stage");
 
+    /** Everything tab-completion should offer for a '#' word. */
+    private static final List<String> DIRECTIVE_WORDS = List.of(
+            "#set", "#local", "#wait", "#repeat", "#if", "#elseif", "#else", "#for", "#foreach",
+            "#silent", "#norecord", "#record", "#stage", "#unstage");
+
     public enum Kind {
         COMMAND,
         DIRECTIVE,
@@ -85,10 +90,90 @@ public final class ChatInputStyler {
             return false;
         }
         if (full.startsWith("/")) {
+            if (full.length() > 1 && full.charAt(1) == '#' && ScriptParser.isDirectiveLine(full.substring(1))) {
+                return true; // /#silent /cmd — command-typed directive form
+            }
+            if (full.regionMatches(true, 0, "/unroll ", 0, 8)) {
+                return true; // the greedy argument is a whole line
+            }
             boolean chained = TupenterConfig.INSTANCE.commandChainingEnabled && segments(full).size() > 1;
             return chained || containsMarker(full);
         }
         return ScriptParser.isDirectiveLine(full);
+    }
+
+    /**
+     * Where the suggestion parse should re-root for the cursor position:
+     * {commandStart, segmentEnd} in real-input coordinates, or null when
+     * vanilla already handles it. Understands && chains, prefixed commands
+     * (#norecord /cmd), the /#directive form, and /unroll's inner line.
+     */
+    public static int[] rerootTarget(String full, int cursor) {
+        int base = full.regionMatches(true, 0, "/unroll ", 0, 8) ? 8 : 0;
+        String region = full.substring(base);
+        List<Segment> segments = segments(region);
+        if (base == 0 && full.startsWith("/")
+                && !(full.length() > 1 && full.charAt(1) == '#') && segments.size() < 2) {
+            return null; // plain single command — vanilla is already right
+        }
+        int index = segments.indexOf(segmentAt(segments, Math.max(0, cursor - base)));
+        while (index >= 0) {
+            Segment segment = segments.get(index);
+            int commandStart = -1;
+            if (segment.kind() == Kind.COMMAND) {
+                commandStart = segment.textStart();
+            } else if (segment.kind() == Kind.DIRECTIVE) {
+                int rest = statementStartAfterPrefixes(region, segment.textStart(), segment.end());
+                if (rest < segment.end() && region.charAt(rest) == '/') {
+                    commandStart = rest; // a prefixed command underneath
+                }
+            }
+            if (commandStart >= 0 && commandStart < segment.end()) {
+                return new int[]{commandStart + base, segment.end() + base};
+            }
+            index--;
+        }
+        return null;
+    }
+
+    /**
+     * When the cursor is typing a '#'-word in a directive position (line or
+     * statement start, after prefixes, or after a ')' where #elseif/#else
+     * live), the index of the '#'; -1 otherwise (tags in markers excluded).
+     */
+    public static int directiveTokenStart(String text, int cursor) {
+        int start = Math.min(cursor, text.length());
+        while (start > 0 && Character.isLetter(text.charAt(start - 1))) {
+            start--;
+        }
+        if (start == 0 || text.charAt(start - 1) != '#') {
+            return -1;
+        }
+        if (markerTokenStart(text, cursor) >= 0) {
+            return -1; // '#' inside a marker is a tag, handled elsewhere
+        }
+        int hash = start - 1;
+        List<Segment> segments = segments(text);
+        Segment segment = segmentAt(segments, cursor);
+        int textStart = segment.textStart();
+        if (hash == textStart
+                || hash == statementStartAfterPrefixes(text, textStart, Math.min(segment.end(), text.length()))) {
+            return hash;
+        }
+        int back = hash - 1;
+        while (back >= 0 && Character.isWhitespace(text.charAt(back))) {
+            back--;
+        }
+        return back >= 0 && text.charAt(back) == ')' ? hash : -1;
+    }
+
+    /** After a ')' only the chain continuations make sense; elsewhere, everything. */
+    public static List<String> directiveWordSuggestions(String text, int hashStart) {
+        int back = hashStart - 1;
+        while (back >= 0 && Character.isWhitespace(text.charAt(back))) {
+            back--;
+        }
+        return back >= 0 && text.charAt(back) == ')' ? List.of("#elseif", "#else") : DIRECTIVE_WORDS;
     }
 
     /**
@@ -159,12 +244,41 @@ public final class ChatInputStyler {
         if (textStart < end) {
             char first = full.charAt(textStart);
             if (first == '/') {
-                kind = Kind.COMMAND;
+                // "/#silent /cmd" — the command-typed directive form
+                if (textStart + 1 < end && full.charAt(textStart + 1) == '#') {
+                    kind = Kind.DIRECTIVE;
+                    textStart++;
+                } else {
+                    kind = Kind.COMMAND;
+                }
             } else if (first == '#') {
                 kind = Kind.DIRECTIVE;
             }
         }
         return new Segment(start, end, textStart, kind);
+    }
+
+    /**
+     * The index just past any leading prefix words (#silent #norecord
+     * #record #stage) and their whitespace — where the statement they wrap
+     * actually starts. Returns {@code from} itself when there are none.
+     */
+    public static int statementStartAfterPrefixes(String text, int from, int end) {
+        int i = from;
+        while (i < end && text.charAt(i) == '#') {
+            int word = i;
+            while (word < end && !Character.isWhitespace(text.charAt(word)) && text.charAt(word) != '(') {
+                word++;
+            }
+            if (!PREFIX_WORDS.contains(text.substring(i, word).toLowerCase(java.util.Locale.ROOT))) {
+                return i;
+            }
+            i = word;
+            while (i < end && Character.isWhitespace(text.charAt(i))) {
+                i++;
+            }
+        }
+        return i;
     }
 
     /** The segment the cursor sits in (separator gaps count toward the segment on their left). */
@@ -276,7 +390,7 @@ public final class ChatInputStyler {
             switch (segment.kind()) {
                 case CHAT -> fill(styles, segment.start(), segment.end(), CHAT_TEXT);
                 case DIRECTIVE -> styleDirective(text, styles, segment, depth);
-                case COMMAND -> styleCommand(text, styles, segment);
+                case COMMAND -> styleCommand(text, styles, segment, depth);
             }
             if (s + 1 < segments.size()) {
                 int gapStart = segment.end();
@@ -336,10 +450,34 @@ public final class ChatInputStyler {
      * Unmatched parens turn red.
      */
     private static void styleDirective(String full, Style[] styles, Segment segment, int depth) {
+        // leading prefix words are gold, and whatever they WRAP gets its own
+        // real styling: #norecord /time set day is a command underneath
+        int rest = statementStartAfterPrefixes(full, segment.textStart(), segment.end());
+        for (int i = segment.textStart(); i < rest; i++) {
+            if (!Character.isWhitespace(full.charAt(i))) {
+                styles[i] = DIRECTIVE_WORD;
+            }
+        }
+        if (rest >= segment.end()) {
+            return; // nothing but prefixes (yet)
+        }
+        char first = full.charAt(rest);
+        if (first == '/') {
+            styleCommand(full, styles, new Segment(segment.start(), segment.end(), rest, Kind.COMMAND), depth);
+            return;
+        }
+        if (first != '#') {
+            fill(styles, rest, segment.end(), CHAT_TEXT); // prefixed chat
+            return;
+        }
+        styleDirectiveCore(full, styles, rest, segment.end(), depth);
+    }
+
+    private static void styleDirectiveCore(String full, Style[] styles, int from, int end, int depth) {
         boolean marker = false;
         boolean quoted = false;
         boolean contentSeen = false; // prefix words (#silent ...) don't count as content
-        for (int i = segment.textStart(); i < segment.end(); i++) {
+        for (int i = from; i < end; i++) {
             char c = full.charAt(i);
             if (c == '\\') {
                 i++;
@@ -360,7 +498,7 @@ public final class ChatInputStyler {
             } else if (!quoted) {
                 if (c == '#') {
                     int word = i;
-                    while (word < segment.end() && !Character.isWhitespace(full.charAt(word)) && full.charAt(word) != '(') {
+                    while (word < end && !Character.isWhitespace(full.charAt(word)) && full.charAt(word) != '(') {
                         word++;
                     }
                     // a statement-STARTING directive after real content means
@@ -374,7 +512,7 @@ public final class ChatInputStyler {
                     }
                     i = word - 1;
                 } else if (c == '(') {
-                    int close = matchingClose(full, i, segment.end());
+                    int close = matchingClose(full, i, end);
                     if (close < 0) {
                         styles[i] = ERROR; // never closed
                         continue;
@@ -432,7 +570,20 @@ public final class ChatInputStyler {
         return -1;
     }
 
-    private static void styleCommand(String full, Style[] styles, Segment segment) {
+    private static void styleCommand(String full, Style[] styles, Segment segment, int depth) {
+        // /unroll <line> — the greedy argument IS a line; style it as one
+        int textStart = segment.textStart();
+        if (depth < 8 && full.regionMatches(true, textStart, "/unroll", 0, 7)
+                && textStart + 7 < segment.end() && Character.isWhitespace(full.charAt(textStart + 7))) {
+            fill(styles, textStart, textStart + 7, DIRECTIVE_WORD);
+            int inner = textStart + 7;
+            while (inner < segment.end() && Character.isWhitespace(full.charAt(inner))) {
+                inner++;
+            }
+            styleStatements(full, inner, segment.end(), styles, depth + 1);
+            return;
+        }
+
         boolean hasMarker = containsMarker(full.substring(segment.textStart(), segment.end()));
         ClientPacketListener connection = Minecraft.getInstance().getConnection();
         if (connection == null) {
