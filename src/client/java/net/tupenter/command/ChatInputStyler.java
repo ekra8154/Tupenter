@@ -458,6 +458,27 @@ public final class ChatInputStyler {
         return styles;
     }
 
+    /**
+     * Styles for the resend-preset editor: unlike editorStyles (one flattened
+     * runtime line), each NEWLINE-separated line is an independent command, so
+     * each is styled on its own. Indices stay aligned with the raw value.
+     */
+    public static Style[] editorStylesPerLine(String value) {
+        Style[] styles = new Style[value.length()];
+        java.util.Arrays.fill(styles, Style.EMPTY);
+        int start = 0;
+        for (int i = 0; i <= value.length(); i++) {
+            if (i == value.length() || value.charAt(i) == '\n') {
+                if (i > start) {
+                    Style[] lineStyles = editorStyles(value.substring(start, i), false);
+                    System.arraycopy(lineStyles, 0, styles, start, Math.min(lineStyles.length, i - start));
+                }
+                start = i + 1;
+            }
+        }
+        return styles;
+    }
+
     /** name white · <declarations> green · = gold (never bold — width-safe). */
     private static void styleSignature(String flat, Style[] styles, int separator) {
         int nameEnd = 0;

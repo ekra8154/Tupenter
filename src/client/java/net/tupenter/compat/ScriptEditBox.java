@@ -27,14 +27,20 @@ public class ScriptEditBox extends MultiLineEditBox {
 
     private final Font editorFont;
     private final boolean definition;
+    private final boolean perLine; // true = each newline is a separate command (resend presets)
     private String styledFor;
     private Style[] styleCache;
 
     public ScriptEditBox(Font font, int width, int height, boolean definition) {
+        this(font, width, height, definition, false);
+    }
+
+    public ScriptEditBox(Font font, int width, int height, boolean definition, boolean perLine) {
         super(font, 0, 0, width, height, CommonComponents.EMPTY, CommonComponents.EMPTY,
                 TEXT_COLOR, true, CURSOR_COLOR, true, true);
         this.editorFont = font;
         this.definition = definition;
+        this.perLine = perLine;
     }
 
     @Override
@@ -46,7 +52,9 @@ public class ScriptEditBox extends MultiLineEditBox {
             return;
         }
         if (!value.equals(styledFor)) {
-            styleCache = ChatInputStyler.editorStyles(value, definition);
+            styleCache = perLine
+                    ? ChatInputStyler.editorStylesPerLine(value)
+                    : ChatInputStyler.editorStyles(value, definition);
             styledFor = value;
         }
 

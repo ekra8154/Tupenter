@@ -6,7 +6,6 @@ import me.shedaniel.clothconfig2.api.ConfigBuilder;
 import me.shedaniel.clothconfig2.api.ConfigCategory;
 import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
 import me.shedaniel.clothconfig2.api.AbstractConfigListEntry;
-import me.shedaniel.clothconfig2.gui.entries.StringListListEntry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -163,10 +162,11 @@ public class ModMenuIntegration implements ModMenuApi {
                 ))
         );
 
-        StringListListEntry permanentMessagesEntry = entryBuilder.startStrList(Component.translatable("option.tupenter.permanent_messages"), TupenterConfig.INSTANCE.permanentMessages)
-                .setDefaultValue(new ArrayList<>())
-                .setTooltip(Component.translatable("tooltip.tupenter.permanent_messages"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.permanentMessages = newValue)
+        // One tall editor for the whole preset macro — one command per line,
+        // syntax-highlighted; blank lines are ignored (and separate for reading).
+        presetBox = new PresetBoxEntry(joinPresets(TupenterConfig.INSTANCE.permanentMessages));
+        AbstractConfigListEntry<?> presetHintEntry = entryBuilder
+                .startTextDescription(Component.translatable("text.tupenter.preset_hint"))
                 .build();
 
         AbstractConfigListEntry<?> enhancedCommandParsingEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.enhanced_command_parsing"), TupenterConfig.INSTANCE.enhancedCommandParsingEnabled)
@@ -252,7 +252,7 @@ public class ModMenuIntegration implements ModMenuApi {
 
         general.addEntry(entryBuilder.startSubCategory(
                 Component.translatable("subcategory.tupenter.preset_commands"),
-                List.of(importButtonEntry, permanentMessagesEntry))
+                List.of(importButtonEntry, presetHintEntry, presetBox))
                 .setExpanded(false)
                 .build());
 
@@ -393,6 +393,9 @@ public class ModMenuIntegration implements ModMenuApi {
             commitScriptEdits();
             TupenterConfig.INSTANCE.pruneWorldScriptStates();
             TupenterConfig.INSTANCE.aliases = collectCommandRows();
+            if (presetBox != null) {
+                TupenterConfig.INSTANCE.permanentMessages = splitPresets(presetBox.text());
+            }
             TupenterConfig.save();
             TupenterModClient.resetTickScriptFaults(); // edited scripts get a fresh chance
 
@@ -412,6 +415,30 @@ public class ModMenuIntegration implements ModMenuApi {
     private static final List<GlobalScriptEntry> globalScriptRows = new ArrayList<>();
     private static final List<WorldScriptEntry> worldScriptRows = new ArrayList<>();
     private static final List<CommandRowEntry> commandRows = new ArrayList<>();
+    private static PresetBoxEntry presetBox; // the resend preset/macro editor
+
+    /** Preset list -> editor text: one command per line, blank line between each for readability. */
+    private static String joinPresets(List<String> presets) {
+        List<String> lines = new ArrayList<>();
+        for (String preset : presets) {
+            if (preset != null && !preset.trim().isEmpty()) {
+                lines.add(preset.trim());
+            }
+        }
+        return String.join("\n\n", lines);
+    }
+
+    /** Editor text -> preset list: each non-blank line is one command. */
+    private static List<String> splitPresets(String text) {
+        List<String> out = new ArrayList<>();
+        for (String line : text.split("\n", -1)) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) {
+                out.add(trimmed);
+            }
+        }
+        return out;
+    }
     /** World the Scripts tab was built for (null = opened outside a world). */
     private static String scriptsWorldKey;
 
@@ -709,6 +736,101 @@ public class ModMenuIntegration implements ModMenuApi {
         }
     }
 
+    /**
+     * The resend preset/macro list as ONE tall editor — one command per line
+     * (blank lines ignored), per-line syntax highlighting. Unlike the Scripts
+     * tab, here a newline SEPARATES commands.
+     */
+    private static class PresetBoxEntry extends AbstractConfigListEntry<String> {
+        private static final int BOX_HEIGHT = 120;
+        private final String initialText;
+        private ScriptEditBox box; // built lazily at the rendered width
+        private String value;
+
+        PresetBoxEntry(String text) {
+            super(Component.empty(), false);
+            this.initialText = text;
+            this.value = text;
+        }
+
+        private ScriptEditBox ensureBox(int width) {
+            if (box == null || box.getWidth() != width) {
+                String current = box != null ? box.getValue() : value;
+                box = new ScriptEditBox(Minecraft.getInstance().font, width, BOX_HEIGHT, false, true);
+                box.setCharacterLimit(16000);
+                box.setValue(current);
+                value = current;
+            }
+            return box;
+        }
+
+        String text() {
+            return box != null ? box.getValue() : value;
+        }
+
+        void blurBox() {
+            if (box != null) {
+                box.setFocused(false);
+            }
+        }
+
+        @Override
+        public int getItemHeight() {
+            return BOX_HEIGHT + 6;
+        }
+
+        @Override
+        public void render(GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
+            ScriptEditBox b = ensureBox(entryWidth);
+            b.setX(x);
+            b.setY(y);
+            b.render(graphics, mouseX, mouseY, partialTick);
+        }
+
+        @Override
+        public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+            blurAllEditorBoxes();
+            return super.mouseClicked(event, doubleClick);
+        }
+
+        private List<net.minecraft.client.gui.components.AbstractWidget> allWidgets() {
+            List<net.minecraft.client.gui.components.AbstractWidget> widgets = new ArrayList<>();
+            if (box != null) {
+                widgets.add(box);
+            }
+            return widgets;
+        }
+
+        @Override
+        public List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children() {
+            return allWidgets();
+        }
+
+        @Override
+        public List<? extends net.minecraft.client.gui.narration.NarratableEntry> narratables() {
+            return allWidgets();
+        }
+
+        @Override
+        public boolean isEdited() {
+            return !text().equals(initialText);
+        }
+
+        @Override
+        public String getValue() {
+            return text();
+        }
+
+        @Override
+        public Optional<String> getDefaultValue() {
+            return Optional.empty();
+        }
+
+        @Override
+        public void save() {
+        }
+    }
+
     /** One custom command as a row: wrap toggle, definition box, delete. */
     private static class CommandRowEntry extends WrapRowEntry {
         CommandRowEntry(String definition) {
@@ -738,6 +860,9 @@ public class ModMenuIntegration implements ModMenuApi {
         }
         for (WrapRowEntry row : worldScriptRows) {
             row.blurBoxes();
+        }
+        if (presetBox != null) {
+            presetBox.blurBox();
         }
     }
 
