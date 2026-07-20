@@ -146,6 +146,15 @@ public class ModMenuIntegration implements ModMenuApi {
                 .build();
 
         // --- Preset Commands (Macros) subfolder ---
+        // How many of the most-recent history entries Import pulls (history caps at 50).
+        importCountEntry = entryBuilder.startIntSlider(
+                        Component.translatable("option.tupenter.import_count"),
+                        Math.max(1, Math.min(50, TupenterConfig.INSTANCE.importHistoryCount)), 1, 50)
+                .setDefaultValue(50)
+                .setTooltip(Component.translatable("tooltip.tupenter.import_count"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.importHistoryCount = newValue)
+                .build();
+
         // Imports straight into the box (no screen reload) — so there's nothing
         // to discard and no confirm needed; nothing persists until Done anyway.
         AbstractConfigListEntry<?> importButtonEntry = new ImportButtonEntry(
@@ -153,7 +162,7 @@ public class ModMenuIntegration implements ModMenuApi {
                 Component.translatable("tooltip.tupenter.import_history"),
                 () -> {
                     if (presetBox != null) {
-                        presetBox.importText(joinPresets(TupenterModClient.messageHistory));
+                        presetBox.importText(joinPresets(recentHistory()));
                     }
                 }
         );
@@ -248,7 +257,7 @@ public class ModMenuIntegration implements ModMenuApi {
 
         general.addEntry(entryBuilder.startSubCategory(
                 Component.translatable("subcategory.tupenter.preset_commands"),
-                List.of(importButtonEntry, presetHintEntry, presetBox))
+                List.of(importCountEntry, importButtonEntry, presetHintEntry, presetBox))
                 .setExpanded(false)
                 .build());
 
@@ -412,6 +421,15 @@ public class ModMenuIntegration implements ModMenuApi {
     private static final List<WorldScriptEntry> worldScriptRows = new ArrayList<>();
     private static final List<CommandRowEntry> commandRows = new ArrayList<>();
     private static PresetBoxEntry presetBox; // the resend preset/macro editor
+    private static me.shedaniel.clothconfig2.gui.entries.IntegerSliderEntry importCountEntry; // live value for Import
+
+    /** The most-recent N history entries, N from the (live) Import-count slider. */
+    private static List<String> recentHistory() {
+        List<String> history = TupenterModClient.messageHistory;
+        int n = importCountEntry != null ? importCountEntry.getValue() : TupenterConfig.INSTANCE.importHistoryCount;
+        int count = Math.min(Math.max(1, n), history.size());
+        return new ArrayList<>(history.subList(history.size() - count, history.size()));
+    }
 
     /** Preset list -> editor text: one command per line, blank line between each for readability. */
     private static String joinPresets(List<String> presets) {

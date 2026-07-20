@@ -24,6 +24,7 @@ public class TupenterConfig {
     public int messageDelay = 0;
     public BatchMode batchMode = BatchMode.PAUSE;
     public int historyDepth = 1;
+    public int importHistoryCount = 50; // how many recent history entries "Import from History" pulls
     public ResendMode resendMode = ResendMode.PRESS_AND_HOLD;
     public ResendOrder resendOrder = ResendOrder.OLDEST_FIRST;
     public FeedbackSuppressionMode suppressFeedback = FeedbackSuppressionMode.OFF;
@@ -187,6 +188,7 @@ public class TupenterConfig {
                     INSTANCE.messageDelay = Math.max(0, loaded.messageDelay);
                     INSTANCE.batchMode = loaded.batchMode != null ? loaded.batchMode : BatchMode.PAUSE;
                     INSTANCE.historyDepth = Math.max(1, loaded.historyDepth);
+                    INSTANCE.importHistoryCount = Math.max(1, Math.min(50, loaded.importHistoryCount));
                     INSTANCE.resendMode = loaded.resendMode != null ? loaded.resendMode : ResendMode.PRESS_AND_HOLD;
                     INSTANCE.resendOrder = loaded.resendOrder != null ? loaded.resendOrder : ResendOrder.OLDEST_FIRST;
                     INSTANCE.suppressFeedback = loaded.suppressFeedback != null ? loaded.suppressFeedback : FeedbackSuppressionMode.OFF;
