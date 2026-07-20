@@ -1674,6 +1674,7 @@ public class TupenterModClient implements ClientModInitializer {
             case "customcommand" -> new String[]{
                     "§b/customcommand — make your own commands:",
                     "§7add <name> <body>§r — create · §7update <name> <body>§r — edit · §7remove <name>§r — delete",
+                    "§7Description:§r add a \"quoted note\" before the = : /customcommand add greet <name:word> \"&aWave at someone\" = /me waves at $name$ — shows when you run it with missing args and in /customcommand <name> (&-colors like /echo)",
                     "§7list [verbose]§r — signatures (verbose: full bodies) · §7/customcommand <name>§r — one command + [edit] link",
                     "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing",
                     "§7Full guide§r (typed params, defaults, examples): /customcommand help",
@@ -1806,6 +1807,10 @@ public class TupenterModClient implements ClientModInitializer {
                 .append(Component.literal(definition.params().isEmpty() ? "" : " " + definition.declarationPrefix().trim()).withStyle(ChatFormatting.YELLOW))
                 .append(Component.literal("  "))
                 .append(suggestLink("[edit]", "/customcommand update " + name + " " + CommandAliasManager.getRawCommand(name))));
+        if (!definition.description().isEmpty()) {
+            context.getSource().sendFeedback(Component.literal(" ")
+                    .append(Component.literal(applyAmpersandColors(definition.description())).withStyle(ChatFormatting.GRAY)));
+        }
         context.getSource().sendFeedback(Component.literal(" body: ").withStyle(ChatFormatting.DARK_GRAY)
                 .append(Component.literal(definition.body()).withStyle(ChatFormatting.WHITE)));
         return 1;
@@ -1824,6 +1829,18 @@ public class TupenterModClient implements ClientModInitializer {
             }
         }
         context.getSource().sendFeedback(Component.literal(applyAmpersandColors(text)).withStyle(ChatFormatting.GRAY));
+        return 1;
+    }
+
+    /** Shown when a custom command is run with too few args: its &-colored description + signature. */
+    public static int showAliasUsage(String name, net.tupenter.script.AliasDefinition definition, FabricClientCommandSource source) {
+        if (!definition.description().isEmpty()) {
+            source.sendFeedback(Component.literal(applyAmpersandColors(definition.description())).withStyle(ChatFormatting.GRAY));
+        }
+        String declarations = definition.declarationPrefix().trim();
+        String usage = "/" + name + (declarations.isEmpty() ? "" : " " + declarations);
+        source.sendFeedback(Component.literal("usage: ").withStyle(ChatFormatting.DARK_GRAY)
+                .append(Component.literal(usage).withStyle(ChatFormatting.YELLOW)));
         return 1;
     }
 

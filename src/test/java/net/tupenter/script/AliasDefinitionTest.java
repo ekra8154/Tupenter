@@ -32,6 +32,36 @@ class AliasDefinitionTest {
     }
 
     @Test
+    void quotedDescriptionBeforeEqualsIsExtracted() {
+        AliasDefinition def = AliasDefinition.parse("<name:word> \"Wave at someone\" = /me waves at $name$");
+        assertEquals(1, def.params().size());
+        assertEquals("Wave at someone", def.description());
+        assertEquals("/me waves at $name$", def.body());
+    }
+
+    @Test
+    void explicitSeparatorWithoutDescription() {
+        AliasDefinition def = AliasDefinition.parse("<n:int> = /say $n$");
+        assertEquals("", def.description());
+        assertEquals("/say $n$", def.body());
+    }
+
+    @Test
+    void quoteAfterSeparatorStaysBody() {
+        // the quote comes AFTER '=', so it's the body, not a description
+        AliasDefinition def = AliasDefinition.parse("= \"Server up\"");
+        assertEquals("", def.description());
+        assertEquals("\"Server up\"", def.body());
+    }
+
+    @Test
+    void equalsInsideBodyIsNotASeparator() {
+        AliasDefinition def = AliasDefinition.parse("/scoreboard players set @s obj a=b");
+        assertEquals("", def.description());
+        assertEquals("/scoreboard players set @s obj a=b", def.body());
+    }
+
+    @Test
     void stringIsNotGreedySoItCanBeFollowed() {
         AliasDefinition def = AliasDefinition.parse("<target> <count:int> /say $target$ $count$");
         assertEquals(2, def.params().size());

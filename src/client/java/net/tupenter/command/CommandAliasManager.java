@@ -112,10 +112,15 @@ public final class CommandAliasManager {
     public static String formatDefinition(String name, String command) {
         try {
             AliasDefinition parsed = AliasDefinition.parse(toSingleLine(command).trim());
+            StringBuilder signature = new StringBuilder(name);
             String declarations = parsed.declarationPrefix().trim();
             if (!declarations.isEmpty()) {
-                return name + " " + declarations + " = " + parsed.body();
+                signature.append(' ').append(declarations);
             }
+            if (!parsed.description().isEmpty()) {
+                signature.append(' ').append(parsed.descriptionSuffix());
+            }
+            return signature + " = " + parsed.body();
         } catch (IllegalArgumentException ignored) {
             // unparseable — store as typed; the plain form at least round-trips
         }
@@ -131,12 +136,11 @@ public final class CommandAliasManager {
         for (String definition : TupenterConfig.INSTANCE.aliases) {
             ParsedAlias parsed = parseDefinition(definition);
             if (parsed != null && parsed.name().equals(name)) {
-                Split split = split(definition);
-                // declarations + body, whichever side of the = they were on —
-                // this is what /customcommand update <name> ... prefills with
-                return split.declarations().isEmpty()
-                        ? split.body()
-                        : split.declarations() + " " + split.body();
+                // everything after the name: <decls> "desc" = body — what
+                // /customcommand update <name> ... prefills with (description kept)
+                String single = toSingleLine(definition).trim();
+                int space = firstSpace(single);
+                return space < 0 ? "" : single.substring(space + 1).trim();
             }
         }
         return null;
@@ -147,53 +151,34 @@ public final class CommandAliasManager {
         return text.replaceAll("\\s*[\\r\\n]+\\s*", " ");
     }
 
-    /** A stored definition cut at its signature separator (see {@link AliasDefinition#signatureSeparator}). */
-    private record Split(String rawName, String declarations, String body) {
-    }
-
-    /**
-     * Splits a stored definition around the first {@code =} outside
-     * declarations and markers: {@code name <params> = body}. Declarations
-     * that lead the body instead also work, because AliasDefinition.parse
-     * strips them there (that's the /customcommand add syntax).
-     */
-    private static Split split(String definition) {
-        String single = toSingleLine(definition);
-        int separator = AliasDefinition.signatureSeparator(single);
-        if (separator < 0) {
-            return null;
-        }
-        String signature = single.substring(0, separator).trim();
-        String body = single.substring(separator + 1).trim();
-
-        int space = -1;
-        for (int i = 0; i < signature.length(); i++) {
-            if (Character.isWhitespace(signature.charAt(i))) {
-                space = i;
-                break;
+    private static int firstSpace(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            if (Character.isWhitespace(text.charAt(i))) {
+                return i;
             }
         }
-        String rawName = space >= 0 ? signature.substring(0, space) : signature;
-        String declarations = space >= 0 ? signature.substring(space).trim() : "";
-        return new Split(rawName, declarations, body);
+        return -1;
     }
 
     public static ParsedAlias parseDefinition(String definition) {
         if (definition == null) {
             return null;
         }
-        Split split = split(definition);
-        if (split == null || split.rawName().isEmpty() || split.body().isEmpty()) {
+        String single = toSingleLine(definition).trim();
+        int space = firstSpace(single);
+        if (space < 0) {
+            return null; // just a name, no body
+        }
+        String rawName = single.substring(0, space);
+        String rest = single.substring(space + 1).trim();
+        if (rest.isEmpty()) {
             return null;
         }
-        String rawCommand = split.declarations().isEmpty()
-                ? split.body()
-                : split.declarations() + " " + split.body();
 
         try {
-            String name = normalizeName(split.rawName());
+            String name = normalizeName(rawName);
             validateName(name);
-            return new ParsedAlias(name, AliasDefinition.parse(rawCommand));
+            return new ParsedAlias(name, AliasDefinition.parse(rest)); // parse handles <decls> "desc" = body
         } catch (IllegalArgumentException ex) {
             return null;
         }

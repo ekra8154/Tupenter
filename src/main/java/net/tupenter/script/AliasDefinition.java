@@ -13,10 +13,15 @@ import java.util.Locale;
  * Params bind as script-scope variables during expansion: by name
  * ({@code $target$}) and by position ({@code $1$}..{@code $n$}).
  */
-public record AliasDefinition(String body, List<Param> params) {
+public record AliasDefinition(String body, List<Param> params, String description) {
 
     public static AliasDefinition bodyOnly(String body) {
-        return new AliasDefinition(body, List.of());
+        return new AliasDefinition(body, List.of(), "");
+    }
+
+    /** The signature's description re-quoted for storage ("" when there is none). */
+    public String descriptionSuffix() {
+        return description.isEmpty() ? "" : "\"" + description.replace("\"", "\\\"") + "\"";
     }
 
     /** {@code defaultValue} != null makes the param optional; the text may hold $...$ expressions. */
@@ -155,10 +160,41 @@ public record AliasDefinition(String body, List<Param> params) {
             rest = rest.substring(close + 1).trim();
         }
 
+        // Optional description + explicit "= body" separator. A description is a
+        // quoted string RIGHT BEFORE the '=' — that positional rule keeps it
+        // distinct from a body that merely contains '=' (/say a=b) or starts
+        // with a quote (announce "Server up"), both of which stay bodies.
+        String description = "";
+        if (rest.startsWith("\"")) {
+            int endQuote = closingQuote(rest);
+            if (endQuote > 0) {
+                String afterQuote = rest.substring(endQuote + 1).trim();
+                if (afterQuote.startsWith("=")) {
+                    description = rest.substring(1, endQuote).replace("\\\"", "\"");
+                    rest = afterQuote.substring(1).trim();
+                }
+            }
+        } else if (rest.startsWith("=")) {
+            rest = rest.substring(1).trim(); // signature = body, no description
+        }
+
         if (rest.isEmpty()) {
             throw new IllegalArgumentException("Custom command body cannot be empty");
         }
-        return new AliasDefinition(rest, List.copyOf(params));
+        return new AliasDefinition(rest, List.copyOf(params), description);
+    }
+
+    /** Index of the closing quote of a string that starts at index 0, honoring \" escapes; -1 if unterminated. */
+    private static int closingQuote(String text) {
+        for (int i = 1; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '"') {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**

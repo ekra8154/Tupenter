@@ -37,6 +37,7 @@ import net.minecraft.commands.arguments.item.ItemArgument;
 import net.minecraft.commands.arguments.item.ItemPredicateArgument;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.tupenter.TupenterMod;
+import net.tupenter.TupenterModClient;
 import net.tupenter.script.AliasDefinition;
 
 import java.lang.reflect.Field;
@@ -67,10 +68,11 @@ public final class ClientCommandRegistrar {
         }
 
         Command<FabricClientCommandSource> terminal = context -> sendAliasCommand(name, collectArgs(context, definition));
-        if (allOptionalFrom(definition, 0)) {
-            node.executes(terminal);
-        }
-        for (ArgumentBuilder<FabricClientCommandSource, ?> branch : paramBranches(definition, buildContext, 0, terminal)) {
+        // running with too few required args shows the description + signature
+        // instead of Brigadier's terse "incorrect argument"
+        Command<FabricClientCommandSource> usage = context -> TupenterModClient.showAliasUsage(name, definition, context.getSource());
+        node.executes(allOptionalFrom(definition, 0) ? terminal : usage);
+        for (ArgumentBuilder<FabricClientCommandSource, ?> branch : paramBranches(definition, buildContext, 0, terminal, usage)) {
             node.then(branch);
         }
         return node;
@@ -83,7 +85,7 @@ public final class ClientCommandRegistrar {
      * all optional can execute.
      */
     private static <S extends SharedSuggestionProvider> java.util.List<ArgumentBuilder<S, ?>> paramBranches(
-            AliasDefinition definition, CommandBuildContext buildContext, int index, Command<S> terminal) {
+            AliasDefinition definition, CommandBuildContext buildContext, int index, Command<S> terminal, Command<S> usage) {
         java.util.List<ArgumentBuilder<S, ?>> branches = new java.util.ArrayList<>();
         if (index >= definition.params().size()) {
             return branches;
@@ -97,13 +99,15 @@ public final class ClientCommandRegistrar {
         }
         if (terminal != null && allOptionalFrom(definition, index + 1)) {
             arg.executes(terminal);
+        } else if (usage != null) {
+            arg.executes(usage); // more required args pending — show usage if stopped here
         }
-        for (ArgumentBuilder<S, ?> tail : paramBranches(definition, buildContext, index + 1, terminal)) {
+        for (ArgumentBuilder<S, ?> tail : paramBranches(definition, buildContext, index + 1, terminal, usage)) {
             arg.then(tail);
         }
         branches.add(arg);
         if (param.optional()) {
-            branches.addAll(paramBranches(definition, buildContext, index + 1, terminal));
+            branches.addAll(paramBranches(definition, buildContext, index + 1, terminal, usage));
         }
         return branches;
     }
@@ -258,7 +262,7 @@ public final class ClientCommandRegistrar {
         }
 
         for (ArgumentBuilder<ClientSuggestionProvider, ?> branch
-                : ClientCommandRegistrar.<ClientSuggestionProvider>paramBranches(definition, buildContext, 0, null)) {
+                : ClientCommandRegistrar.<ClientSuggestionProvider>paramBranches(definition, buildContext, 0, null, null)) {
             node.then(branch);
         }
         return node;

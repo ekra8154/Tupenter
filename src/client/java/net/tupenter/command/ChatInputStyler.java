@@ -479,7 +479,7 @@ public final class ChatInputStyler {
         return styles;
     }
 
-    /** name white · <declarations> green · = gold (never bold — width-safe). */
+    /** name white · <declarations> green · "description" gray · = gold (never bold — width-safe). */
     private static void styleSignature(String flat, Style[] styles, int separator) {
         int nameEnd = 0;
         while (nameEnd < separator && !Character.isWhitespace(flat.charAt(nameEnd)) && flat.charAt(nameEnd) != '<') {
@@ -487,15 +487,23 @@ public final class ChatInputStyler {
         }
         fill(styles, 0, nameEnd, Style.EMPTY.withColor(ChatFormatting.WHITE));
         boolean marker = false;
+        boolean quoted = false;
         for (int i = nameEnd; i < separator; i++) {
             char c = flat.charAt(i);
             if (c == '\\') {
                 i++;
             } else if (c == '$') {
                 marker = !marker;
-            } else if (!marker && (c == '<' || c == '>')) {
+            } else if (marker) {
+                // marker content (a default-value expression) — overlaid aqua later
+            } else if (c == '"') {
+                quoted = !quoted;
+                styles[i] = COMMAND_LITERAL; // the description quotes
+            } else if (quoted) {
+                styles[i] = COMMAND_LITERAL; // description text, muted
+            } else if (c == '<' || c == '>') {
                 styles[i] = SEPARATOR;
-            } else if (!marker && c != ' ') {
+            } else if (c != ' ') {
                 styles[i] = Style.EMPTY.withColor(ChatFormatting.GREEN);
             }
         }
