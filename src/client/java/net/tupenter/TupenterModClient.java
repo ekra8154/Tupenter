@@ -1521,7 +1521,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Booleans:§r true / false · comparisons: == != < <= > >=",
                     "§7Combine:§r && (and) · \\|\\| (or) · ! (not): $client.on_ground && client.light < 8$",
                     "§7Ternary:§r condition ? then : else — $client.health < 5 ? \"help!\" : \"fine\"$ · nests freely",
-                    "§7#if uses these:§r #if ($client.y$ > 60) (/say high) #elseif (...) (...) #else (...)",
+                    "§7#if / #while use these:§r #if (client.y > 60) (/say high) #elseif (...) (...) #else (...) · #while (client.health < 20) (/effect give @s regeneration 1 1 && #wait 3s)",
                     "§7Gotcha:§r a bare boolean can't be substituted into a command — route it through a ternary to pick real text",
             };
             case "random" -> new String[]{
@@ -1548,7 +1548,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7block(x, y, z)§r or block(\"x y z\") — the block id at a position: $block(0, 64, 0)$ → minecraft:stone",
                     "§7No round trip:§r reads come from YOUR client's synced world copy, so #if handles them instantly — this is /execute if block folded into the expression world, with a real #else.",
                     "§7Crosshair:§r $client.target_hit$ = \"block\"/\"entity\"/\"miss\" · $client.target_block$ = \"x y z\" (errors on a miss — gate with target_hit) · $client.target_entity$ = the entity id",
-                    "§7Pattern:§r #if ($client.target_hit$ == \"block\" && block(client.target_block) == \"minecraft:diamond_ore\"$) (/echo &bfound it)",
+                    "§7Pattern:§r #if (client.target_hit == \"block\" && block(client.target_block) == \"minecraft:diamond_ore\") (/echo &bfound it) — a condition is already an expression, so $ $ around names is optional",
                     "§7Limits:§r loaded chunks only (unloaded = loud error, never a guess) · states/NBT not included, just the id",
                     "§7Registry sets§r (blockset/itemset/effectset) are under: /tupenter help expressions lists",
             };
