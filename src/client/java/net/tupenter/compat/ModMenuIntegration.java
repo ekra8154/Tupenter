@@ -10,7 +10,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
-import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.tupenter.TupenterModClient;
@@ -147,19 +146,16 @@ public class ModMenuIntegration implements ModMenuApi {
                 .build();
 
         // --- Preset Commands (Macros) subfolder ---
+        // Imports straight into the box (no screen reload) — so there's nothing
+        // to discard and no confirm needed; nothing persists until Done anyway.
         AbstractConfigListEntry<?> importButtonEntry = new ImportButtonEntry(
                 Component.translatable("text.tupenter.import_history"),
                 Component.translatable("tooltip.tupenter.import_history"),
-                () -> Minecraft.getInstance().setScreen(new ConfirmScreen(
-                        confirmed -> {
-                            if (confirmed) {
-                                TupenterConfig.INSTANCE.permanentMessages = new ArrayList<>(TupenterModClient.messageHistory);
-                            }
-                            Minecraft.getInstance().setScreen(createScreen(cachedParent));
-                        },
-                        Component.translatable("title.tupenter.import_confirm"),
-                        Component.translatable("message.tupenter.import_confirm")
-                ))
+                () -> {
+                    if (presetBox != null) {
+                        presetBox.importText(joinPresets(TupenterModClient.messageHistory));
+                    }
+                }
         );
 
         // One tall editor for the whole preset macro — one command per line,
@@ -766,6 +762,14 @@ public class ModMenuIntegration implements ModMenuApi {
 
         String text() {
             return box != null ? box.getValue() : value;
+        }
+
+        /** Replace the editor contents in place (used by Import from History). */
+        void importText(String text) {
+            this.value = text;
+            if (box != null) {
+                box.setValue(text);
+            }
         }
 
         void blurBox() {

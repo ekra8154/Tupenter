@@ -94,7 +94,7 @@
   "subcategory.tupenter.preset_commands": "Preset Commands (Macros)",
   "text.tupenter.preset_hint": "§7One command per line — all fire together when you resend (with 'What to Resend' = Preset Messages). Blank lines are ignored. Note: unlike the Scripts tab, here a newline SEPARATES commands.",
   "text.tupenter.import_history": "Import from History",
-  "tooltip.tupenter.import_history": "Copies your current session history into the preset messages list. WARNING: This will reload the screen and discard other unsaved changes!",
+  "tooltip.tupenter.import_history": "Fills the preset box with your current session history (one command per line), replacing what's in the box. Nothing is saved until you click Done.",
 
   "option.tupenter.permanent_messages": "Preset Messages List",
   "tooltip.tupenter.permanent_messages": "The list of messages or commands Tupenter will send when 'What to Resend' is set to Preset Messages.",
@@ -131,8 +131,6 @@
   "tooltip.tupenter.delete_command": "Delete this custom command (takes effect immediately).",
   "tooltip.tupenter.wrap_toggle": "Toggle a larger editor with word wrap and chat-style syntax colors (unmatched parens and unclosed $...$ glow red). Newlines format long entries — they're saved, survive collapsing, and still run as a single line. Enter auto-indents, Tab inserts spaces, and pasting multi-line text into the collapsed view auto-expands. Editing the collapsed single-line view replaces the formatted version.",
 
-  "title.tupenter.import_confirm": "Import History?",
-  "message.tupenter.import_confirm": "This will reload the screen and discard any other unsaved changes. Are you sure?",
 
   "tupenter.toggle.prefix": "Tupenter: ",
   "tupenter.toggle.on": "On",
