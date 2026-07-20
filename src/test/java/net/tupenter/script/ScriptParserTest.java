@@ -1039,9 +1039,17 @@ class ScriptParserTest {
 
     @Test
     void unknownDirectiveIsAnError() {
-        ScriptParser.ParseResult result = parse("#while (1 > 0) (/say hi)");
+        ScriptParser.ParseResult result = parse("#bogus (/say hi)");
         assertNotNull(result.error());
         assertTrue(result.error().contains("Unknown directive"));
+    }
+
+    @Test
+    void whileNeedsLazyExecution() {
+        // the eager test harness can't run a cross-tick loop
+        ScriptParser.ParseResult result = parse("#while (1 > 0) (/say hi)");
+        assertNotNull(result.error());
+        assertTrue(result.error().contains("Lazy Execution"));
     }
 
     @Test

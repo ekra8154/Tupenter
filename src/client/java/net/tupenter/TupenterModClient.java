@@ -1598,11 +1598,12 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7For:§r #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~) — inclusive, counts down automatically",
                     "§7Foreach:§r #foreach $m$ in (zombie | skeleton) (/summon $m$) — or in range(1, 10)",
                     "§7If:§r #if ($client.y$ > 60) (/say high) #elseif ($client.y$ > 30) (/say mid) #else (/say low)",
+                    "§7While:§r #while ($client.health$ < 20) (/effect give @s regeneration 1 1 && #wait 3s) — re-checks each iteration, stops when false. Runs across ticks; needs Lazy Execution. $i$ counts iterations.",
                     "§7Wait:§r #wait 10t / 1.5s / 2m / 3d (ticks/seconds/minutes/days) — pause the script mid-line without freezing anything else. Scripts run LAZILY: $...$ evaluates when its statement runs, so /attribute ... && #wait 2t && /tp @s $client.target_block$ reads the target AFTER the boost landed. Works in chains, groups, loops, and custom command bodies. Max 72000t.",
                     "§7Wait clock:§r default is §7gametime§r — WORLD ticks, so it speeds up under /tick sprint, halts under /tick freeze, and pauses when the world is paused (but /time set|add doesn't move it — that's only the day-time). Add §7realtime§r for wall-clock instead: #wait 5m realtime fires after 5 real minutes no matter the TPS.",
                     "§7Overlap:§r re-running the same line restarts it (resend = restart, not stack) · different lines run concurrently · /tupenter abort stops all",
                     "§7Groups (...) nest and can hold chains. Parens elsewhere are literal text.",
-                    "§7Caps:§r loops ≤ Max Loop Iterations · scripts ≤ Max Commands Per Script · sends spread over ticks past Max Commands Per Tick",
+                    "§7Loops that DO something run free:§r a loop that sends or #waits each iteration paces itself over ticks (Max Commands Per Tick), so a big /randomfill or a #while poll runs however long it needs — /tupenter running shows it, /tupenter abort stops it. Max Loop Iterations only caps a loop that spins WITHOUT sending or waiting (the runaway guard). (Eager mode, Lazy Execution off, keeps the old hard cap.)",
             };
             case "prefixes" -> new String[]{
                     "§bLine prefixes & local output:",
@@ -1630,7 +1631,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§bTupenter help — pick a topic:",
                     "§7/tupenter help expressions [topic]§r — the $...$ language: math, text, logic, random, lists, world",
                     "§7/tupenter help variables§r — #set, #local, client.*/world.*/nbt paths, groups",
-                    "§7/tupenter help flow§r — && chains, #repeat, #for, #foreach, #if/#elseif",
+                    "§7/tupenter help flow§r — && chains, #repeat, #for, #foreach, #if/#elseif, #while",
                     "§7/tupenter help prefixes§r — #silent, #norecord, #stage, /echo",
                     "§7/tupenter help scripts§r — the every-tick Scripts tab",
                     "§7/tupenter help command [name]§r — the mod's commands, with per-command detail pages",

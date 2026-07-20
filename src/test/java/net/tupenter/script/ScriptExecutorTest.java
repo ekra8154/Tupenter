@@ -385,6 +385,58 @@ class ScriptExecutorTest {
     }
 
     @Test
+    void lazyYieldingLoopRunsPastTheIterationCap() {
+        // maxLoopIterations = 100, but a loop that SENDS each iteration paces
+        // itself across ticks and isn't bounded by that cap
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        ScriptParser.ParseResult result = ScriptParser.parse("#repeat 150 (/say $i$)", lazyOptions(new SessionVariableStore()));
+        assertTrue(result.script().isLazy());
+        executor.submit(result.script());
+        for (int i = 0; i < 40 && !executor.isIdle(); i++) {
+            executor.tick();
+        }
+        assertTrue(executor.isIdle(), "loop finished");
+        assertEquals(150, sender.sent.size(), "all 150 iterations ran despite the 100 cap");
+        assertTrue(sender.errors.isEmpty());
+    }
+
+    @Test
+    void lazyWhileLoopsUntilConditionFalse() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("n", Value.ofNumber(3));
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "#while ($n$ > 0) (/say $n$ && #set $n$ = $n$ - 1)", lazyOptions(store));
+        executor.submit(result.script());
+        for (int i = 0; i < 20 && !executor.isIdle(); i++) {
+            executor.tick();
+        }
+        assertEquals(List.of("/say 3", "/say 2", "/say 1"), sender.sent);
+        assertTrue(executor.isIdle());
+    }
+
+    @Test
+    void lazyNonYieldingLoopTripsTheGuard() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        // a while-true whose body neither sends nor waits would spin — the guard stops it
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "#while (1 > 0) (#local $x$ = 1)", lazyOptions(new SessionVariableStore()));
+        executor.submit(result.script());
+        for (int i = 0; i < 5 && !executor.isIdle(); i++) {
+            executor.tick();
+        }
+        assertEquals(1, sender.errors.size(), "runaway guard aborted it");
+        assertTrue(sender.errors.get(0).contains("without sending or waiting"), sender.errors.toString());
+        assertTrue(executor.isIdle());
+    }
+
+    @Test
     void trivialLinesStayEagerEvenWithLazyEnabled() {
         ScriptParser.ParseResult result = ScriptParser.parse("say hello", lazyOptions(new SessionVariableStore()));
         assertFalse(result.changed(), "a plain single command passes through untouched");

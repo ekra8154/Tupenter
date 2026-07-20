@@ -57,7 +57,7 @@ public final class ScriptParser {
     /** Longest single #wait; loops are bounded separately by the iteration cap. */
     public static final int MAX_WAIT_TICKS = 72000; // one real-time hour
     /** Directives handled by the statement scanner (own a (...) group). */
-    private static final Set<String> SCANNER_DIRECTIVES = Set.of("#repeat", "#if", "#foreach", "#for", "#silent");
+    private static final Set<String> SCANNER_DIRECTIVES = Set.of("#repeat", "#if", "#while", "#foreach", "#for", "#silent");
     private static final Set<String> STATEMENT_DIRECTIVES = Set.of(SET, LOCAL, WAIT);
     private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
             "rand", "randf", "pick", "int", "float", "range", "true", "false",
@@ -647,7 +647,10 @@ public final class ScriptParser {
         }
 
         /** Every statement leaves the walker through here: sink when lazy, list when eager. */
+        private long emitCount; // statements handed off so far — a proxy for "did the loop yield"
+
         private void emit(Script.SendStatement statement) {
+            emitCount++;
             if (sink != null) {
                 sink.accept(statement);
             } else {
@@ -1188,6 +1191,7 @@ public final class ScriptParser {
             switch (directive.word()) {
                 case "#repeat" -> processRepeat(directive);
                 case "#if" -> processIf(directive);
+                case "#while" -> processWhile(directive);
                 case "#for" -> processFor(directive);
                 case "#foreach" -> processForeach(directive);
                 case "#silent" -> processSilentGroup(directive);
@@ -1220,10 +1224,41 @@ public final class ScriptParser {
             if (count < 0) {
                 throw new ParseAbort("#repeat count can't be negative (got " + count + ")");
             }
-            checkIterations(count, "#repeat");
-
+            if (sink == null) {
+                checkIterations(count, "#repeat"); // eager can't self-pace — bound it up front
+            }
+            LoopGuard guard = new LoopGuard("#repeat");
             for (long i = 1; i <= count; i++) {
                 runScoped(Map.of("i", Value.ofNumber(i)), directive.group());
+                guard.step();
+            }
+        }
+
+        /**
+         * #while (condition) (body) — re-checks the condition each iteration and
+         * runs while it's true. Only in the lazy path (it spans ticks); a body
+         * that sends or waits each iteration paces itself and may run
+         * indefinitely, while the LoopGuard stops a body that never yields.
+         */
+        private void processWhile(DirectiveStmt directive) {
+            requireLoops("#while");
+            if (sink == null) {
+                throw new ParseAbort("#while needs Lazy Execution enabled (Scripting tab) — it runs across ticks.");
+            }
+            if (directive.header().isEmpty()) {
+                throw new ParseAbort("#while needs a (condition), e.g. #while ($client.health$ < 20) (/effect give @s regeneration 1 1 && #wait 3s)");
+            }
+            LoopGuard guard = new LoopGuard("#while");
+            for (long i = 1; ; i++) {
+                Value condition = evalExpression(directive.header(), "#while condition");
+                if (!(condition instanceof Value.BoolValue bool)) {
+                    throw new ParseAbort("#while condition must be true/false, e.g. #while ($client.y$ < 100) (...)");
+                }
+                if (!bool.value()) {
+                    return;
+                }
+                runScoped(Map.of("i", Value.ofNumber(i)), directive.group());
+                guard.step();
             }
         }
 
@@ -1262,12 +1297,15 @@ public final class ScriptParser {
             }
 
             long iterations = b.subtract(a).divide(step).longValue() + 1;
-            checkIterations(iterations, "#for");
-
+            if (sink == null) {
+                checkIterations(iterations, "#for");
+            }
+            LoopGuard guard = new LoopGuard("#for");
             BigInteger current = a;
             while (step.signum() > 0 ? current.compareTo(b) <= 0 : current.compareTo(b) >= 0) {
                 runScoped(Map.of(header.var(), new Value.NumberValue(Rational.of(current))), directive.group());
                 current = current.add(step);
+                guard.step();
             }
         }
 
@@ -1289,9 +1327,13 @@ public final class ScriptParser {
                 items = list.values();
             }
 
-            checkIterations(items.size(), "#foreach");
+            if (sink == null) {
+                checkIterations(items.size(), "#foreach");
+            }
+            LoopGuard guard = new LoopGuard("#foreach");
             for (Value item : items) {
                 runScoped(Map.of(header.var(), item), directive.group());
+                guard.step();
             }
         }
 
@@ -1308,6 +1350,35 @@ public final class ScriptParser {
             if (count > options.maxLoopIterations()) {
                 throw new ParseAbort(word + " would run " + count + " times — the loop limit is "
                         + options.maxLoopIterations() + " (Max Loop Iterations in the config)");
+            }
+        }
+
+        /**
+         * Runaway guard for a lazy loop: a loop paces itself across ticks as
+         * long as it yields — every command, chat, or #wait hands control back
+         * to the executor. So the only hazard is a stretch of iterations that
+         * emit nothing (they'd spin the coroutine), which we cap at
+         * maxLoopIterations consecutive. Yielding loops (e.g. /randomfill's
+         * setblocks, a #while poll) run unbounded, spread across ticks.
+         */
+        private final class LoopGuard {
+            private final String word;
+            private long lastEmit = emitCount;
+            private long stalled;
+
+            LoopGuard(String word) {
+                this.word = word;
+            }
+
+            void step() {
+                if (emitCount != lastEmit) {
+                    lastEmit = emitCount;
+                    stalled = 0;
+                } else if (++stalled > options.maxLoopIterations()) {
+                    throw new ParseAbort(word + " ran " + stalled + " iterations without sending or waiting"
+                            + " — add a #wait (or a command) so it can spread across ticks, or shrink the loop."
+                            + " (Runaway guard = Max Loop Iterations in the config.)");
+                }
             }
         }
 
@@ -1499,6 +1570,7 @@ public final class ScriptParser {
             case "#repeat" -> "#repeat 5 (/say hi)";
             case "#for" -> "#for $x$ in 1..10 (/summon zombie ~$x$ ~ ~)";
             case "#foreach" -> "#foreach $mob$ in (zombie | skeleton) (/summon $mob$)";
+            case "#while" -> "#while ($client.health$ < 20) (/effect give @s regeneration 1 1 && #wait 3s)";
             default -> word + " (...)";
         };
     }

@@ -53,7 +53,7 @@ public final class ChatInputStyler {
 
     /** Directives that START a statement — seeing one mid-statement means a missing && (#else/#elseif legitimately continue). */
     private static final java.util.Set<String> STATEMENT_STARTERS = java.util.Set.of(
-            "#set", "#local", "#wait", "#repeat", "#if", "#for", "#foreach",
+            "#set", "#local", "#wait", "#repeat", "#if", "#while", "#for", "#foreach",
             "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
             "#s", "#nr", "#r", "#st", "#ust", "#c");
 
@@ -69,13 +69,13 @@ public final class ChatInputStyler {
 
     /** Everything tab-completion should offer for a '#' word. */
     private static final List<String> DIRECTIVE_WORDS = List.of(
-            "#set", "#local", "#wait", "#repeat", "#if", "#elseif", "#else", "#for", "#foreach",
+            "#set", "#local", "#wait", "#repeat", "#if", "#elseif", "#else", "#while", "#for", "#foreach",
             "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
             "#s", "#nr", "#r", "#st", "#ust", "#c");
 
     /** Directives whose header carries an EXPRESSION (condition/iterable) — an implicit $...$ zone for styling and completion. */
     private static final java.util.Set<String> HEADER_EXPR_DIRECTIVES = java.util.Set.of(
-            "#repeat", "#if", "#elseif", "#for", "#foreach");
+            "#repeat", "#if", "#elseif", "#while", "#for", "#foreach");
 
     public enum Kind {
         COMMAND,
