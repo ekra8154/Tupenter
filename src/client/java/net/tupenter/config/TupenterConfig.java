@@ -125,6 +125,7 @@ public class TupenterConfig {
 
     /** A tick script that exists only in one world. */
     public static class WorldScript {
+        public String id = "";
         public String text = "";
         public boolean enabled = false;
 
@@ -134,6 +135,16 @@ public class TupenterConfig {
         public WorldScript(String text, boolean enabled) {
             this.text = text;
             this.enabled = enabled;
+        }
+
+        public WorldScript(String id, String text, boolean enabled) {
+            this.id = id;
+            this.text = text;
+            this.enabled = enabled;
+        }
+
+        public static String newId() {
+            return java.util.UUID.randomUUID().toString().substring(0, 8);
         }
     }
 
@@ -147,23 +158,68 @@ public class TupenterConfig {
     }
 
     /** The script lines armed for this world: enabled globals + the world's own enabled scripts. */
-    public List<String> armedScriptLines(String worldKey) {
-        List<String> lines = new ArrayList<>();
+    /** An armed tick script for a world, carrying a stable identity for pid mapping. */
+    public record ArmedScript(boolean global, String id, String text) {
+        /** Kind+id key; scope it by world (worldKey + "|" + key()) for a session pid. */
+        public String key() {
+            return (global ? "g:" : "w:") + id;
+        }
+    }
+
+    /** Enabled tick scripts for a world (globals armed here + world scripts), in display order. */
+    public List<ArmedScript> armedScripts(String worldKey) {
+        List<ArmedScript> out = new ArrayList<>();
         WorldScriptState state = worldState(worldKey);
         if (state == null) {
-            return lines;
+            return out;
         }
         for (GlobalScript script : globalScripts) {
             if (state.enabledGlobalIds.contains(script.id)) {
-                lines.add(script.text);
+                out.add(new ArmedScript(true, script.id, script.text));
             }
         }
         for (WorldScript script : state.scripts) {
             if (script.enabled) {
-                lines.add(script.text);
+                out.add(new ArmedScript(false, script.id, script.text));
             }
         }
+        return out;
+    }
+
+    public List<String> armedScriptLines(String worldKey) {
+        List<String> lines = new ArrayList<>();
+        for (ArmedScript script : armedScripts(worldKey)) {
+            lines.add(script.text());
+        }
         return lines;
+    }
+
+    /**
+     * Switches an armed tick script OFF for this world — a global drops out of
+     * this world's enabled set, a world script gets {@code enabled = false}.
+     *
+     * @return the script's text if one was found and switched off, else null
+     */
+    public String disableArmedScript(String worldKey, boolean global, String id) {
+        WorldScriptState state = worldState(worldKey);
+        if (state == null) {
+            return null;
+        }
+        if (global) {
+            for (GlobalScript script : globalScripts) {
+                if (script.id.equals(id) && state.enabledGlobalIds.remove(id)) {
+                    return script.text;
+                }
+            }
+        } else {
+            for (WorldScript script : state.scripts) {
+                if (script.id.equals(id) && script.enabled) {
+                    script.enabled = false;
+                    return script.text;
+                }
+            }
+        }
+        return null;
     }
 
     /** Drops enable pointers to deleted globals and empty world states. */
@@ -273,6 +329,11 @@ public class TupenterConfig {
                 state.scripts = new ArrayList<>();
             }
             state.scripts.removeIf(script -> script == null || script.text == null || script.text.trim().isEmpty());
+            for (WorldScript script : state.scripts) {
+                if (script.id == null || script.id.isEmpty()) {
+                    script.id = WorldScript.newId();
+                }
+            }
         }
     }
 

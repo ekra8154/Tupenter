@@ -378,7 +378,7 @@ public class ModMenuIntegration implements ModMenuApi {
         } else {
             if (worldState != null) {
                 for (TupenterConfig.WorldScript script : worldState.scripts) {
-                    WorldScriptEntry row = new WorldScriptEntry(script.text, script.enabled);
+                    WorldScriptEntry row = new WorldScriptEntry(script.id, script.text, script.enabled);
                     worldScriptRows.add(row);
                     worldEntries.add(row);
                 }
@@ -389,7 +389,7 @@ public class ModMenuIntegration implements ModMenuApi {
                     () -> {
                         commitScriptEdits();
                         TupenterConfig.INSTANCE.worldStateOrCreate(scriptsWorldKey).scripts
-                                .add(new TupenterConfig.WorldScript("/echo new script", false));
+                                .add(new TupenterConfig.WorldScript(TupenterConfig.WorldScript.newId(), "/echo new script", false));
                         reopenScreen(TAB_SCRIPTS);
                     }
             ));
@@ -492,7 +492,8 @@ public class ModMenuIntegration implements ModMenuApi {
         List<TupenterConfig.WorldScript> worldScripts = new ArrayList<>();
         for (WorldScriptEntry row : worldScriptRows) {
             if (!row.deleted && !row.text().isEmpty()) {
-                worldScripts.add(new TupenterConfig.WorldScript(row.text(), row.enabled));
+                String id = row.id == null || row.id.isEmpty() ? TupenterConfig.WorldScript.newId() : row.id;
+                worldScripts.add(new TupenterConfig.WorldScript(id, row.text(), row.enabled));
             }
         }
         state.scripts = worldScripts;
@@ -975,8 +976,11 @@ public class ModMenuIntegration implements ModMenuApi {
 
     /** A script that exists only in the world the screen was opened in. */
     private static class WorldScriptEntry extends ScriptRowEntry {
-        WorldScriptEntry(String text, boolean enabled) {
+        final String id; // stable identity; "" for a not-yet-saved new row
+
+        WorldScriptEntry(String id, String text, boolean enabled) {
             super(text, enabled, false);
+            this.id = id;
         }
     }
 

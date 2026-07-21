@@ -121,7 +121,11 @@ public final class ScriptExecutor {
                 || (!script.isLazy() && script.statements().size() > limits.maxCommandsPerScript())) {
             return false;
         }
-        running.addLast(new Instance(script, nextId++));
+        // Tick-script instances are ephemeral (a fresh one fires every tick), so
+        // they never take a user-facing id — that would churn the id space by
+        // ~20/sec. Their pid lives in the client's tick-script registry instead;
+        // id 0 keeps them out of runningInfos() and the abort-by-id path.
+        running.addLast(new Instance(script, 0));
         drain(clock);
         return true;
     }
@@ -177,10 +181,13 @@ public final class ScriptExecutor {
         }
     }
 
-    /** One entry per running instance, in run order. */
+    /** One entry per user-facing running instance (ephemeral tick instances excluded), in run order. */
     public java.util.List<RunningInfo> runningInfos() {
         java.util.List<RunningInfo> out = new java.util.ArrayList<>();
         for (Instance instance : running) {
+            if (instance.id == 0) {
+                continue; // ephemeral tick-script instance — represented by its tick pid instead
+            }
             String state;
             if (instance.waitUntilGameTime > clock) {
                 state = "waiting " + (instance.waitUntilGameTime - clock) + "t";
@@ -206,6 +213,34 @@ public final class ScriptExecutor {
             }
         }
         return false;
+    }
+
+    /**
+     * Reserves a unique, small user-facing id. The client uses this to give a
+     * stable session pid to an armed tick script — drawn from the same counter
+     * as instance ids so an {@code /tupenter abort N} number is never ambiguous.
+     */
+    public int reservePid() {
+        return nextId++;
+    }
+
+    /**
+     * Aborts every running instance whose source line matches — including the
+     * ephemeral id-0 tick instances — e.g. when a tick script is switched off.
+     *
+     * @return how many instances were stopped
+     */
+    public int abortSource(String originalLine) {
+        int removed = 0;
+        for (Iterator<Instance> iterator = running.iterator(); iterator.hasNext(); ) {
+            Instance instance = iterator.next();
+            if (instance.script.originalLine().equals(originalLine)) {
+                instance.close();
+                iterator.remove();
+                removed++;
+            }
+        }
+        return removed;
     }
 
     /** True while an instance with this id is still running. */
@@ -250,13 +285,7 @@ public final class ScriptExecutor {
     }
 
     private void cancelSameSource(String originalLine) {
-        for (Iterator<Instance> iterator = running.iterator(); iterator.hasNext(); ) {
-            Instance instance = iterator.next();
-            if (instance.script.originalLine().equals(originalLine)) {
-                instance.close();
-                iterator.remove();
-            }
-        }
+        abortSource(originalLine);
     }
 
     private void drain(long clock) {

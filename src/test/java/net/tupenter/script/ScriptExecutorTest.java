@@ -536,6 +536,39 @@ class ScriptExecutorTest {
     }
 
     @Test
+    void tickInstancesRunButAreNotUserListed() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        executor.trySubmit(parked("villager restock", "a")); // tick-script style submit
+        assertEquals(List.of("/a"), sender.sent);
+        assertEquals(1, executor.runningCount(), "the ephemeral instance is running");
+        assertTrue(executor.runningInfos().isEmpty(), "but id-0 tick instances aren't listed/abortable by id");
+    }
+
+    @Test
+    void reservePidGivesAscendingIdsFromTheSameCounter() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        assertEquals(1, executor.reservePid());
+        assertEquals(2, executor.reservePid());
+        executor.submit(parked("p", "a")); // auto id continues past the reserved ones
+        assertEquals(3, executor.runningInfos().get(0).id());
+    }
+
+    @Test
+    void abortSourceStopsEveryMatchingInstance() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        executor.trySubmit(parked("restock line", "a"));
+        assertEquals(1, executor.abortSource("restock line"));
+        assertTrue(executor.isIdle());
+        assertEquals(0, executor.abortSource("restock line"), "nothing left to stop");
+    }
+
+    @Test
     void abortInterruptsAParkedLazyScript() {
         RecordingSender sender = new RecordingSender();
         ScriptExecutor executor = executor(sender, 16, 1000, 8);

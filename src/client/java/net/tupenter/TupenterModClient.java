@@ -394,15 +394,78 @@ public class TupenterModClient implements ClientModInitializer {
         return 1;
     }
 
-    /** /tupenter abort <id> — stop just one running script by its /tupenter running id; leaves the tick master alone. */
+    /**
+     * /tupenter abort <id> — stop one thing by its /tupenter running id. A
+     * running instance is killed; an armed tick script's pid is switched OFF
+     * (its Mod Menu toggle), not killed-and-rearmed. Leaves the master alone.
+     */
     private static int runAbortOneCommand(CommandContext<FabricClientCommandSource> context) {
         int id = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "id");
-        boolean aborted = SCRIPT_EXECUTOR.abort(id);
-        context.getSource().sendFeedback(Component.literal(aborted
-                ? "Aborted script #" + id + "."
-                : "No running script #" + id + " — see /tupenter running.")
-                .withStyle(aborted ? ChatFormatting.YELLOW : ChatFormatting.GRAY));
+        if (SCRIPT_EXECUTOR.abort(id)) {
+            context.getSource().sendFeedback(Component.literal("Aborted script " + id + ".").withStyle(ChatFormatting.YELLOW));
+            return 1;
+        }
+        String tickResult = switchOffTickPid(id);
+        context.getSource().sendFeedback(Component.literal(tickResult != null
+                ? tickResult
+                : "No running script or tick script " + id + " — see /tupenter running.")
+                .withStyle(tickResult != null ? ChatFormatting.YELLOW : ChatFormatting.GRAY));
         return 1;
+    }
+
+    /**
+     * Session pids for armed tick scripts, keyed by "worldKey|kind:id". Drawn
+     * from the executor's id space (via reservePid) so an abort number is never
+     * ambiguous, and stable per script for the session — even across
+     * enable/disable — because the key is the script's own id.
+     */
+    private static final java.util.Map<String, Integer> TICK_PIDS = new java.util.HashMap<>();
+
+    private static int tickPidFor(String worldKey, TupenterConfig.ArmedScript script) {
+        return TICK_PIDS.computeIfAbsent(worldKey + "|" + script.key(), k -> SCRIPT_EXECUTOR.reservePid());
+    }
+
+    /** A tick-script row for the running views: its pid, source text, and scope. */
+    private record ArmedRow(int pid, String text, boolean global) {}
+
+    /** Armed tick scripts for the current world with their session pids (empty when master off). */
+    private static java.util.List<ArmedRow> armedRows() {
+        TupenterConfig config = TupenterConfig.INSTANCE;
+        String worldKey = currentWorldKey();
+        if (!config.tickScriptsEnabled || worldKey == null) {
+            return java.util.List.of();
+        }
+        java.util.List<ArmedRow> rows = new java.util.ArrayList<>();
+        for (TupenterConfig.ArmedScript script : config.armedScripts(worldKey)) {
+            rows.add(new ArmedRow(tickPidFor(worldKey, script), script.text(), script.global()));
+        }
+        return rows;
+    }
+
+    /** If id is an armed tick script's pid for this world, switch it off. Returns a status line, or null. */
+    private static String switchOffTickPid(int id) {
+        String worldKey = currentWorldKey();
+        if (worldKey == null) {
+            return null;
+        }
+        String prefix = worldKey + "|";
+        for (java.util.Map.Entry<String, Integer> entry : TICK_PIDS.entrySet()) {
+            if (entry.getValue() != id || !entry.getKey().startsWith(prefix)) {
+                continue;
+            }
+            String rest = entry.getKey().substring(prefix.length()); // "g:<id>" or "w:<id>"
+            boolean global = rest.startsWith("g:");
+            String scriptId = rest.substring(2);
+            String text = TupenterConfig.INSTANCE.disableArmedScript(worldKey, global, scriptId);
+            if (text == null) {
+                return null; // pid known but already off — fall through to "no such id"
+            }
+            TupenterConfig.save();
+            int killed = SCRIPT_EXECUTOR.abortSource(text);
+            return "Tick script " + id + " (" + (global ? "global" : "world") + ") switched OFF"
+                    + (killed > 0 ? " — stopped a live run" : "") + ". Re-enable in Mod Menu → Scripts.";
+        }
+        return null;
     }
 
     /** /tupenter running — what's active now: armed tick scripts (every tick) + ad-hoc/parked instances. */
@@ -411,7 +474,7 @@ public class TupenterModClient implements ClientModInitializer {
         TupenterConfig config = TupenterConfig.INSTANCE;
         String key = currentWorldKey();
         java.util.List<String> configured = key != null ? config.armedScriptLines(key) : java.util.List.of();
-        java.util.List<String> armed = config.tickScriptsEnabled ? configured : java.util.List.of();
+        java.util.List<ArmedRow> armed = armedRows();
         java.util.List<ScriptExecutor.RunningInfo> instances = SCRIPT_EXECUTOR.runningInfos();
 
         if (armed.isEmpty() && instances.isEmpty()) {
@@ -423,9 +486,13 @@ public class TupenterModClient implements ClientModInitializer {
         }
         if (!armed.isEmpty()) {
             source.sendFeedback(Component.literal(
-                    "Tick scripts (" + armed.size() + ") — evaluated every tick:").withStyle(ChatFormatting.AQUA));
-            for (String line : armed) {
-                source.sendFeedback(Component.literal(" • " + previewLine(line)).withStyle(ChatFormatting.GRAY));
+                    "Tick scripts (" + armed.size() + ") — every tick; [abort] switches one OFF:").withStyle(ChatFormatting.AQUA));
+            for (ArmedRow row : armed) {
+                MutableComponent line = Component.literal(" • ").withStyle(ChatFormatting.GRAY)
+                        .append(Component.literal("id " + row.pid() + "  " + previewLine(row.text())
+                                + (row.global() ? "  (global)" : "")).withStyle(ChatFormatting.GRAY))
+                        .append(Component.literal(" [abort]").withStyle(abortLinkStyle(row.pid())));
+                source.sendFeedback(line);
             }
         }
         if (!instances.isEmpty()) {
@@ -484,10 +551,11 @@ public class TupenterModClient implements ClientModInitializer {
         // Two independent sources, exactly like /tupenter running:
         //   armed tick scripts (Mod Menu → Scripts) fire every tick and finish
         //   in-tick, so they're rarely a live instance — count them separately.
+        //   Each carries its tick pid so the HUD number matches /tupenter abort.
         TupenterConfig config = TupenterConfig.INSTANCE;
         String key = currentWorldKey();
         java.util.List<String> configured = key != null ? config.armedScriptLines(key) : java.util.List.of();
-        java.util.List<String> armed = config.tickScriptsEnabled ? configured : java.util.List.of();
+        java.util.List<ArmedRow> armed = armedRows();
         java.util.List<ScriptExecutor.RunningInfo> infos = SCRIPT_EXECUTOR.runningInfos();
 
         java.util.List<String> texts = new java.util.ArrayList<>();
@@ -496,8 +564,8 @@ public class TupenterModClient implements ClientModInitializer {
         texts.add("Tupenter — " + armed.size() + " tick · " + infos.size() + " running");
         colors.add(HUD_AQUA);
 
-        for (String line : armed) {
-            texts.add("tick  " + previewLine(line));
+        for (ArmedRow row : armed) {
+            texts.add("id " + row.pid() + "  " + previewLine(row.text()) + (row.global() ? "  (global)" : ""));
             colors.add(HUD_GOLD);
         }
         for (ScriptExecutor.RunningInfo info : infos) {
@@ -1903,8 +1971,8 @@ public class TupenterModClient implements ClientModInitializer {
             };
             case "tupenter" -> new String[]{
                     "§b/tupenter — mod control:",
-                    "§7running§r — list scripts executing right now (parked at #wait, mid-loop, ...) with a clickable [abort] per row; §7running hud§r toggles the same list as an on-screen panel that survives chat spam",
-                    "§7abort§r — stop all running scripts + the resend queue, and disable tick scripts (panic switch)",
+                    "§7running§r — armed tick scripts + running instances, each with an id and a clickable [abort]; §7running hud§r toggles the same list as an on-screen panel that survives chat spam",
+                    "§7abort <id>§r — stop one by its id: a running instance is killed; an armed tick script is switched OFF (its Mod Menu toggle). §7abort§r alone stops everything + disables tick scripts (panic switch)",
                     "§7scripts§r — what's armed in THIS world · §7scripts on|off§r — tick-script master switch",
                     "§7vars [group]§r — variables overview, or one group with live values",
                     "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
