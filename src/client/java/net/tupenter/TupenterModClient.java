@@ -461,9 +461,11 @@ public class TupenterModClient implements ClientModInitializer {
                 return null; // pid known but already off — fall through to "no such id"
             }
             TupenterConfig.save();
-            int killed = SCRIPT_EXECUTOR.abortSource(text);
-            return "Tick script " + id + " (" + (global ? "global" : "world") + ") switched OFF"
-                    + (killed > 0 ? " — stopped a live run" : "") + ". Re-enable in Mod Menu → Scripts.";
+            // TickScriptRunner reconciles next tick: its loop is no longer armed,
+            // so it gets stopped. (No direct abort here — the running instance is
+            // keyed by the newline-collapsed body, which the runner owns.)
+            return "Tick script " + id + " (" + (global ? "global" : "world")
+                    + ") switched OFF. Re-enable in Mod Menu → Scripts.";
         }
         return null;
     }
@@ -1927,12 +1929,13 @@ public class TupenterModClient implements ClientModInitializer {
             };
             case "scripts" -> new String[]{
                     "§bTick scripts (Mod Menu → Tupenter → Scripts):",
-                    "§7One-line scripts that run EVERY TICK (20x/s) while the master toggle is on — a walking mcfunction file.",
+                    "§7Each armed line runs as its own loop — one body pass per tick (20x/s) — while the master toggle is on. A walking mcfunction file.",
                     "§7Guard them:§r #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying) — unguarded commands flood multiplayer chat.",
+                    "§7#wait works inside:§r the loop resumes after it, so #wait paces a script (/effect … && #wait 3s) and $markers$ after a wait re-read live state. #while is allowed too.",
                     "§7Live tuning:§r reference $maxy$ in a script, change it anytime with #set $maxy$ = 80",
                     "§7Arming is PER WORLD:§r Global scripts are shared definitions you arm world-by-world; This World's scripts exist only in the world you're in. A world you never configured runs NOTHING — nukeOnDeath stays off on your survival server.",
-                    "§7Status:§r /tupenter scripts — what's armed right here · /tupenter scripts on|off — master switch",
-                    "§7Errors report once and pause that script until edited · tick scripts never touch resend history and never print #set notices.",
+                    "§7Status:§r /tupenter scripts — what's armed here · /tupenter running — armed loops + their ids · /tupenter abort <id> switches one OFF · /tupenter scripts on|off — master switch",
+                    "§7Errors report once and pause that script until edited (or re-enabled) · tick scripts never touch resend history and never print #set notices.",
                     "§7Panic:§r /tupenter abort — also flips the master toggle off",
             };
             default -> new String[]{

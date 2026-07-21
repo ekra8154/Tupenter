@@ -87,7 +87,7 @@ public final class ScriptExecutor {
      * restarting the running one.
      */
     public void submit(Script script) {
-        if (running.size() >= limits.maxConcurrentScripts()) {
+        if (userInstanceCount() >= limits.maxConcurrentScripts()) {
             sender.error("Too many scripts running (" + limits.maxConcurrentScripts() + "). Use /tupenter abort or wait for them to finish.");
             return;
         }
@@ -116,14 +116,14 @@ public final class ScriptExecutor {
                 return true; // already running — resubmitting would stack it
             }
         }
-        if (running.size() >= limits.maxConcurrentScripts()
-                || (!script.isLazy() && script.statements().size() > limits.maxCommandsPerScript())) {
+        if (!script.isLazy() && script.statements().size() > limits.maxCommandsPerScript()) {
             return false;
         }
-        // Tick-script instances are ephemeral (a fresh one fires every tick), so
-        // they never take a user-facing id — that would churn the id space by
-        // ~20/sec. Their pid lives in the client's tick-script registry instead;
-        // id 0 keeps them out of runningInfos() and the abort-by-id path.
+        // Tick scripts run as ONE persistent lazy #while(true) loop each. They
+        // take id 0 — kept out of runningInfos() (shown via the client's tick
+        // pid registry instead) and exempt from the concurrency cap, which is
+        // for interactive ad-hoc scripts; the armed tick count is the user's to
+        // manage in Mod Menu.
         running.addLast(new Instance(script, 0));
         drain(clock);
         return true;
@@ -242,6 +242,27 @@ public final class ScriptExecutor {
         return removed;
     }
 
+    /** True while any instance (tick loops included) has this exact source line. */
+    public boolean isRunningSource(String originalLine) {
+        for (Instance instance : running) {
+            if (instance.script.originalLine().equals(originalLine)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Ad-hoc/#pid instances (id != 0) count against the concurrency cap; persistent tick loops (id 0) don't. */
+    private int userInstanceCount() {
+        int count = 0;
+        for (Instance instance : running) {
+            if (instance.id != 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     /** True while an instance with this id is still running. */
     public boolean isRunning(int id) {
         for (Instance instance : running) {
@@ -267,7 +288,7 @@ public final class ScriptExecutor {
             script.source().close();
             return PidResult.REFUSED_RUNNING;
         }
-        if (running.size() - (existed ? 1 : 0) >= limits.maxConcurrentScripts()
+        if (userInstanceCount() - (existed ? 1 : 0) >= limits.maxConcurrentScripts()
                 || (!script.isLazy() && script.statements().size() > limits.maxCommandsPerScript())) {
             script.source().close();
             return PidResult.REJECTED;

@@ -210,15 +210,17 @@ class ScriptExecutorTest {
     }
 
     @Test
-    void trySubmitRefusesQuietlyAtTheCap() {
+    void tickLoopsAreExemptFromTheConcurrencyCap() {
         RecordingSender sender = new RecordingSender();
-        ScriptExecutor executor = executor(sender, 1, 1000, 1);
+        ScriptExecutor executor = executor(sender, 16, 1000, 1); // cap 1
 
-        assertTrue(executor.trySubmit(script("a", "b"))); // budget 1 → still running
-        assertFalse(executor.trySubmit(script("c")));     // cap hit — no error message
+        assertTrue(executor.trySubmit(parked("t1", "a")));
+        assertTrue(executor.trySubmit(parked("t2", "b"))); // NOT blocked by cap 1
+        assertEquals(2, executor.runningCount(), "tick loops don't count against the cap");
+        assertTrue(sender.errors.isEmpty(), "tick submits never report");
 
-        assertTrue(sender.errors.isEmpty(), "quiet refusal must not report");
-        assertEquals(List.of("/a"), sender.sent);
+        executor.submit(script("c")); // ad-hoc still fits: 0 user instances < cap 1
+        assertEquals(List.of("/a", "/b", "/c"), sender.sent, "tick loops don't starve an ad-hoc submit");
     }
 
     @Test
@@ -536,6 +538,30 @@ class ScriptExecutorTest {
         assertFalse(executor.isRunning(1), "auto submit did not reuse a low id colliding path");
         int autoId = executor.runningInfos().get(1).id();
         assertTrue(autoId > 10, "auto id " + autoId + " should be past the claimed 10");
+    }
+
+    @Test
+    void tickStyleWhileLoopRepeatsEachTickAndIsAbortable() {
+        // exactly how TickScriptRunner now wraps an armed script:
+        // #while (1 > 0) ( <body> && #wait 1t ), labelled with the raw body
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(
+                "#while (1 > 0) (/say hi && #wait 1t)", "/say hi", lazyOptions(new SessionVariableStore()));
+        assertTrue(result.script().isLazy());
+
+        executor.trySubmit(result.script());
+        assertEquals(1, sender.sent.size(), "one body run this tick, then parked at the implicit wait");
+        executor.tick();
+        assertEquals(2, sender.sent.size(), "one more the next tick");
+        executor.tick();
+        assertEquals(3, sender.sent.size());
+        assertFalse(executor.isIdle(), "a persistent tick loop never finishes on its own");
+        assertTrue(executor.isRunningSource("/say hi"), "tracked by its raw-body label");
+
+        assertEquals(1, executor.abortSource("/say hi")); // how the runner stops a disarmed loop
+        assertTrue(executor.isIdle());
     }
 
     @Test
