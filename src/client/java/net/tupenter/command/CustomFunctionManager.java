@@ -136,7 +136,15 @@ public final class CustomFunctionManager {
     private static String formatDefinition(String name, String body) {
         try {
             AliasDefinition parsed = AliasDefinition.parse(toSingleLine(body).trim());
-            return name + " = " + parsed.body();
+            StringBuilder signature = new StringBuilder(name);
+            String declarations = parsed.declarationPrefix().trim();
+            if (!declarations.isEmpty()) {
+                signature.append(' ').append(declarations); // keep the params! (dist <a:vec3> <b:vec3>)
+            }
+            if (!parsed.description().isEmpty()) {
+                signature.append(' ').append(parsed.descriptionSuffix());
+            }
+            return signature + " = " + parsed.body();
         } catch (IllegalArgumentException ignored) {
             // unparseable — round-trip the plain form
         }
