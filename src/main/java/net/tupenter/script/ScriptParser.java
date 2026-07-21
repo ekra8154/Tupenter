@@ -1254,7 +1254,7 @@ public final class ScriptParser {
             }
             LoopGuard guard = new LoopGuard("#while");
             for (long i = 1; ; i++) {
-                Value condition = evalExpression(directive.header(), "#while condition");
+                Value condition = evalCondition(directive.header(), "#while condition");
                 if (!(condition instanceof Value.BoolValue bool)) {
                     throw new ParseAbort("#while condition must be true/false, e.g. #while ($client.y$ < 100) (...)");
                 }
@@ -1270,7 +1270,7 @@ public final class ScriptParser {
             if (!options.conditionalsEnabled()) {
                 throw new ParseAbort("Conditionals (#if) are disabled in the Tupenter config (Scripting tab).");
             }
-            Value condition = evalExpression(directive.header(), "#if condition");
+            Value condition = evalCondition(directive.header(), "#if condition");
             if (!(condition instanceof Value.BoolValue bool)) {
                 throw new ParseAbort("#if condition must be true/false, e.g. #if ($client.y$ > 60) (...)");
             }
@@ -1392,6 +1392,27 @@ public final class ScriptParser {
             }
             try {
                 return ExpressionEvaluator.evaluate(expression, context);
+            } catch (IllegalArgumentException ex) {
+                throw new ParseAbort(where + ": " + ex.getMessage());
+            }
+        }
+
+        /**
+         * Like {@link #evalExpression} but for an #if/#while condition: a value
+         * that is merely absent right now ({@link MissingValueException} — no
+         * target block, not riding, ...) makes the condition false instead of
+         * aborting the script. Real errors (typos, unknown vars) still abort.
+         * MissingValueException extends IllegalArgumentException, so its catch
+         * must come first.
+         */
+        private Value evalCondition(String expression, String where) {
+            if (expression == null || expression.trim().isEmpty()) {
+                throw new ParseAbort(where + " is missing");
+            }
+            try {
+                return ExpressionEvaluator.evaluate(expression, context);
+            } catch (MissingValueException absent) {
+                return Value.of(false);
             } catch (IllegalArgumentException ex) {
                 throw new ParseAbort(where + ": " + ex.getMessage());
             }

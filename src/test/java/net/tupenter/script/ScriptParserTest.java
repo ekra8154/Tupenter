@@ -913,6 +913,59 @@ class ScriptParserTest {
         assertNotNull(result.error());
     }
 
+    // --- (C) absent live values read as false inside a condition only ---
+
+    /** Resolves nothing, but throws for two names: one "absent state", one genuinely bad. */
+    private static VariableProvider crosshairProvider() {
+        return new VariableProvider() {
+            @Override
+            public java.util.Set<String> names() {
+                return java.util.Set.of("client.target_entity");
+            }
+
+            @Override
+            public java.util.Optional<Value> resolve(String name) {
+                if (name.equalsIgnoreCase("client.target_entity")) {
+                    throw new MissingValueException("no entity under the crosshair");
+                }
+                if (name.equalsIgnoreCase("bad.var")) {
+                    throw new ExpressionException("no such variable");
+                }
+                return java.util.Optional.empty();
+            }
+        };
+    }
+
+    private static ScriptParser.Options optionsWith(VariableProvider provider) {
+        SessionVariableStore store = new SessionVariableStore();
+        return new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, aliasMap(Map.of()),
+                true, true, true, true, 100, 1000, new Random(42), provider, store);
+    }
+
+    @Test
+    void absentValueMakesAConditionFalseNotAnError() {
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "#if ($client.target_entity$ == \"minecraft:zombie\") (/say hit)", optionsWith(crosshairProvider()));
+        assertNull(result.error(), "an absent live value is normal world state, not a scripting error");
+        assertTrue(contents(result).isEmpty(), "condition read false — nothing emitted");
+    }
+
+    @Test
+    void absentValueInAConditionTakesTheElseBranch() {
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "#if ($client.target_entity$ == \"minecraft:zombie\") (/say hit) #else (/say miss)",
+                optionsWith(crosshairProvider()));
+        assertNull(result.error());
+        assertEquals(List.of("say miss"), contents(result));
+    }
+
+    @Test
+    void aGenuineBadVariableInAConditionStillAborts() {
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "#if ($bad.var$ == \"x\") (/say hit)", optionsWith(crosshairProvider()));
+        assertNotNull(result.error(), "only absent-state misses are softened; real errors still surface");
+    }
+
     @Test
     void ifWithVariables() {
         SessionVariableStore store = new SessionVariableStore();

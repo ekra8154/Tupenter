@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.phys.BlockHitResult;
 import net.tupenter.script.ExpressionException;
+import net.tupenter.script.MissingValueException;
 import net.tupenter.script.Value;
 import net.tupenter.script.VariableProvider;
 
@@ -126,7 +127,7 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.vehicle", player -> {
             net.minecraft.world.entity.Entity vehicle = player.getVehicle();
             if (vehicle == null) {
-                throw new ExpressionException("client.vehicle: not riding anything — check $client.riding$ first");
+                throw new MissingValueException("client.vehicle: not riding anything — check $client.riding$ first");
             }
             return Value.of(BuiltInRegistries.ENTITY_TYPE.getKey(vehicle.getType()).toString());
         });
@@ -137,14 +138,14 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.held_durability", player -> {
             net.minecraft.world.item.ItemStack stack = player.getMainHandItem();
             if (!stack.isDamageableItem()) {
-                throw new ExpressionException("client.held_durability: the held item has no durability");
+                throw new MissingValueException("client.held_durability: the held item has no durability");
             }
             return Value.ofNumber(stack.getMaxDamage() - stack.getDamageValue());
         });
         register("client.held_max_durability", player -> {
             net.minecraft.world.item.ItemStack stack = player.getMainHandItem();
             if (!stack.isDamageableItem()) {
-                throw new ExpressionException("client.held_max_durability: the held item has no durability");
+                throw new MissingValueException("client.held_max_durability: the held item has no durability");
             }
             return Value.ofNumber(stack.getMaxDamage());
         });
@@ -175,7 +176,7 @@ public final class ClientVariableProvider implements VariableProvider {
             BlockPos pos = hit.getBlockPos();
             return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
         }
-        throw new ExpressionException("client.target_block: no block under the crosshair — check $client.target_hit$ first");
+        throw new MissingValueException("client.target_block: no block under the crosshair — check $client.target_hit$ first");
     }
 
     /** Entity type id under the crosshair, e.g. "minecraft:zombie". */
@@ -183,7 +184,7 @@ public final class ClientVariableProvider implements VariableProvider {
         if (Minecraft.getInstance().hitResult instanceof net.minecraft.world.phys.EntityHitResult hit) {
             return Value.of(BuiltInRegistries.ENTITY_TYPE.getKey(hit.getEntity().getType()).toString());
         }
-        throw new ExpressionException("client.target_entity: no entity under the crosshair — check $client.target_hit$ first");
+        throw new MissingValueException("client.target_entity: no entity under the crosshair — check $client.target_hit$ first");
     }
 
     /** "block", "entity", or "miss" — what the crosshair ray actually found. */
