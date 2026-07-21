@@ -483,7 +483,7 @@ public class TupenterModClient implements ClientModInitializer {
         if (armed.isEmpty() && instances.isEmpty()) {
             boolean offButConfigured = !config.tickScriptsEnabled && !configured.isEmpty();
             source.sendFeedback(Component.literal(offButConfigured
-                    ? "Nothing running — " + configured.size() + " tick script(s) armed but the master toggle is OFF (/tupenter scripts on)."
+                    ? "Nothing running — " + configured.size() + " tick script(s) armed but the master toggle is OFF (/tupenter scripts enable)."
                     : "Nothing active — no tick scripts armed here, nothing running.").withStyle(ChatFormatting.GRAY));
             return 1;
         }
@@ -630,7 +630,7 @@ public class TupenterModClient implements ClientModInitializer {
         }
         if (key != null && !config.scriptNames(key).isEmpty()) {
             context.getSource().sendFeedback(Component.literal(
-                    "Toggle a named one: /tupenter scripts enable|disable <name> · abort a running id: /tupenter abort <id>")
+                    "Toggle a named one: /tupenter scripts enable|disable <name> (no name = master on/off) · stop a running one: /tupenter abort <id|name>")
                     .withStyle(ChatFormatting.DARK_GRAY));
         }
 
@@ -639,7 +639,7 @@ public class TupenterModClient implements ClientModInitializer {
         if (key == null) {
             verdict = "Not in a world — nothing runs.";
         } else if (!config.tickScriptsEnabled) {
-            verdict = armedCount + " armed here, but the master switch is OFF. /tupenter scripts on";
+            verdict = armedCount + " armed here, but the master switch is OFF. /tupenter scripts enable";
         } else {
             verdict = armedCount + " running here, 20x/second." + (armedCount == 0 ? " This world is safe." : "");
         }
@@ -647,15 +647,15 @@ public class TupenterModClient implements ClientModInitializer {
         return 1;
     }
 
-    /** /tupenter scripts on|off — the master switch (arming stays per-world, in Mod Menu). */
+    /** /tupenter scripts enable|disable (no name) — the master switch (per-script arming stays put). */
     private static int runScriptsMasterCommand(CommandContext<FabricClientCommandSource> context, boolean on) {
         TupenterConfig.INSTANCE.tickScriptsEnabled = on;
         TupenterConfig.save();
         String key = currentWorldKey();
         int armed = key == null ? 0 : TupenterConfig.INSTANCE.armedScriptLines(key).size();
         context.getSource().sendFeedback(Component.literal(on
-                ? "Tick scripts master ON — " + armed + " script(s) armed in this world."
-                : "Tick scripts master OFF.").withStyle(ChatFormatting.YELLOW));
+                ? "Tick scripts ON — " + armed + " armed in this world now running (per-script arming unchanged)."
+                : "Tick scripts OFF — all paused (still armed; /tupenter scripts enable resumes them).").withStyle(ChatFormatting.YELLOW));
         return 1;
     }
 
@@ -715,7 +715,7 @@ public class TupenterModClient implements ClientModInitializer {
             return 1;
         }
         String note = enable && !TupenterConfig.INSTANCE.tickScriptsEnabled
-                ? " Master is OFF — /tupenter scripts on to run it." : "";
+                ? " Master is OFF — /tupenter scripts enable to run it." : "";
         context.getSource().sendFeedback(Component.literal(
                 verb + " '" + name + "' (" + scope + ")." + note)
                 .withStyle(ChatFormatting.YELLOW));
@@ -1164,13 +1164,13 @@ public class TupenterModClient implements ClientModInitializer {
                                     .then(literal("hud").executes(TupenterModClient::runRunningHudToggle)))
                             .then(literal("scripts")
                                     .executes(TupenterModClient::runScriptsStatusCommand)
-                                    .then(literal("on").executes(context -> runScriptsMasterCommand(context, true)))
-                                    .then(literal("off").executes(context -> runScriptsMasterCommand(context, false)))
                                     .then(literal("enable")
+                                            .executes(context -> runScriptsMasterCommand(context, true)) // no name = master ON (all)
                                             .then(argument("name", StringArgumentType.word())
                                                     .suggests(TupenterModClient::suggestScriptNames)
                                                     .executes(context -> runSetArmedByName(context, true))))
                                     .then(literal("disable")
+                                            .executes(context -> runScriptsMasterCommand(context, false)) // no name = master OFF (all)
                                             .then(argument("name", StringArgumentType.word())
                                                     .suggests(TupenterModClient::suggestScriptNames)
                                                     .executes(context -> runSetArmedByName(context, false)))))
@@ -2027,7 +2027,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Name them:§r start a script with §fname =§r (like a custom command, no params): restock = /clear && #wait 1s. Then toggle from chat: /tupenter scripts enable|disable restock.",
                     "§7Live tuning:§r reference $maxy$ in a script, change it anytime with #set $maxy$ = 80",
                     "§7Arming is PER WORLD:§r Global scripts are shared definitions you arm world-by-world; This World's scripts exist only in the world you're in. A world you never configured runs NOTHING — nukeOnDeath stays off on your survival server.",
-                    "§7Status:§r /tupenter scripts — what's armed here · /tupenter running — armed loops + their ids · /tupenter abort <id> switches one OFF · /tupenter scripts on|off — master switch",
+                    "§7Status:§r /tupenter scripts — what's armed here · /tupenter running — armed loops + their ids · /tupenter abort <id|name> switches one OFF · /tupenter scripts enable|disable (no name) — master on/off, or with a §fname§r toggle just that one",
                     "§7Errors report once and pause that script until edited (or re-enabled) · tick scripts never touch resend history and never print #set notices.",
                     "§7Panic:§r /tupenter abort — also flips the master toggle off",
             };
@@ -2069,7 +2069,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§b/tupenter — mod control:",
                     "§7running§r — armed tick scripts + running instances, each with an id and a clickable [abort]; §7running hud§r toggles the same list as an on-screen panel that survives chat spam",
                     "§7abort <id>§r — stop one by its id: a running instance is killed; an armed tick script is switched OFF (its Mod Menu toggle). §7abort <name>§r switches off a named tick script. §7abort§r alone stops everything + disables tick scripts (panic switch)",
-                    "§7scripts§r — what's armed in THIS world · §7scripts on|off§r — tick-script master switch",
+                    "§7scripts§r — what's armed in THIS world · §7scripts enable|disable§r — master on/off (no name), or arm/disarm one by §fname§r",
                     "§7vars [group]§r — variables overview, or one group with live values",
                     "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
                     "§7dump [client|target] [path]§r — browse entity NBT (the data behind client.nbt.* / target.nbt.*)",
