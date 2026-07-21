@@ -1951,6 +1951,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Crosshair:§r $client.target_hit$ = \"block\"/\"entity\"/\"miss\" · $client.target_block$ = \"x y z\" (errors on a miss — gate with target_hit) · $client.target_entity$ = the entity id",
                     "§7Pattern:§r #if (client.target_hit == \"block\" && block(client.target_block) == \"minecraft:diamond_ore\") (/echo &bfound it) — a condition is already an expression, so $ $ around names is optional",
                     "§7Limits:§r loaded chunks only (unloaded = loud error, never a guess) · states/NBT not included, just the id",
+                    "§7Tick state:§r $world.tickrate$ (from /tick rate, ~20) · $world.frozen$ (is /tick freeze on) · $world.stepping$ (mid /tick step) — exact, synced from the server. So a freeze toggle is just: #if $world.frozen$ (/tick unfreeze) #else (/tick freeze)",
                     "§7Registry sets§r (blockset/itemset/effectset) are under: /tupenter help expressions lists",
             };
             default -> new String[]{

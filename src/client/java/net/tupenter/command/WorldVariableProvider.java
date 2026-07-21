@@ -35,6 +35,11 @@ public final class WorldVariableProvider implements VariableProvider {
         register("world.time_total", level -> Value.ofNumber(level.getGameTime())); // total ticks, never wraps
         register("world.min_y", level -> Value.ofNumber(level.getMinY()));
         register("world.max_y", level -> Value.ofNumber(level.getMaxY()));
+        // tick state — the CONFIGURED rate + freeze, synced from the server (exact,
+        // not a measured/estimated TPS): what /tick rate|freeze|step set.
+        register("world.tickrate", level -> Value.ofNumber(level.tickRateManager().tickrate())); // e.g. 20
+        register("world.frozen", level -> Value.of(level.tickRateManager().isFrozen())); // /tick freeze active
+        register("world.stepping", level -> Value.of(level.tickRateManager().isSteppingForward())); // mid /tick step
         // the per-world scripts identity key: "server:<address>" / "world:<folder>"
         register("world.key", level -> {
             String key = net.tupenter.TupenterModClient.currentWorldKey();
