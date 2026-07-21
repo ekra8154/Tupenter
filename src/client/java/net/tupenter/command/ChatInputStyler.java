@@ -53,7 +53,7 @@ public final class ChatInputStyler {
 
     /** Directives that START a statement — seeing one mid-statement means a missing && (#else/#elseif legitimately continue). */
     private static final java.util.Set<String> STATEMENT_STARTERS = java.util.Set.of(
-            "#set", "#local", "#wait", "#repeat", "#if", "#while", "#for", "#foreach",
+            "#set", "#setdefault", "#local", "#wait", "#repeat", "#if", "#while", "#for", "#foreach",
             "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
             "#s", "#nr", "#r", "#st", "#ust", "#c");
 
@@ -69,7 +69,7 @@ public final class ChatInputStyler {
 
     /** Everything tab-completion should offer for a '#' word. */
     private static final List<String> DIRECTIVE_WORDS = List.of(
-            "#set", "#local", "#wait", "#repeat", "#if", "#elseif", "#else", "#while", "#for", "#foreach",
+            "#set", "#setdefault", "#local", "#wait", "#repeat", "#if", "#elseif", "#else", "#while", "#for", "#foreach",
             "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
             "#s", "#nr", "#r", "#st", "#ust", "#c");
 

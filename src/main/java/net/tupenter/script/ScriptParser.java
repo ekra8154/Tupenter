@@ -52,13 +52,14 @@ public final class ScriptParser {
     private static final Map<String, String> PREFIX_SHORTHANDS = Map.of(
             "#s", SILENT, "#nr", NORECORD, "#r", RECORD, "#c", CHAT);
     private static final String SET = "#set";
+    private static final String SETDEFAULT = "#setdefault";
     private static final String LOCAL = "#local";
     private static final String WAIT = "#wait";
     /** Longest single #wait; loops are bounded separately by the iteration cap. */
     public static final int MAX_WAIT_TICKS = 72000; // one real-time hour
     /** Directives handled by the statement scanner (own a (...) group). */
     private static final Set<String> SCANNER_DIRECTIVES = Set.of("#repeat", "#if", "#while", "#foreach", "#for", "#silent");
-    private static final Set<String> STATEMENT_DIRECTIVES = Set.of(SET, LOCAL, WAIT);
+    private static final Set<String> STATEMENT_DIRECTIVES = Set.of(SET, SETDEFAULT, LOCAL, WAIT);
     private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
             "rand", "randf", "pick", "int", "float", "range", "true", "false",
             "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len",
@@ -494,6 +495,7 @@ public final class ScriptParser {
         private final Set<String> localNames = new HashSet<>();
         private final Deque<Map<String, Value>> scopes = new ArrayDeque<>();
         private final EvalContext context;
+        private final VariableProvider lookup; // scopes + scriptScope + session/persistent/live — for #setdefault's absence check
         private boolean changed;
         private int silentDepth;
         private Script.HistoryMode history = Script.HistoryMode.NORMAL;
@@ -507,7 +509,7 @@ public final class ScriptParser {
         private Walker(Options options, java.util.function.Consumer<Script.SendStatement> sink) {
             this.sink = sink;
             this.options = options;
-            VariableProvider lookup = new VariableProvider() {
+            this.lookup = new VariableProvider() {
                 @Override
                 public Set<String> names() {
                     Set<String> names = new HashSet<>(options.variables().names());
@@ -568,11 +570,15 @@ public final class ScriptParser {
             if (content.startsWith("#")) {
                 String word = firstWord(content).toLowerCase(Locale.ROOT);
                 if (word.equals(SET)) {
-                    handleSet(content, SET, true);
+                    handleSet(content, SET, true, false);
+                    return;
+                }
+                if (word.equals(SETDEFAULT)) {
+                    handleSet(content, SETDEFAULT, true, true); // set only if the name isn't defined yet
                     return;
                 }
                 if (word.equals(LOCAL)) {
-                    handleSet(content, LOCAL, false);
+                    handleSet(content, LOCAL, false, false);
                     return;
                 }
                 if (word.equals(WAIT)) {
@@ -757,7 +763,7 @@ public final class ScriptParser {
 
         // --- #set / #local ---
 
-        private void handleSet(String content, String directive, boolean commitToSession) {
+        private void handleSet(String content, String directive, boolean commitToSession, boolean onlyIfAbsent) {
             if (!options.variablesEnabled()) {
                 throw new ParseAbort("Variables (" + directive + ") are disabled in the Tupenter config (Scripting tab).");
             }
@@ -769,6 +775,14 @@ public final class ScriptParser {
                 }
             }
 
+            // #setdefault: leave an already-defined name (this script's #sets, the
+            // session store, a saved persistent var, or a live read) untouched —
+            // idempotent init that survives across runs AND sessions.
+            if (onlyIfAbsent && isAlreadyDefined(setVar.name())) {
+                changed = true;
+                return;
+            }
+
             Value value;
             try {
                 value = ExpressionEvaluator.evaluate(setVar.expression(), context);
@@ -777,7 +791,7 @@ public final class ScriptParser {
             }
             scriptScope.put(setVar.name(), value);
             if (commitToSession) {
-                localNames.remove(setVar.name()); // an explicit #set wins over an earlier #local
+                localNames.remove(setVar.name()); // an explicit #set/#setdefault wins over an earlier #local
                 if (silentDepth == 0) {
                     notice("$" + setVar.name() + "$ = " + value.displayString());
                 }
@@ -785,6 +799,17 @@ public final class ScriptParser {
                 localNames.add(setVar.name());
             }
             changed = true;
+        }
+
+        /** True if the name already has a value anywhere — this script's #sets, the session
+         * store, a saved persistent var, or a live read. A live var that errors when absent
+         * (e.g. target_block with no target) counts as unset. */
+        private boolean isAlreadyDefined(String name) {
+            try {
+                return lookup.resolve(name).isPresent();
+            } catch (RuntimeException absentLiveRead) {
+                return false;
+            }
         }
 
         // --- aliases ---

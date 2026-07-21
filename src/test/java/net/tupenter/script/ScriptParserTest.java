@@ -779,6 +779,35 @@ class ScriptParserTest {
     }
 
     @Test
+    void setdefaultInitializesAnAbsentVariable() {
+        SessionVariableStore store = new SessionVariableStore();
+        ScriptParser.ParseResult result = ScriptParser.parse("#setdefault $x$ = 5 && say $x$", options(Map.of(), store));
+        assertNull(result.error());
+        assertEquals(List.of("say 5"), contents(result));
+        assertEquals("5", store.resolve("x").orElseThrow().displayString());
+    }
+
+    @Test
+    void setdefaultLeavesAnExistingValueAlone() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("x", Value.ofNumber(3)); // already defined — e.g. a prior run or a loaded persistent var
+        ScriptParser.ParseResult result = ScriptParser.parse("#setdefault $x$ = 5 && say $x$", options(Map.of(), store));
+        assertNull(result.error());
+        assertEquals(List.of("say 3"), contents(result), "kept the existing value, idempotent init");
+        assertEquals("3", store.resolve("x").orElseThrow().displayString());
+    }
+
+    @Test
+    void setdefaultIsIdempotentWithinTheSameLine() {
+        SessionVariableStore store = new SessionVariableStore();
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "#setdefault $x$ = 1 && #setdefault $x$ = 2 && say $x$", options(Map.of(), store));
+        assertNull(result.error());
+        assertEquals(List.of("say 1"), contents(result), "the second #setdefault is a no-op");
+        assertEquals("1", store.resolve("x").orElseThrow().displayString());
+    }
+
+    @Test
     void setRollsBackWhenALaterStatementFails() {
         SessionVariableStore store = new SessionVariableStore();
         ScriptParser.ParseResult result = ScriptParser.parse("#set $x$ = 5 && say $nosuchvar$", options(Map.of(), store));

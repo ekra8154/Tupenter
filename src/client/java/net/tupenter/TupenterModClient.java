@@ -1868,19 +1868,31 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static int runVarSaveCommand(CommandContext<FabricClientCommandSource> context) {
         String name = StringArgumentType.getString(context, "name").toLowerCase(java.util.Locale.ROOT);
+        // session value first, but fall back to the already-saved one so re-saving
+        // an unchanged persistent var (the #setdefault + var save idempotent pattern,
+        // session 2+) works instead of erroring.
         var value = SESSION_VARIABLES.resolve(name);
         if (value.isEmpty()) {
-            context.getSource().sendError(Component.literal("No session variable $" + name + "$ — set it first with #set $" + name + "$ = ..."));
+            value = PERSISTENT_VARIABLES.resolve(name);
+        }
+        if (value.isEmpty()) {
+            context.getSource().sendError(Component.literal("No session or saved variable $" + name + "$ — set it first with #set $" + name + "$ = ..."));
             return 0;
         }
-        try {
-            PERSISTENT_VARIABLES.set(name, value.get());
-        } catch (IllegalArgumentException ex) {
-            context.getSource().sendError(Component.literal(ex.getMessage()));
-            return 0;
+        var existing = PERSISTENT_VARIABLES.resolve(name);
+        boolean unchanged = existing.isPresent()
+                && existing.get().displayString().equals(value.get().displayString());
+        if (!unchanged) {
+            try {
+                PERSISTENT_VARIABLES.set(name, value.get());
+            } catch (IllegalArgumentException ex) {
+                context.getSource().sendError(Component.literal(ex.getMessage()));
+                return 0;
+            }
+            savePersistentVariables(); // only touch disk when the value actually changed
         }
-        savePersistentVariables();
-        context.getSource().sendFeedback(Component.literal("Saved $" + name + "$ = " + value.get().displayString() + " (persists across sessions)").withStyle(ChatFormatting.GREEN));
+        context.getSource().sendFeedback(Component.literal((unchanged ? "$" + name + "$ already saved = " : "Saved $" + name + "$ = ")
+                + value.get().displayString() + " (persists across sessions)").withStyle(unchanged ? ChatFormatting.GRAY : ChatFormatting.GREEN));
         return 1;
     }
 
@@ -1983,7 +1995,8 @@ public class TupenterModClient implements ClientModInitializer {
                     "§bVariables — use anywhere as $name$:",
                     "§7Yours:§r #set x = 5 (session, cleared on join) · #set x += 1 (also -= *= /= %=) · #local x = 5 (this line only, silent) · $ around the name is optional · dotted groups allowed: #set hitlist.bob = \"wanted\"",
                     "§7On the right side§r you're already in expression world: #set x = x + 1 — bare names work; $x + 1$ works too ($...$ always evaluates its inside)",
-                    "§7Persistent:§r /tupenter var save <name> keeps it forever · /tupenter var delete <name> removes it",
+                    "§7#setdefault x = 5§r sets x ONLY if it isn't already defined (session, saved, or live) — idempotent init, so a stateful custom command is a clean drop-in: #setdefault $frozen$ = false && #if $frozen$ (/tick unfreeze) #else (/tick freeze) && #set $frozen$ = !$frozen$",
+                    "§7Persistent:§r /tupenter var save <name> keeps it forever (re-saving an unchanged value is a no-op) · /tupenter var delete <name> removes it · create-once-across-sessions: #setdefault $x$ = 0 && /tupenter var save $x$",
                     "§7Built-in:§r $client.x/y/z/health/held_item/target_block/target_hit...$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$ — target_hit = \"block\"/\"entity\"/\"miss\"; target_block errors on a miss (gate it with target_hit)",
                     "§7Environment:§r $client.biome$ · $client.light / light_block / light_sky$ · $client.facing$ · $client.chunk_x/chunk_z$ · $world.spawn$ · $world.key$ (the per-world scripts id)",
                     "§7Movement:§r $client.speed$ (full 3D b/s) · $client.speed_xz$ (horizontal) · $client.speed_y$ (vertical, signed) · $client.motion$ (vec3 \"vx vy vz\" b/s) · booleans: on_ground, sneaking, sprinting, swimming, flying, gliding",
