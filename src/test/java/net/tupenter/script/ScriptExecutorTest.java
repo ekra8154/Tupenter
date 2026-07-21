@@ -256,22 +256,25 @@ class ScriptExecutorTest {
     }
 
     @Test
-    void resubmittingTheSameLineRestartsInsteadOfStacking() {
+    void resubmittingTheSameLineStacksAndRunsBothConcurrently() {
         RecordingSender sender = new RecordingSender();
         ScriptExecutor executor = executor(sender, 16, 1000, 8);
 
         executor.submit(Script.ofStatements("line", List.of(
                 new Script.SendStatement("a", Script.Kind.COMMAND, false),
-                Script.SendStatement.waitFor(100),
-                new Script.SendStatement("never", Script.Kind.COMMAND, false)
+                Script.SendStatement.waitFor(2),
+                new Script.SendStatement("after", Script.Kind.COMMAND, false)
         ), Script.HistoryMode.NORMAL));
         executor.submit(Script.ofStatements("line", List.of(
                 new Script.SendStatement("b", Script.Kind.COMMAND, false)
         ), Script.HistoryMode.NORMAL));
 
-        executor.tick();
-        // the parked first instance was cancelled — "never" never sends
+        // both ran: the first parked at its #wait but was NOT cancelled by the second
         assertEquals(List.of("/a", "/b"), sender.sent);
+        assertEquals(1, executor.runningCount(), "second finished; first still parked");
+        executor.tick();
+        executor.tick();
+        assertEquals(List.of("/a", "/b", "/after"), sender.sent, "the first instance survived and completed");
         assertTrue(executor.isIdle());
     }
 

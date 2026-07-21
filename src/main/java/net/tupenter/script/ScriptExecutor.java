@@ -14,9 +14,9 @@ import java.util.function.IntSupplier;
  * the whole point of #wait — and a runtime evaluation error stops just that
  * script (sends already made stay sent).
  *
- * Overlap policy: re-submitting the SAME source line (rapid-fire resend)
- * cancels the still-running previous instance — restart, not stack.
- * Different lines run concurrently up to the concurrency cap.
+ * Overlap policy: {@link #submit} (chat/ad-hoc) always stacks — re-running the
+ * same line starts another concurrent instance, bounded only by the concurrency
+ * cap (so two relative-coord /randomfills at different spots both run).
  * {@link #trySubmit} (tick scripts) instead treats a running same-source
  * instance as success, so a waiting tick script isn't stacked every tick.
  */
@@ -82,12 +82,11 @@ public final class ScriptExecutor {
     /**
      * Queues a script and immediately drains as much of it as this tick's
      * remaining budget allows, so small scripts behave exactly like the old
-     * synchronous path. A running instance of the same source line is
-     * cancelled first (restart, not stack).
+     * synchronous path. Stacks: re-running the same line starts another
+     * concurrent instance (bounded by the concurrency cap), rather than
+     * restarting the running one.
      */
     public void submit(Script script) {
-        cancelSameSource(script.originalLine());
-
         if (running.size() >= limits.maxConcurrentScripts()) {
             sender.error("Too many scripts running (" + limits.maxConcurrentScripts() + "). Use /tupenter abort or wait for them to finish.");
             return;
@@ -282,10 +281,6 @@ public final class ScriptExecutor {
         }
         drain(clock);
         return existed ? PidResult.REPLACED : PidResult.STARTED;
-    }
-
-    private void cancelSameSource(String originalLine) {
-        abortSource(originalLine);
     }
 
     private void drain(long clock) {
