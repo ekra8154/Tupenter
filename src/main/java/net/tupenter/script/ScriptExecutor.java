@@ -169,9 +169,17 @@ public final class ScriptExecutor {
         return running.size();
     }
 
-    /** One human-readable line per running instance: its source line + wait state. */
-    public java.util.List<String> runningSummaries() {
-        java.util.List<String> out = new java.util.ArrayList<>();
+    /** A running instance's id ("PID"), source preview and wait state — for /tupenter running and the HUD. */
+    public record RunningInfo(int id, String preview, String state) {
+        /** "id 3  /randomfill … — active" — the plain-text form used by the HUD. */
+        public String line() {
+            return "id " + id + "  " + preview + " — " + state;
+        }
+    }
+
+    /** One entry per running instance, in run order. */
+    public java.util.List<RunningInfo> runningInfos() {
+        java.util.List<RunningInfo> out = new java.util.ArrayList<>();
         for (Instance instance : running) {
             String state;
             if (instance.waitUntilGameTime > clock) {
@@ -182,7 +190,7 @@ public final class ScriptExecutor {
             } else {
                 state = "active";
             }
-            out.add("#" + instance.id + "  " + preview(instance.script.originalLine()) + " — " + state);
+            out.add(new RunningInfo(instance.id, preview(instance.script.originalLine()), state));
         }
         return out;
     }

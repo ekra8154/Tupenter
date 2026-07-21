@@ -18,6 +18,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.Style;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.tupenter.command.CommandAliasManager;
@@ -404,7 +408,7 @@ public class TupenterModClient implements ClientModInitializer {
         String key = currentWorldKey();
         java.util.List<String> armed = (config.tickScriptsEnabled && key != null)
                 ? new java.util.ArrayList<>(config.armedScriptLines(key)) : java.util.List.of();
-        java.util.List<String> instances = SCRIPT_EXECUTOR.runningSummaries();
+        java.util.List<ScriptExecutor.RunningInfo> instances = SCRIPT_EXECUTOR.runningInfos();
 
         if (armed.isEmpty() && instances.isEmpty()) {
             source.sendFeedback(Component.literal(
@@ -420,12 +424,23 @@ public class TupenterModClient implements ClientModInitializer {
         }
         if (!instances.isEmpty()) {
             source.sendFeedback(Component.literal(
-                    "Running now (" + instances.size() + ") — /tupenter abort #N stops one, /tupenter abort stops all:").withStyle(ChatFormatting.AQUA));
-            for (String summary : instances) {
-                source.sendFeedback(Component.literal(" • " + summary).withStyle(ChatFormatting.GRAY));
+                    "Running now (" + instances.size() + ") — click [abort] or /tupenter abort <id>; /tupenter abort stops all:").withStyle(ChatFormatting.AQUA));
+            for (ScriptExecutor.RunningInfo info : instances) {
+                MutableComponent row = Component.literal(" • ").withStyle(ChatFormatting.GRAY)
+                        .append(Component.literal(info.line()).withStyle(ChatFormatting.GRAY))
+                        .append(Component.literal(" [abort]").withStyle(abortLinkStyle(info.id())));
+                source.sendFeedback(row);
             }
         }
         return 1;
+    }
+
+    /** Red, clickable "[abort]" that runs /tupenter abort &lt;id&gt; when clicked. */
+    private static Style abortLinkStyle(int id) {
+        return Style.EMPTY
+                .withColor(ChatFormatting.RED)
+                .withClickEvent(new ClickEvent.RunCommand("/tupenter abort " + id))
+                .withHoverEvent(new HoverEvent.ShowText(Component.literal("Stop script " + id)));
     }
 
     private static String previewLine(String line) {
