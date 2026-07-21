@@ -762,11 +762,13 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /**
-     * #pid — run/manage scripts under a caller-chosen id ("PID"). Forms:
-     *   #pid list                     — the running list (clickable [abort] rows)
-     *   #pid N abort                  — stop pid N
-     *   #pid N replace &lt;line&gt;   — (re)start pid N with &lt;line&gt;, killing any live one
+     * #pid — run a script under a caller-chosen id ("PID"). Forms:
      *   #pid N &lt;line&gt;           — start pid N; refuses if N is already running
+     *   #pid N replace &lt;line&gt;   — (re)start pid N with &lt;line&gt;, killing any live one
+     *
+     * Management verbs (#pid N abort, #pid list) were intentionally NOT kept —
+     * /tupenter abort &lt;id&gt; and /tupenter running already cover them. The old
+     * handlers are commented out below in case we ever want them back.
      *
      * @return true when the line was a #pid line (packet must be cancelled)
      */
@@ -778,11 +780,13 @@ public class TupenterModClient implements ClientModInitializer {
         }
         String rest = trimmed.substring(wordLen).trim();
         if (rest.isEmpty()) {
-            sendEnhancedParsingError("#pid needs an id — e.g. #pid 3 /say hi · #pid 3 abort · #pid list");
+            sendEnhancedParsingError("#pid needs an id and a line — e.g. #pid 3 /say hi  (add 'replace' to restart a live pid)");
             return true;
         }
+        // #pid list — removed; kept for reference:
+        //   if (rest.equalsIgnoreCase("list")) { pidList(); return true; }
         if (rest.equalsIgnoreCase("list")) {
-            pidList();
+            sendEnhancedParsingError("#pid list isn't a thing — use /tupenter running (it has clickable [abort] rows).");
             return true;
         }
 
@@ -792,7 +796,7 @@ public class TupenterModClient implements ClientModInitializer {
         try {
             id = Integer.parseInt(idToken);
         } catch (NumberFormatException ex) {
-            sendEnhancedParsingError("#pid wants a number (or 'list') — got '" + idToken + "'. Try #pid 3 /say hi.");
+            sendEnhancedParsingError("#pid wants a number — got '" + idToken + "'. Try #pid 3 /say hi.");
             return true;
         }
         if (id < 1) {
@@ -801,13 +805,13 @@ public class TupenterModClient implements ClientModInitializer {
         }
         String after = sp < 0 ? "" : rest.substring(sp + 1).trim();
 
+        // #pid N abort — removed; kept for reference:
+        //   if (after.equalsIgnoreCase("abort")) {
+        //       boolean aborted = SCRIPT_EXECUTOR.abort(id);
+        //       sendEnhancedParsingInfo/Error(...); return true;
+        //   }
         if (after.equalsIgnoreCase("abort")) {
-            boolean aborted = SCRIPT_EXECUTOR.abort(id);
-            if (aborted) {
-                sendEnhancedParsingInfo("Aborted pid " + id + ".");
-            } else {
-                sendEnhancedParsingError("No running pid " + id + " — see #pid list.");
-            }
+            sendEnhancedParsingError("#pid " + id + " abort isn't a thing — use /tupenter abort " + id + ".");
             return true;
         }
 
@@ -849,20 +853,22 @@ public class TupenterModClient implements ClientModInitializer {
                         : "Started pid " + id + ".");
             }
             case REFUSED_RUNNING -> sendEnhancedParsingError("pid " + id + " is already running — add 'replace' to restart it (#pid "
-                    + id + " replace …) or stop it with #pid " + id + " abort.");
+                    + id + " replace …) or stop it with /tupenter abort " + id + ".");
             case REJECTED -> sendEnhancedParsingError("pid " + id
                     + " couldn't start — concurrency or per-script limit hit (see /tupenter).");
         }
     }
 
-    /** #pid list — the running instances as clickable [abort] rows (same as /tupenter running's body). */
+    /* #pid list — control verb removed (see handlePidPrefix); /tupenter running
+       covers it with the same clickable [abort] rows. Kept here in case we
+       bring the directive-side listing back.
     private static void pidList() {
         java.util.List<ScriptExecutor.RunningInfo> infos = SCRIPT_EXECUTOR.runningInfos();
         if (infos.isEmpty()) {
             sendEnhancedParsingInfo("No scripts running.");
             return;
         }
-        sendEnhancedParsingInfo("Running (" + infos.size() + ") — click [abort] or #pid N abort:");
+        sendEnhancedParsingInfo("Running (" + infos.size() + ") — click [abort]:");
         for (ScriptExecutor.RunningInfo info : infos) {
             MutableComponent row = Component.literal(" • ").withStyle(ChatFormatting.GRAY)
                     .append(Component.literal(info.line()).withStyle(ChatFormatting.GRAY))
@@ -870,6 +876,7 @@ public class TupenterModClient implements ClientModInitializer {
             sendLocalCalcFeedback(row);
         }
     }
+    */
 
     /**
      * Records a typed command that Fabric's client-command handler will
@@ -1819,8 +1826,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7#record§r — the inverse: records even when message tracking is OFF (and bypasses the filter)",
                     "§7#stage§r — put the line INTO resend history without running it — press R when you want it",
                     "§7#unstage [n]§r — remove the newest n (default 1) entries from resend history; reports what the next resend is",
-                    "§7#pid N <line>§r — run <line> under a name you pick (its id in /tupenter running). Refuses if pid N is already live; add §7replace§r to restart it: #pid 3 replace /randomfill …",
-                    "§7#pid N abort§r — stop pid N · §7#pid list§r — the running list with clickable [abort] (same as /tupenter running)",
+                    "§7#pid N <line>§r — run <line> under a name you pick (its id in /tupenter running). Refuses if pid N is already live; add §7replace§r to restart it: #pid 3 replace /randomfill …. Stop or list with /tupenter abort N · /tupenter running.",
                     "§7#chat§r — send a normal chat message that evaluates its $...$: #chat my coords are $client.pos$ → posts \"my coords are 100 64 -30\". (Plain chat leaves $...$ literal; this is the opt-in.)",
                     "§7/echo§r — show text only to yourself, sends nothing: /echo y is $client.y$. Colors with &-codes: /echo &aall good &7($client.health$ hp) — \\& for a literal &",
                     "§7Shorthands:§r #s #nr #r #st #ust #c for #silent #norecord #record #stage #unstage #chat",
