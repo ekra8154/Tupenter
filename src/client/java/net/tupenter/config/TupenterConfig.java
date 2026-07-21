@@ -157,12 +157,43 @@ public class TupenterConfig {
         return worldScripts.computeIfAbsent(worldKey, key -> new WorldScriptState());
     }
 
-    /** The script lines armed for this world: enabled globals + the world's own enabled scripts. */
+    /**
+     * A tick script may carry an optional leading name, matching the custom
+     * command form but without params: {@code restock = /clear && …} names it
+     * "restock" (see {@link net.tupenter.script.ScriptName}).
+     *
+     * @return the name, or "" when the text is just a body
+     */
+    public static String scriptName(String text) {
+        return net.tupenter.script.ScriptName.name(text);
+    }
+
+    /** The runnable part — the body after {@code name =}, or the whole text when unnamed. */
+    public static String scriptBody(String text) {
+        return net.tupenter.script.ScriptName.body(text);
+    }
+
     /** An armed tick script for a world, carrying a stable identity for pid mapping. */
     public record ArmedScript(boolean global, String id, String text) {
         /** Kind+id key; scope it by world (worldKey + "|" + key()) for a session pid. */
         public String key() {
             return (global ? "g:" : "w:") + id;
+        }
+
+        /** Optional leading name ("" when unnamed). */
+        public String name() {
+            return scriptName(text);
+        }
+
+        /** The runnable body (name prefix stripped). */
+        public String body() {
+            return scriptBody(text);
+        }
+
+        /** Display label: the name if present, else a body preview is up to the caller. */
+        public String label() {
+            String name = name();
+            return name.isEmpty() ? body() : name;
         }
     }
 
@@ -220,6 +251,73 @@ public class TupenterConfig {
             }
         }
         return null;
+    }
+
+    /** A named script for this world, whether or not it's currently armed — for enable/disable by name. */
+    public record ScriptRef(boolean global, String id, String name, boolean enabled) {}
+
+    /** Every script (global + this world's) whose name matches, case-insensitive. Unnamed scripts never match. */
+    public List<ScriptRef> scriptsByName(String worldKey, String name) {
+        List<ScriptRef> out = new ArrayList<>();
+        WorldScriptState state = worldState(worldKey);
+        for (GlobalScript script : globalScripts) {
+            String scriptName = scriptName(script.text);
+            if (!scriptName.isEmpty() && scriptName.equalsIgnoreCase(name)) {
+                boolean enabled = state != null && state.enabledGlobalIds.contains(script.id);
+                out.add(new ScriptRef(true, script.id, scriptName, enabled));
+            }
+        }
+        if (state != null) {
+            for (WorldScript script : state.scripts) {
+                String scriptName = scriptName(script.text);
+                if (!scriptName.isEmpty() && scriptName.equalsIgnoreCase(name)) {
+                    out.add(new ScriptRef(false, script.id, scriptName, script.enabled));
+                }
+            }
+        }
+        return out;
+    }
+
+    /** All distinct names defined across global + this world's scripts — for tab completion. */
+    public List<String> scriptNames(String worldKey) {
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        for (GlobalScript script : globalScripts) {
+            String name = scriptName(script.text);
+            if (!name.isEmpty()) {
+                names.add(name);
+            }
+        }
+        WorldScriptState state = worldState(worldKey);
+        if (state != null) {
+            for (WorldScript script : state.scripts) {
+                String name = scriptName(script.text);
+                if (!name.isEmpty()) {
+                    names.add(name);
+                }
+            }
+        }
+        return new ArrayList<>(names);
+    }
+
+    /** Arms/disarms a specific script by identity for this world. Returns true if the state changed. */
+    public boolean setArmed(String worldKey, boolean global, String id, boolean enable) {
+        WorldScriptState state = enable ? worldStateOrCreate(worldKey) : worldState(worldKey);
+        if (state == null) {
+            return false;
+        }
+        if (global) {
+            if (enable) {
+                return state.enabledGlobalIds.contains(id) ? false : state.enabledGlobalIds.add(id);
+            }
+            return state.enabledGlobalIds.remove(id);
+        }
+        for (WorldScript script : state.scripts) {
+            if (script.id.equals(id) && script.enabled != enable) {
+                script.enabled = enable;
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Drops enable pointers to deleted globals and empty world states. */

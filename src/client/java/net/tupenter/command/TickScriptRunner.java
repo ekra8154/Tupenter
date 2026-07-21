@@ -51,8 +51,13 @@ public final class TickScriptRunner {
         if (on) {
             for (String line : TupenterConfig.INSTANCE.armedScriptLines(TupenterModClient.currentWorldKey())) {
                 // newlines are Mod Menu formatting only — a script runs as one line
-                String body = line.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();
-                if (!body.isEmpty() && !body.startsWith("//")) {
+                String collapsed = line.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();
+                if (collapsed.isEmpty() || collapsed.startsWith("//")) {
+                    continue;
+                }
+                // "restock = /clear" runs "/clear"; the name is a label, not code
+                String body = TupenterConfig.scriptBody(collapsed);
+                if (!body.isEmpty()) {
                     desired.add(body);
                 }
             }

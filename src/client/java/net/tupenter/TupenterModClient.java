@@ -425,8 +425,8 @@ public class TupenterModClient implements ClientModInitializer {
         return TICK_PIDS.computeIfAbsent(worldKey + "|" + script.key(), k -> SCRIPT_EXECUTOR.reservePid());
     }
 
-    /** A tick-script row for the running views: its pid, source text, and scope. */
-    private record ArmedRow(int pid, String text, boolean global) {}
+    /** A tick-script row for the running views: its pid, display label, and scope. */
+    private record ArmedRow(int pid, String display, boolean global) {}
 
     /** Armed tick scripts for the current world with their session pids (empty when master off). */
     private static java.util.List<ArmedRow> armedRows() {
@@ -437,7 +437,8 @@ public class TupenterModClient implements ClientModInitializer {
         }
         java.util.List<ArmedRow> rows = new java.util.ArrayList<>();
         for (TupenterConfig.ArmedScript script : config.armedScripts(worldKey)) {
-            rows.add(new ArmedRow(tickPidFor(worldKey, script), script.text(), script.global()));
+            String display = script.name().isEmpty() ? previewLine(script.body()) : script.name();
+            rows.add(new ArmedRow(tickPidFor(worldKey, script), display, script.global()));
         }
         return rows;
     }
@@ -491,7 +492,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "Tick scripts (" + armed.size() + ") — every tick; [abort] switches one OFF:").withStyle(ChatFormatting.AQUA));
             for (ArmedRow row : armed) {
                 MutableComponent line = Component.literal(" • ").withStyle(ChatFormatting.GRAY)
-                        .append(Component.literal("id " + row.pid() + "  " + previewLine(row.text())
+                        .append(Component.literal("id " + row.pid() + "  " + row.display()
                                 + (row.global() ? "  (global)" : "")).withStyle(ChatFormatting.GRAY))
                         .append(Component.literal(" [abort]").withStyle(abortLinkStyle(row.pid())));
                 source.sendFeedback(line);
@@ -567,7 +568,7 @@ public class TupenterModClient implements ClientModInitializer {
         colors.add(HUD_AQUA);
 
         for (ArmedRow row : armed) {
-            texts.add("id " + row.pid() + "  " + previewLine(row.text()) + (row.global() ? "  (global)" : ""));
+            texts.add("id " + row.pid() + "  " + row.display() + (row.global() ? "  (global)" : ""));
             colors.add(HUD_GOLD);
         }
         for (ScriptExecutor.RunningInfo info : infos) {
@@ -617,15 +618,20 @@ public class TupenterModClient implements ClientModInitializer {
         for (TupenterConfig.GlobalScript script : config.globalScripts) {
             boolean armed = state != null && state.enabledGlobalIds.contains(script.id);
             context.getSource().sendFeedback(Component.literal(
-                    (armed ? " ✔ " : " ✘ ") + scriptPreview(script.text) + " §8(global)")
+                    (armed ? " ✔ " : " ✘ ") + scriptListLabel(script.text) + " §8(global)")
                     .withStyle(armed ? ChatFormatting.GREEN : ChatFormatting.DARK_GRAY));
         }
         if (state != null) {
             for (TupenterConfig.WorldScript script : state.scripts) {
                 context.getSource().sendFeedback(Component.literal(
-                        (script.enabled ? " ✔ " : " ✘ ") + scriptPreview(script.text) + " §8(this world)")
+                        (script.enabled ? " ✔ " : " ✘ ") + scriptListLabel(script.text) + " §8(this world)")
                         .withStyle(script.enabled ? ChatFormatting.GREEN : ChatFormatting.DARK_GRAY));
             }
+        }
+        if (key != null && !config.scriptNames(key).isEmpty()) {
+            context.getSource().sendFeedback(Component.literal(
+                    "Toggle a named one: /tupenter scripts enable|disable <name> · abort a running id: /tupenter abort <id>")
+                    .withStyle(ChatFormatting.DARK_GRAY));
         }
 
         int armedCount = key == null ? 0 : config.armedScriptLines(key).size();
@@ -656,6 +662,72 @@ public class TupenterModClient implements ClientModInitializer {
     private static String scriptPreview(String line) {
         String single = line.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();
         return single.length() > 50 ? single.substring(0, 50) + "…" : single;
+    }
+
+    /** "restock §8= /clear …" for a named script, else just the body preview. */
+    private static String scriptListLabel(String text) {
+        String name = TupenterConfig.scriptName(text);
+        if (name.isEmpty()) {
+            return scriptPreview(text);
+        }
+        return "§f" + name + "§r §8= " + scriptPreview(TupenterConfig.scriptBody(text));
+    }
+
+    /** /tupenter scripts enable|disable &lt;name&gt; — arms/disarms named tick script(s) for this world. */
+    private static int runSetArmedByName(CommandContext<FabricClientCommandSource> context, boolean enable) {
+        String name = StringArgumentType.getString(context, "name");
+        String worldKey = currentWorldKey();
+        if (worldKey == null) {
+            context.getSource().sendFeedback(Component.literal("Not in a world — nothing to arm.").withStyle(ChatFormatting.GRAY));
+            return 0;
+        }
+        java.util.List<TupenterConfig.ScriptRef> matches = TupenterConfig.INSTANCE.scriptsByName(worldKey, name);
+        if (matches.isEmpty()) {
+            context.getSource().sendFeedback(Component.literal(
+                    "No tick script named '" + name + "' here — /tupenter scripts lists them (only named scripts can be toggled this way).")
+                    .withStyle(ChatFormatting.GRAY));
+            return 0;
+        }
+        int changed = 0;
+        for (TupenterConfig.ScriptRef ref : matches) {
+            if (TupenterConfig.INSTANCE.setArmed(worldKey, ref.global(), ref.id(), enable)) {
+                changed++;
+            }
+        }
+        if (changed > 0) {
+            TupenterConfig.save();
+        }
+        long globals = matches.stream().filter(TupenterConfig.ScriptRef::global).count();
+        String scope = scopeLabel(globals, matches.size() - globals);
+        if (changed == 0) {
+            context.getSource().sendFeedback(Component.literal(
+                    "'" + name + "' is already " + (enable ? "enabled" : "disabled") + " (" + scope + ").")
+                    .withStyle(ChatFormatting.GRAY));
+            return 1;
+        }
+        String note = enable && !TupenterConfig.INSTANCE.tickScriptsEnabled
+                ? " Master is OFF — /tupenter scripts on to run it." : "";
+        context.getSource().sendFeedback(Component.literal(
+                (enable ? "Enabled" : "Disabled") + " '" + name + "' (" + scope + ")." + note)
+                .withStyle(ChatFormatting.YELLOW));
+        return 1;
+    }
+
+    private static String scopeLabel(long globals, long world) {
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        if (globals > 0) {
+            parts.add(globals + " global");
+        }
+        if (world > 0) {
+            parts.add(world + " this-world");
+        }
+        return String.join(", ", parts);
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestScriptNames(
+            CommandContext<FabricClientCommandSource> context, com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return net.minecraft.commands.SharedSuggestionProvider.suggest(
+                TupenterConfig.INSTANCE.scriptNames(currentWorldKey()), builder);
     }
 
     public static ScriptParser.Options parserOptions() {
@@ -1081,7 +1153,15 @@ public class TupenterModClient implements ClientModInitializer {
                             .then(literal("scripts")
                                     .executes(TupenterModClient::runScriptsStatusCommand)
                                     .then(literal("on").executes(context -> runScriptsMasterCommand(context, true)))
-                                    .then(literal("off").executes(context -> runScriptsMasterCommand(context, false))))
+                                    .then(literal("off").executes(context -> runScriptsMasterCommand(context, false)))
+                                    .then(literal("enable")
+                                            .then(argument("name", StringArgumentType.word())
+                                                    .suggests(TupenterModClient::suggestScriptNames)
+                                                    .executes(context -> runSetArmedByName(context, true))))
+                                    .then(literal("disable")
+                                            .then(argument("name", StringArgumentType.word())
+                                                    .suggests(TupenterModClient::suggestScriptNames)
+                                                    .executes(context -> runSetArmedByName(context, false)))))
                             .then(literal("vars")
                                     .executes(context -> runVarsCommand(context, null))
                                     .then(argument("group", StringArgumentType.word())
@@ -1932,6 +2012,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Each armed line runs as its own loop — one body pass per tick (20x/s) — while the master toggle is on. A walking mcfunction file.",
                     "§7Guard them:§r #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying) — unguarded commands flood multiplayer chat.",
                     "§7#wait works inside:§r the loop resumes after it, so #wait paces a script (/effect … && #wait 3s) and $markers$ after a wait re-read live state. #while is allowed too.",
+                    "§7Name them:§r start a script with §fname =§r (like a custom command, no params): restock = /clear && #wait 1s. Then toggle from chat: /tupenter scripts enable|disable restock.",
                     "§7Live tuning:§r reference $maxy$ in a script, change it anytime with #set $maxy$ = 80",
                     "§7Arming is PER WORLD:§r Global scripts are shared definitions you arm world-by-world; This World's scripts exist only in the world you're in. A world you never configured runs NOTHING — nukeOnDeath stays off on your survival server.",
                     "§7Status:§r /tupenter scripts — what's armed here · /tupenter running — armed loops + their ids · /tupenter abort <id> switches one OFF · /tupenter scripts on|off — master switch",
