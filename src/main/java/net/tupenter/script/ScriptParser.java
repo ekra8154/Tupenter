@@ -639,7 +639,11 @@ public final class ScriptParser {
                 changed = true;
             }
             sendCount++;
-            if (sendCount > options.maxCommandsPerScript()) {
+            // Eager scripts collect every send up front, so cap the total. Lazy
+            // scripts pace themselves across ticks (Max Commands Per Tick) and
+            // yield each send, so a big /randomfill runs as long as it needs —
+            // same reasoning as the relaxed loop cap and the submit() exemption.
+            if (sink == null && sendCount > options.maxCommandsPerScript()) {
                 throw new ParseAbort("Script would send more than " + options.maxCommandsPerScript()
                         + " commands (Max Commands Per Script in the config)");
             }

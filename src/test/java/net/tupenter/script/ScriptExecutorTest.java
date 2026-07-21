@@ -403,6 +403,25 @@ class ScriptExecutorTest {
     }
 
     @Test
+    void lazyScriptSendsPastMaxCommandsPerScript() {
+        SessionVariableStore store = new SessionVariableStore();
+        // maxLoopIterations high (guard won't trip), maxCommandsPerScript = 10
+        ScriptParser.Options opts = new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, java.util.Map.of(),
+                true, true, true, true, 1000, 10, new java.util.Random(42), store, store).withLazyExecution(true);
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 10, 8);
+
+        ScriptParser.ParseResult result = ScriptParser.parse("#repeat 30 (/say hi)", opts);
+        executor.submit(result.script());
+        for (int i = 0; i < 20 && !executor.isIdle(); i++) {
+            executor.tick();
+        }
+        assertTrue(executor.isIdle());
+        assertEquals(30, sender.sent.size(), "a lazy script isn't bounded by the 10-command cap");
+        assertTrue(sender.errors.isEmpty());
+    }
+
+    @Test
     void lazyWhileLoopsUntilConditionFalse() {
         SessionVariableStore store = new SessionVariableStore();
         store.set("n", Value.ofNumber(3));
