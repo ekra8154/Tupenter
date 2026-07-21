@@ -411,7 +411,14 @@ final class ExpressionEvaluator {
                 case "effectset" -> tagMembers("effectset", TagResolver.TagKind.EFFECT, args);
                 case "entityset" -> tagMembers("entityset", TagResolver.TagKind.ENTITY, args);
                 case "block" -> blockAt(args);
-                default -> throw new ExpressionException("Unknown function: " + identifier);
+                default -> {
+                    // not a built-in — try a user-defined /customfunction
+                    Value userValue = context.functions().call(identifier, args, context);
+                    if (userValue == null) {
+                        throw new ExpressionException("Unknown function: " + identifier);
+                    }
+                    yield userValue;
+                }
             };
         }
 

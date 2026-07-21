@@ -84,6 +84,7 @@ public final class ScriptParser {
             SessionVariableStore sessionVariables,
             TagResolver tags,
             BlockReader blocks,
+            FunctionResolver functions,
             boolean lazyExecution
     ) {
         /** Convenience without world lookups (tests, contexts with no live world). */
@@ -93,7 +94,7 @@ public final class ScriptParser {
                        Random random, VariableProvider variables, SessionVariableStore sessionVariables) {
             this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
                     conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
-                    TagResolver.NONE, BlockReader.NONE, false);
+                    TagResolver.NONE, BlockReader.NONE, FunctionResolver.NONE, false);
         }
 
         /** Convenience with tag lookup but no block reader and eager execution. */
@@ -104,19 +105,25 @@ public final class ScriptParser {
                        TagResolver tags) {
             this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
                     conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
-                    tags, BlockReader.NONE, false);
+                    tags, BlockReader.NONE, FunctionResolver.NONE, false);
         }
 
         public Options withLazyExecution(boolean lazy) {
             return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
                     loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
-                    sessionVariables, tags, blocks, lazy);
+                    sessionVariables, tags, blocks, functions, lazy);
         }
 
         public Options withSessionVariables(SessionVariableStore store) {
             return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
                     loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
-                    store, tags, blocks, lazyExecution);
+                    store, tags, blocks, functions, lazyExecution);
+        }
+
+        public Options withFunctions(FunctionResolver resolver) {
+            return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
+                    loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
+                    sessionVariables, tags, blocks, resolver, lazyExecution);
         }
     }
 
@@ -536,7 +543,7 @@ public final class ScriptParser {
                     return options.variables().resolve(name);
                 }
             };
-            this.context = new EvalContext(options.random(), lookup, options.tags(), options.blocks());
+            this.context = new EvalContext(options.random(), lookup, options.tags(), options.blocks(), options.functions());
         }
 
         private void processStatements(String text) {

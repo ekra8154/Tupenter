@@ -56,6 +56,8 @@ public class TupenterConfig {
     public boolean tickScriptsMigrationNoticePending = false;
     public NumberMathMode numberMathMode = NumberMathMode.AUTO_DETECT;
     public List<String> aliases = new ArrayList<>();
+    /** User-defined expression functions, each "name <params> = expression" (see CustomFunctionManager). */
+    public List<String> functions = new ArrayList<>();
 
     // Script executor limits (docs/SCRIPTING_DESIGN.md §2)
     public int maxCommandsPerTick = 16;

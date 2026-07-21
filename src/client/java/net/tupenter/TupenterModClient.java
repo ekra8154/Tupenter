@@ -29,6 +29,7 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.tupenter.command.CommandAliasManager;
+import net.tupenter.command.CustomFunctionManager;
 import net.tupenter.config.TupenterConfig;
 import net.tupenter.command.ClientCommandRegistrar;
 import net.tupenter.command.ClientVariableProvider;
@@ -760,6 +761,7 @@ public class TupenterModClient implements ClientModInitializer {
                 SESSION_VARIABLES,
                 TAG_RESOLVER,
                 BLOCK_READER,
+                CustomFunctionManager.resolver(), // user-defined /customfunctions
                 true // lazy execution
         );
     }
@@ -1260,6 +1262,23 @@ public class TupenterModClient implements ClientModInitializer {
                                     .suggests((context, suggestionsBuilder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                                             CommandAliasManager.getAliasMap().keySet(), suggestionsBuilder))
                                     .executes(TupenterModClient::runAliasDetailCommand)));
+
+                    dispatcher.register(literal("customfunction")
+                            .then(literal("add")
+                                    .then(argument("name", StringArgumentType.word())
+                                            .then(argument("body", StringArgumentType.greedyString())
+                                                    .executes(context -> runFunctionSaveCommand(context, true)))))
+                            .then(literal("update")
+                                    .then(argument("name", StringArgumentType.word())
+                                            .suggests(TupenterModClient::suggestFunctionNames)
+                                            .then(argument("body", StringArgumentType.greedyString())
+                                                    .executes(context -> runFunctionSaveCommand(context, false)))))
+                            .then(literal("remove")
+                                    .then(argument("name", StringArgumentType.word())
+                                            .suggests(TupenterModClient::suggestFunctionNames)
+                                            .executes(TupenterModClient::runFunctionRemoveCommand)))
+                            .then(literal("list")
+                                    .executes(TupenterModClient::runFunctionListCommand)));
 
                     for (Map.Entry<String, AliasDefinition> alias : CommandAliasManager.getAliasMap().entrySet()) {
                         dispatcher.register(ClientCommandRegistrar.buildAliasNode(alias.getKey(), alias.getValue(), registryAccess));
@@ -1804,6 +1823,52 @@ public class TupenterModClient implements ClientModInitializer {
         return 0;
     }
 
+    private static int runFunctionSaveCommand(CommandContext<FabricClientCommandSource> context, boolean add) {
+        String name = StringArgumentType.getString(context, "name");
+        String body = StringArgumentType.getString(context, "body");
+        try {
+            String saved = add ? CustomFunctionManager.addFunction(name, body)
+                    : CustomFunctionManager.updateFunction(name, body);
+            context.getSource().sendFeedback(Component.literal((add ? "Added" : "Updated") + " function "
+                    + saved + "() — use it in an expression: $" + saved + "()$").withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IllegalArgumentException ex) {
+            context.getSource().sendError(Component.literal(ex.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int runFunctionRemoveCommand(CommandContext<FabricClientCommandSource> context) {
+        String name = StringArgumentType.getString(context, "name");
+        if (CustomFunctionManager.removeFunction(name)) {
+            context.getSource().sendFeedback(Component.literal("Removed function " + CommandAliasManager.normalizeName(name) + "()").withStyle(ChatFormatting.GREEN));
+            return 1;
+        }
+        context.getSource().sendError(Component.literal("No function named " + CommandAliasManager.normalizeName(name) + " — /customfunction list"));
+        return 0;
+    }
+
+    private static int runFunctionListCommand(CommandContext<FabricClientCommandSource> context) {
+        java.util.Map<String, AliasDefinition> functions = CustomFunctionManager.getFunctionMap();
+        if (functions.isEmpty()) {
+            context.getSource().sendFeedback(Component.literal(
+                    "No custom functions. Add one: /customfunction add lightlevel client.light — then use $lightlevel()$").withStyle(ChatFormatting.GRAY));
+            return 1;
+        }
+        context.getSource().sendFeedback(Component.literal("Custom functions (" + functions.size() + ") — call as $name(...)$ in expressions:").withStyle(ChatFormatting.AQUA));
+        for (java.util.Map.Entry<String, AliasDefinition> entry : functions.entrySet()) {
+            String decls = entry.getValue().declarationPrefix().trim();
+            String sig = entry.getKey() + (decls.isEmpty() ? "()" : " " + decls);
+            context.getSource().sendFeedback(Component.literal(" • §f" + sig + "§r §8= " + previewLine(entry.getValue().body())).withStyle(ChatFormatting.GRAY));
+        }
+        return 1;
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestFunctionNames(
+            CommandContext<FabricClientCommandSource> context, com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return net.minecraft.commands.SharedSuggestionProvider.suggest(CustomFunctionManager.getFunctionMap().keySet(), builder);
+    }
+
     /** Group names for /tupenter vars <group> suggestions: built-in + user-made. */
     private static java.util.Set<String> variableGroups() {
         java.util.Set<String> groups = new java.util.TreeSet<>();
@@ -2254,7 +2319,7 @@ public class TupenterModClient implements ClientModInitializer {
                 && TupenterConfig.INSTANCE.numberMathMode != net.tupenter.script.NumberMathMode.DISABLED) {
             try {
                 text = MathEvaluator.applyNumberMath(text, net.tupenter.script.NumberMathMode.EXPLICIT_ONLY,
-                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER));
+                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver()));
             } catch (IllegalArgumentException ex) {
                 context.getSource().sendError(Component.literal(ex.getMessage()));
                 return null;
@@ -2352,7 +2417,7 @@ public class TupenterModClient implements ClientModInitializer {
         String expression = input.substring(0, input.length() - 1).trim();
         net.tupenter.script.Value value;
         try {
-            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER));
+            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver()));
         } catch (IllegalArgumentException ex) {
             sendLocalCalcError(Component.literal("Invalid math expression: " + ex.getMessage()));
             return true;
@@ -2401,7 +2466,7 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static int evaluateLocalCalcExpression(String expression, java.util.function.Consumer<Component> feedback, java.util.function.Consumer<Component> error) {
         try {
-            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER));
+            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver()));
             feedback.accept(Component.literal(result).withStyle(ChatFormatting.AQUA));
             return 1;
         } catch (IllegalArgumentException ex) {

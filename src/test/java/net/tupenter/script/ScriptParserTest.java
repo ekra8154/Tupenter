@@ -615,7 +615,7 @@ class ScriptParserTest {
         };
         SessionVariableStore store = new SessionVariableStore();
         return new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, aliasMap(Map.of("randomfill", RANDOMFILL_BODY)),
-                true, true, true, true, 100, 1000, new Random(42), store, store, tags, blocks, false);
+                true, true, true, true, 100, 1000, new Random(42), store, store, tags, blocks, FunctionResolver.NONE, false);
     }
 
     @Test
@@ -993,6 +993,24 @@ class ScriptParserTest {
         ScriptParser.ParseResult result = ScriptParser.parse(
                 "#if ($bad.var$ == \"x\") (/say hit)", optionsWith(crosshairProvider()));
         assertNotNull(result.error(), "only absent-state misses are softened; real errors still surface");
+    }
+
+    // --- user-defined functions (/customfunction) ---
+
+    @Test
+    void aUserFunctionResolvesInsideAnExpression() {
+        FunctionResolver fns = (name, args, context) ->
+                name.equalsIgnoreCase("lightlevel") && args.isEmpty() ? Value.ofNumber(12) : null;
+        ScriptParser.Options opts = options(Map.of()).withFunctions(fns);
+        ScriptParser.ParseResult result = ScriptParser.parse("#if ($lightlevel() > 10$) (/say bright)", opts);
+        assertNull(result.error());
+        assertEquals(List.of("say bright"), contents(result));
+    }
+
+    @Test
+    void anUnknownFunctionStillErrors() {
+        ScriptParser.ParseResult result = ScriptParser.parse("#if ($nope() > 1$) (/say x)", options(Map.of()));
+        assertNotNull(result.error(), "a name that's neither built-in nor a user function is still an error");
     }
 
     @Test
