@@ -410,13 +410,15 @@ public class TupenterModClient implements ClientModInitializer {
         FabricClientCommandSource source = context.getSource();
         TupenterConfig config = TupenterConfig.INSTANCE;
         String key = currentWorldKey();
-        java.util.List<String> armed = (config.tickScriptsEnabled && key != null)
-                ? new java.util.ArrayList<>(config.armedScriptLines(key)) : java.util.List.of();
+        java.util.List<String> configured = key != null ? config.armedScriptLines(key) : java.util.List.of();
+        java.util.List<String> armed = config.tickScriptsEnabled ? configured : java.util.List.of();
         java.util.List<ScriptExecutor.RunningInfo> instances = SCRIPT_EXECUTOR.runningInfos();
 
         if (armed.isEmpty() && instances.isEmpty()) {
-            source.sendFeedback(Component.literal(
-                    "Nothing active — no tick scripts armed here, nothing running.").withStyle(ChatFormatting.GRAY));
+            boolean offButConfigured = !config.tickScriptsEnabled && !configured.isEmpty();
+            source.sendFeedback(Component.literal(offButConfigured
+                    ? "Nothing running — " + configured.size() + " tick script(s) armed but the master toggle is OFF (/tupenter scripts on)."
+                    : "Nothing active — no tick scripts armed here, nothing running.").withStyle(ChatFormatting.GRAY));
             return 1;
         }
         if (!armed.isEmpty()) {
@@ -463,6 +465,11 @@ public class TupenterModClient implements ClientModInitializer {
         return 1;
     }
 
+    private static final int HUD_AQUA = 0xFF55FFFF;   // header
+    private static final int HUD_GOLD = 0xFFFFD24A;   // armed tick scripts (fire every tick)
+    private static final int HUD_WHITE = 0xFFE0E0E0;  // running instances
+    private static final int HUD_GRAY = 0xFF9AA0A6;   // notes
+
     /** Draws the running-scripts panel top-left while the HUD is toggled on. */
     private static void renderRunningHud(GuiGraphics graphics, DeltaTracker tickCounter) {
         if (!runningHudVisible) {
@@ -473,36 +480,54 @@ public class TupenterModClient implements ClientModInitializer {
             return;
         }
         Font font = mc.font;
+
+        // Two independent sources, exactly like /tupenter running:
+        //   armed tick scripts (Mod Menu → Scripts) fire every tick and finish
+        //   in-tick, so they're rarely a live instance — count them separately.
+        TupenterConfig config = TupenterConfig.INSTANCE;
+        String key = currentWorldKey();
+        java.util.List<String> configured = key != null ? config.armedScriptLines(key) : java.util.List.of();
+        java.util.List<String> armed = config.tickScriptsEnabled ? configured : java.util.List.of();
         java.util.List<ScriptExecutor.RunningInfo> infos = SCRIPT_EXECUTOR.runningInfos();
 
-        java.util.List<String> lines = new java.util.ArrayList<>();
-        lines.add("Tupenter — running (" + infos.size() + ")");
-        if (infos.isEmpty()) {
-            lines.add("(nothing running)");
-        } else {
-            for (ScriptExecutor.RunningInfo info : infos) {
-                lines.add(info.line());
-            }
+        java.util.List<String> texts = new java.util.ArrayList<>();
+        java.util.List<Integer> colors = new java.util.ArrayList<>();
+
+        texts.add("Tupenter — " + armed.size() + " tick · " + infos.size() + " running");
+        colors.add(HUD_AQUA);
+
+        for (String line : armed) {
+            texts.add("tick  " + previewLine(line));
+            colors.add(HUD_GOLD);
+        }
+        for (ScriptExecutor.RunningInfo info : infos) {
+            texts.add(info.line());
+            colors.add(HUD_WHITE);
+        }
+        if (armed.isEmpty() && infos.isEmpty()) {
+            // master off but scripts configured is the confusing case — say so
+            boolean offButConfigured = !config.tickScriptsEnabled && !configured.isEmpty();
+            texts.add(offButConfigured
+                    ? "(tick master OFF — " + configured.size() + " armed, not firing)"
+                    : "(nothing armed or running)");
+            colors.add(HUD_GRAY);
         }
 
         int pad = 3;
         int lineH = font.lineHeight + 1;
         int width = 0;
-        for (String line : lines) {
+        for (String line : texts) {
             width = Math.max(width, font.width(line));
         }
         int x = 4;
         int y = 4;
         int boxW = width + pad * 2;
-        int boxH = lines.size() * lineH + pad * 2 - 1;
+        int boxH = texts.size() * lineH + pad * 2 - 1;
         graphics.fill(x, y, x + boxW, y + boxH, 0xA0000000); // translucent black backdrop
 
         int ty = y + pad;
-        for (int i = 0; i < lines.size(); i++) {
-            int color = i == 0 ? 0xFF55FFFF                    // header: aqua
-                    : (infos.isEmpty() ? 0xFF808080            // idle note: gray
-                    : 0xFFE0E0E0);                             // rows: near-white
-            graphics.drawString(font, lines.get(i), x + pad, ty, color);
+        for (int i = 0; i < texts.size(); i++) {
+            graphics.drawString(font, texts.get(i), x + pad, ty, colors.get(i));
             ty += lineH;
         }
     }
