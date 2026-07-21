@@ -1014,6 +1014,34 @@ class ScriptParserTest {
     }
 
     @Test
+    void aUserFunctionEvaluatesArgsOnceAndBindsCallByValue() {
+        // resolver shaped like CustomFunctionManager's: bind arg to a param, eval body in a scope
+        FunctionResolver fns = (name, args, context) -> {
+            if (!name.equalsIgnoreCase("dbl")) {
+                return null;
+            }
+            VariableProvider scoped = new VariableProvider() {
+                @Override
+                public java.util.Set<String> names() {
+                    return java.util.Set.of("x");
+                }
+
+                @Override
+                public java.util.Optional<Value> resolve(String n) {
+                    return n.equalsIgnoreCase("x") ? java.util.Optional.of(args.get(0)) : context.variables().resolve(n);
+                }
+            };
+            return MathEvaluator.evaluateValue("x * 2",
+                    new EvalContext(context.random(), scoped, context.tags(), context.blocks(), context.functions()));
+        };
+        // dbl(1 + 1): arg evaluates ONCE to 2, body x*2 = 4 — proves call-by-value + precedence
+        ScriptParser.ParseResult result = ScriptParser.parse("#if ($dbl(1 + 1) == 4$) (/say ok)",
+                options(Map.of()).withFunctions(fns));
+        assertNull(result.error());
+        assertEquals(List.of("say ok"), contents(result));
+    }
+
+    @Test
     void ifWithVariables() {
         SessionVariableStore store = new SessionVariableStore();
         store.set("y", Value.ofNumber(70));

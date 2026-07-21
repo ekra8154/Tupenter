@@ -211,7 +211,8 @@ public class TupenterModClient implements ClientModInitializer {
                 "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
-                "trim", "upper", "lower", "substr", "replace"));
+                "trim", "upper", "lower", "substr", "replace", "vec"));
+        names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too
         return new java.util.ArrayList<>(names);
     }
 

@@ -15,6 +15,17 @@ class ExpressionEvaluatorTest {
         return ExpressionEvaluator.evaluate(expression, new EvalContext(new Random(42))).displayString();
     }
 
+    @Test
+    void vecBuildsAPositionString() {
+        assertEquals("0 64 0", eval("vec(0, 64, 0)"));
+        assertEquals("1.5 -2 10", eval("vec(1.5, -2, 5 + 5)"));
+    }
+
+    @Test
+    void vecNeedsThreeArgs() {
+        assertThrows(ExpressionException.class, () -> eval("vec(0, 64)"));
+    }
+
     // --- numbers (inherited behavior) ---
 
     @Test
