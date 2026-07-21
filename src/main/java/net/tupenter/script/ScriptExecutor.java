@@ -72,6 +72,7 @@ public final class ScriptExecutor {
     private int budgetUsedThisTick;
     private int silenceGraceTicks;
     private long clock; // last world game-time seen — the gametime #wait clock
+    private int nextId = 1; // per-session id assigned to each running instance ("PID")
 
     public ScriptExecutor(PacketSender sender, Limits limits) {
         this.sender = sender;
@@ -97,7 +98,7 @@ public final class ScriptExecutor {
             return;
         }
 
-        running.addLast(new Instance(script));
+        running.addLast(new Instance(script, nextId++));
         drain(clock);
     }
 
@@ -120,7 +121,7 @@ public final class ScriptExecutor {
                 || (!script.isLazy() && script.statements().size() > limits.maxCommandsPerScript())) {
             return false;
         }
-        running.addLast(new Instance(script));
+        running.addLast(new Instance(script, nextId++));
         drain(clock);
         return true;
     }
@@ -181,9 +182,22 @@ public final class ScriptExecutor {
             } else {
                 state = "active";
             }
-            out.add(preview(instance.script.originalLine()) + " — " + state);
+            out.add("#" + instance.id + "  " + preview(instance.script.originalLine()) + " — " + state);
         }
         return out;
+    }
+
+    /** Aborts just the running instance with the given id (its "PID"); true if one was found. */
+    public boolean abort(int id) {
+        for (Iterator<Instance> iterator = running.iterator(); iterator.hasNext(); ) {
+            Instance instance = iterator.next();
+            if (instance.id == id) {
+                instance.close();
+                iterator.remove();
+                return true;
+            }
+        }
+        return false;
     }
 
     private void cancelSameSource(String originalLine) {
@@ -270,11 +284,13 @@ public final class ScriptExecutor {
     private static final class Instance {
         private final Script script;
         private final Script.StatementSource source;
+        private final int id;
         private long waitUntilGameTime; // gametime wait: world-tick deadline (0 = none)
         private long waitUntilMillis;   // realtime wait: wall-clock deadline (0 = none)
 
-        private Instance(Script script) {
+        private Instance(Script script, int id) {
             this.script = script;
+            this.id = id;
             this.source = script.source();
         }
 

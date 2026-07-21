@@ -366,6 +366,37 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /** /tupenter scripts — what would run right here, right now. */
+    /** /tupenter abort — panic stop: kills every running script + resend queue and turns the tick master off. */
+    private static int runAbortAllCommand(CommandContext<FabricClientCommandSource> context) {
+        int aborted = SCRIPT_EXECUTOR.runningCount();
+        SCRIPT_EXECUTOR.abortAll();
+        pendingQueue.clear();
+        delayTimer = 0;
+        // panic switch: aborting while tick scripts keep resubmitting every tick would be futile
+        if (TupenterConfig.INSTANCE.tickScriptsEnabled) {
+            TupenterConfig.INSTANCE.tickScriptsEnabled = false;
+            TupenterConfig.save();
+            context.getSource().sendFeedback(Component.literal(
+                    "Tick scripts disabled (re-enable in Mod Menu → Tupenter → Scripts).")
+                    .withStyle(ChatFormatting.YELLOW));
+        }
+        context.getSource().sendFeedback(Component.literal(
+                aborted > 0 ? "Aborted " + aborted + " running script(s)." : "Nothing to abort.")
+                .withStyle(ChatFormatting.YELLOW));
+        return 1;
+    }
+
+    /** /tupenter abort <id> — stop just one running script by its /tupenter running id; leaves the tick master alone. */
+    private static int runAbortOneCommand(CommandContext<FabricClientCommandSource> context) {
+        int id = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "id");
+        boolean aborted = SCRIPT_EXECUTOR.abort(id);
+        context.getSource().sendFeedback(Component.literal(aborted
+                ? "Aborted script #" + id + "."
+                : "No running script #" + id + " — see /tupenter running.")
+                .withStyle(aborted ? ChatFormatting.YELLOW : ChatFormatting.GRAY));
+        return 1;
+    }
+
     /** /tupenter running — what's active now: armed tick scripts (every tick) + ad-hoc/parked instances. */
     private static int runRunningCommand(CommandContext<FabricClientCommandSource> context) {
         FabricClientCommandSource source = context.getSource();
@@ -389,7 +420,7 @@ public class TupenterModClient implements ClientModInitializer {
         }
         if (!instances.isEmpty()) {
             source.sendFeedback(Component.literal(
-                    "Running now (" + instances.size() + ") — /tupenter abort stops all:").withStyle(ChatFormatting.AQUA));
+                    "Running now (" + instances.size() + ") — /tupenter abort #N stops one, /tupenter abort stops all:").withStyle(ChatFormatting.AQUA));
             for (String summary : instances) {
                 source.sendFeedback(Component.literal(" • " + summary).withStyle(ChatFormatting.GRAY));
             }
@@ -754,25 +785,9 @@ public class TupenterModClient implements ClientModInitializer {
 
                     dispatcher.register(literal("tupenter")
                             .then(literal("abort")
-                                    .executes(context -> {
-                                        int aborted = SCRIPT_EXECUTOR.runningCount();
-                                        SCRIPT_EXECUTOR.abortAll();
-                                        pendingQueue.clear();
-                                        delayTimer = 0;
-                                        // panic switch: aborting while tick scripts keep
-                                        // resubmitting every tick would be futile
-                                        if (TupenterConfig.INSTANCE.tickScriptsEnabled) {
-                                            TupenterConfig.INSTANCE.tickScriptsEnabled = false;
-                                            TupenterConfig.save();
-                                            context.getSource().sendFeedback(Component.literal(
-                                                    "Tick scripts disabled (re-enable in Mod Menu → Tupenter → Scripts).")
-                                                    .withStyle(ChatFormatting.YELLOW));
-                                        }
-                                        context.getSource().sendFeedback(Component.literal(
-                                                aborted > 0 ? "Aborted " + aborted + " running script(s)." : "Nothing to abort.")
-                                                .withStyle(ChatFormatting.YELLOW));
-                                        return 1;
-                                    }))
+                                    .executes(TupenterModClient::runAbortAllCommand)
+                                    .then(argument("id", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
+                                            .executes(TupenterModClient::runAbortOneCommand)))
                             .then(literal("running")
                                     .executes(TupenterModClient::runRunningCommand))
                             .then(literal("scripts")

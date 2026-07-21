@@ -332,6 +332,12 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.tickScriptsEnabled = newValue)
                 .build());
 
+        if (!TupenterConfig.INSTANCE.tickScriptsEnabled) {
+            // clears up "I aborted but scripts still show ✔" — arming is preserved, the master just gates it
+            scripts.addEntry(entryBuilder.startTextDescription(
+                    Component.translatable("text.tupenter.tick_master_off")).build());
+        }
+
         scriptsWorldKey = TupenterModClient.currentWorldKey();
         scripts.addEntry(entryBuilder.startTextDescription(scriptsWorldKey != null
                 ? Component.translatable("text.tupenter.scripts_world", scriptsWorldKey)
