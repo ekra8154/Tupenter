@@ -817,12 +817,16 @@ public class TupenterModClient implements ClientModInitializer {
                                             .executes(context -> runCommandHelp(context, "all"))
                                             .then(argument("name", StringArgumentType.word())
                                                     .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
-                                                            new String[]{"all", "tupenter", "customcommand", "echo", "calc", "unroll"}, b))
+                                                            new String[]{"all", "tupenter", "customcommand", "echo", "echohud", "calc", "unroll"}, b))
                                                     .executes(context -> runCommandHelp(context, StringArgumentType.getString(context, "name")))))));
 
                     dispatcher.register(literal("echo")
                             .then(argument("message", StringArgumentType.greedyString())
                                     .executes(TupenterModClient::runEchoCommand)));
+
+                    dispatcher.register(literal("echohud")
+                            .then(argument("message", StringArgumentType.greedyString())
+                                    .executes(TupenterModClient::runEchoHudCommand)));
 
                     dispatcher.register(literal("unroll")
                             .then(argument("line", StringArgumentType.greedyString())
@@ -1656,7 +1660,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§bCommands Tupenter adds (all client-side) — detail: /tupenter help command <name>:",
                     "§7/tupenter§r — running · abort · scripts · vars · var save/delete · dump · help",
                     "§7/customcommand§r — add · update · remove · list · make your own commands",
-                    "§7/echo <text>§r — local-only output, &-colors, evaluates $...$",
+                    "§7/echo <text>§r — local-only output, &-colors, evaluates $...$ · §7/echohud <text>§r — same, on the action bar (auto-fades)",
                     "§7/calc <expr>§r · §7/$ expr $§r — local calculator / top-down shorthand",
                     "§7/unroll <line>§r — dry-run debugger",
                     "§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking",
@@ -1687,6 +1691,14 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Formats:§r &l §lbold§r§7 · &o §oitalic§r§7 · &n §nunderline§r§7 · &m §mstrike§r§7 · &k obfuscated · &r reset",
                     "§7\\&§r prints a literal & · codes work from variables too: #set $ok$ = \"&aOK\"",
                     "§7Example:§r /echo &ahp $client.health$ &7/ 20",
+                    "§7Sibling:§r /echohud — same thing, but on the action bar (above the hotbar): /tupenter help command echohud",
+            };
+            case "echohud" -> new String[]{
+                    "§b/echohud <text> — like /echo, but on the action bar (above the hotbar). Nothing is sent:",
+                    "§7Same $...$ evaluation and &-color codes as /echo — only the destination differs.",
+                    "§7Fades on its own after a couple seconds. Send it again and it just UPDATES the text in place (no flicker) — send every tick for a live readout.",
+                    "§7Live HUD:§r #while (true) (/echohud &7light &f$client.light$ &7· &f$client.speed$&7 b/s && #wait 1t)",
+                    "§7Alert:§r #wait 5m realtime && /echohud &ecows are ready to be fed!",
             };
             case "calc" -> new String[]{
                     "§b/calc <expr> — local calculator (nothing is sent):",
@@ -1705,7 +1717,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Example: /unroll /blink 200 — see exactly what /blink would send.",
             };
             default -> new String[]{
-                    "§cNo command page for '" + rawName + "' — try: all, tupenter, customcommand, echo, calc, unroll",
+                    "§cNo command page for '" + rawName + "' — try: all, tupenter, customcommand, echo, echohud, calc, unroll",
             };
         };
         for (String line : lines) {
@@ -1816,7 +1828,8 @@ public class TupenterModClient implements ClientModInitializer {
         return 1;
     }
 
-    private static int runEchoCommand(CommandContext<FabricClientCommandSource> context) {
+    /** Evaluate $...$ and translate &-colors for the /echo family; null (after reporting) on a bad expression. */
+    private static String prepareLocalOutput(CommandContext<FabricClientCommandSource> context) {
         String text = StringArgumentType.getString(context, "message");
         if (TupenterConfig.INSTANCE.enhancedCommandParsingEnabled
                 && TupenterConfig.INSTANCE.numberMathMode != net.tupenter.script.NumberMathMode.DISABLED) {
@@ -1825,10 +1838,28 @@ public class TupenterModClient implements ClientModInitializer {
                         new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER));
             } catch (IllegalArgumentException ex) {
                 context.getSource().sendError(Component.literal(ex.getMessage()));
-                return 0;
+                return null;
             }
         }
-        context.getSource().sendFeedback(Component.literal(applyAmpersandColors(text)).withStyle(ChatFormatting.GRAY));
+        return applyAmpersandColors(text);
+    }
+
+    private static int runEchoCommand(CommandContext<FabricClientCommandSource> context) {
+        String text = prepareLocalOutput(context);
+        if (text == null) {
+            return 0;
+        }
+        context.getSource().sendFeedback(Component.literal(text).withStyle(ChatFormatting.GRAY));
+        return 1;
+    }
+
+    /** /echohud — like /echo, but to the action bar (above the hotbar). Fades on its own; repeated sends update in place. */
+    private static int runEchoHudCommand(CommandContext<FabricClientCommandSource> context) {
+        String text = prepareLocalOutput(context);
+        if (text == null) {
+            return 0;
+        }
+        Minecraft.getInstance().gui.setOverlayMessage(Component.literal(text), false);
         return 1;
     }
 
