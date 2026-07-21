@@ -180,22 +180,10 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.enhancedCommandParsingEnabled = newValue)
                 .build();
 
-        AbstractConfigListEntry<?> commandChainingEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.command_chaining"), TupenterConfig.INSTANCE.commandChainingEnabled)
-                .setDefaultValue(true)
-                .setTooltip(Component.translatable("tooltip.tupenter.command_chaining"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.commandChainingEnabled = newValue)
-                .build();
-
         AbstractConfigListEntry<?> chatHighlightingEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.chat_highlighting"), TupenterConfig.INSTANCE.chatHighlightingEnabled)
                 .setDefaultValue(true)
                 .setTooltip(Component.translatable("tooltip.tupenter.chat_highlighting"))
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.chatHighlightingEnabled = newValue)
-                .build();
-
-        AbstractConfigListEntry<?> lazyExecutionEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.lazy_execution"), TupenterConfig.INSTANCE.lazyExecutionEnabled)
-                .setDefaultValue(true)
-                .setTooltip(Component.translatable("tooltip.tupenter.lazy_execution"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.lazyExecutionEnabled = newValue)
                 .build();
 
         AbstractConfigListEntry<?> numberMathEntry = entryBuilder.startEnumSelector(Component.translatable("option.tupenter.number_math"), NumberMathMode.class, TupenterConfig.INSTANCE.numberMathMode)
@@ -203,30 +191,6 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setTooltip(Component.translatable("tooltip.tupenter.number_math"))
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.numberMathMode = newValue)
                 .setEnumNameProvider(mode -> Component.translatable("mode.tupenter.number_math." + mode.name().toLowerCase()))
-                .build();
-
-        AbstractConfigListEntry<?> silentDirectiveEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.silent_directive"), TupenterConfig.INSTANCE.silentDirectiveEnabled)
-                .setDefaultValue(true)
-                .setTooltip(Component.translatable("tooltip.tupenter.silent_directive"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.silentDirectiveEnabled = newValue)
-                .build();
-
-        AbstractConfigListEntry<?> variablesEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.variables"), TupenterConfig.INSTANCE.variablesEnabled)
-                .setDefaultValue(true)
-                .setTooltip(Component.translatable("tooltip.tupenter.variables"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.variablesEnabled = newValue)
-                .build();
-
-        AbstractConfigListEntry<?> loopsEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.loops"), TupenterConfig.INSTANCE.loopsEnabled)
-                .setDefaultValue(true)
-                .setTooltip(Component.translatable("tooltip.tupenter.loops"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.loopsEnabled = newValue)
-                .build();
-
-        AbstractConfigListEntry<?> conditionalsEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.conditionals"), TupenterConfig.INSTANCE.conditionalsEnabled)
-                .setDefaultValue(true)
-                .setTooltip(Component.translatable("tooltip.tupenter.conditionals"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.conditionalsEnabled = newValue)
                 .build();
 
         AbstractConfigListEntry<?> maxLoopIterationsEntry = entryBuilder.startIntField(Component.translatable("option.tupenter.max_loop_iterations"), TupenterConfig.INSTANCE.maxLoopIterations)
@@ -261,15 +225,12 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setExpanded(false)
                 .build());
 
+        // Enhanced Command Parsing is the master switch; the per-feature gates
+        // (chaining, silent, variables, loops, conditionals, lazy) were folded
+        // into it — they interdepend, so a partial subset never made sense.
         scripting.addEntry(enhancedCommandParsingEntry);
-        scripting.addEntry(commandChainingEntry);
         scripting.addEntry(chatHighlightingEntry);
-        scripting.addEntry(lazyExecutionEntry);
         scripting.addEntry(numberMathEntry);
-        scripting.addEntry(silentDirectiveEntry);
-        scripting.addEntry(variablesEntry);
-        scripting.addEntry(loopsEntry);
-        scripting.addEntry(conditionalsEntry);
         scripting.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.script_limits"),
                 List.of(maxCommandsPerTickEntry, maxCommandsPerScriptEntry, maxConcurrentScriptsEntry, maxLoopIterationsEntry))
                 .setExpanded(false)

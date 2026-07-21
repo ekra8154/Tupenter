@@ -740,14 +740,19 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     public static ScriptParser.Options parserOptions() {
+        // The individual feature gates (chaining, silent, variables, loops,
+        // conditionals, lazy) were collapsed into the master Enhanced Command
+        // Parsing toggle — they interdepend, so a partial subset never made
+        // sense. When the master is on (the only time this parser runs), they
+        // are all on. The config fields survive (ignored) for back-compat.
         return new ScriptParser.Options(
-                TupenterConfig.INSTANCE.commandChainingEnabled,
+                true, // command chaining
                 TupenterConfig.INSTANCE.numberMathMode,
                 CommandAliasManager.getAliasMap(),
-                TupenterConfig.INSTANCE.silentDirectiveEnabled,
-                TupenterConfig.INSTANCE.variablesEnabled,
-                TupenterConfig.INSTANCE.loopsEnabled,
-                TupenterConfig.INSTANCE.conditionalsEnabled,
+                true, // silent directive
+                true, // variables
+                true, // loops
+                true, // conditionals
                 TupenterConfig.INSTANCE.maxLoopIterations,
                 TupenterConfig.INSTANCE.maxCommandsPerScript,
                 SCRIPT_RANDOM,
@@ -755,7 +760,7 @@ public class TupenterModClient implements ClientModInitializer {
                 SESSION_VARIABLES,
                 TAG_RESOLVER,
                 BLOCK_READER,
-                TupenterConfig.INSTANCE.lazyExecutionEnabled
+                true // lazy execution
         );
     }
 
@@ -2013,12 +2018,12 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7For:§r #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~) — inclusive, counts down automatically",
                     "§7Foreach:§r #foreach $m$ in (zombie | skeleton) (/summon $m$) — or in range(1, 10)",
                     "§7If:§r #if ($client.y$ > 60) (/say high) #elseif ($client.y$ > 30) (/say mid) #else (/say low)",
-                    "§7While:§r #while ($client.health$ < 20) (/effect give @s regeneration 1 1 && #wait 3s) — re-checks each iteration, stops when false. Runs across ticks; needs Lazy Execution. $i$ counts iterations.",
+                    "§7While:§r #while ($client.health$ < 20) (/effect give @s regeneration 1 1 && #wait 3s) — re-checks each iteration, stops when false. Runs across ticks; $i$ counts iterations.",
                     "§7Wait:§r #wait 10t / 1.5s / 2m / 3d (ticks/seconds/minutes/days) — pause the script mid-line without freezing anything else. Scripts run LAZILY: $...$ evaluates when its statement runs, so /attribute ... && #wait 2t && /tp @s $client.target_block$ reads the target AFTER the boost landed. Works in chains, groups, loops, and custom command bodies. Max 72000t.",
                     "§7Wait clock:§r default is §7gametime§r — WORLD ticks, so it speeds up under /tick sprint, halts under /tick freeze, and pauses when the world is paused (but /time set|add doesn't move it — that's only the day-time). Add §7realtime§r for wall-clock instead: #wait 5m realtime fires after 5 real minutes no matter the TPS.",
                     "§7Overlap:§r re-running a line starts another concurrent instance (up to the concurrency cap) — two /randomfills at different spots both run · they share the per-tick budget round-robin · /tupenter abort <id> stops one, /tupenter abort stops all",
                     "§7Groups (...) nest and can hold chains. Parens elsewhere are literal text.",
-                    "§7Loops that DO something run free:§r a loop that sends or #waits each iteration paces itself over ticks (Max Commands Per Tick), so a big /randomfill or a #while poll runs however long it needs — /tupenter running shows it, /tupenter abort stops it. Max Loop Iterations only caps a loop that spins WITHOUT sending or waiting (the runaway guard). (Eager mode, Lazy Execution off, keeps the old hard cap.)",
+                    "§7Loops that DO something run free:§r a loop that sends or #waits each iteration paces itself over ticks (Max Commands Per Tick), so a big /randomfill or a #while poll runs however long it needs — /tupenter running shows it, /tupenter abort stops it. Max Loop Iterations only caps a loop that spins WITHOUT sending or waiting (the runaway guard).",
             };
             case "prefixes" -> new String[]{
                     "§bLine prefixes & local output:",
