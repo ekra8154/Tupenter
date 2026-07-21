@@ -63,7 +63,8 @@ public class MixinConnection {
                     && packet instanceof ServerboundChatPacket chatPacket
                     && chatPacket.message().startsWith("#")) {
                 if (TupenterModClient.handleStagePrefix(chatPacket.message(), false)
-                        || TupenterModClient.handleUnstagePrefix(chatPacket.message())) {
+                        || TupenterModClient.handleUnstagePrefix(chatPacket.message())
+                        || TupenterModClient.handlePidPrefix(chatPacket.message())) {
                     ci.cancel();
                     return;
                 }

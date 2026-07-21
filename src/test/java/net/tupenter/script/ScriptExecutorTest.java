@@ -461,6 +461,80 @@ class ScriptExecutorTest {
         assertFalse(result.changed(), "a plain single command passes through untouched");
     }
 
+    // --- #pid: caller-chosen ids ---
+
+    private static Script parked(String source, String first) {
+        return Script.ofStatements(source, List.of(
+                new Script.SendStatement(first, Script.Kind.COMMAND, false),
+                Script.SendStatement.waitFor(100),
+                new Script.SendStatement("never", Script.Kind.COMMAND, false)
+        ), Script.HistoryMode.NORMAL);
+    }
+
+    @Test
+    void submitPidRunsUnderTheChosenId() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        assertEquals(ScriptExecutor.PidResult.STARTED, executor.submitPid(parked("p", "a"), 7, false));
+        assertTrue(executor.isRunning(7));
+        assertEquals(7, executor.runningInfos().get(0).id());
+        assertEquals(List.of("/a"), sender.sent);
+    }
+
+    @Test
+    void submitPidRefusesALiveIdWithoutReplace() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        executor.submitPid(parked("p1", "a"), 3, false);
+        assertEquals(ScriptExecutor.PidResult.REFUSED_RUNNING, executor.submitPid(parked("p2", "b"), 3, false));
+
+        assertEquals(List.of("/a"), sender.sent, "the refused script never sent");
+        assertEquals(1, executor.runningCount());
+    }
+
+    @Test
+    void submitPidReplaceRestartsInPlace() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        executor.submitPid(parked("p1", "a"), 3, false);
+        assertEquals(ScriptExecutor.PidResult.REPLACED, executor.submitPid(parked("p2", "b"), 3, true));
+
+        assertEquals(List.of("/a", "/b"), sender.sent);
+        assertEquals(1, executor.runningCount(), "old pid-3 was aborted, not stacked");
+        assertTrue(executor.isRunning(3));
+    }
+
+    @Test
+    void abortByIdStopsJustThatPid() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        executor.submitPid(parked("p1", "a"), 1, false);
+        executor.submitPid(parked("p2", "b"), 2, false);
+
+        assertTrue(executor.abort(1));
+        assertFalse(executor.isRunning(1));
+        assertTrue(executor.isRunning(2));
+        assertFalse(executor.abort(1), "already gone");
+    }
+
+    @Test
+    void claimingAPidBumpsTheAutoCounterPastIt() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        executor.submitPid(parked("p", "a"), 10, false); // claim a high id
+        executor.submit(parked("q", "b"));               // next auto id must skip past 10
+
+        assertTrue(executor.isRunning(10));
+        assertFalse(executor.isRunning(1), "auto submit did not reuse a low id colliding path");
+        int autoId = executor.runningInfos().get(1).id();
+        assertTrue(autoId > 10, "auto id " + autoId + " should be past the claimed 10");
+    }
+
     @Test
     void abortInterruptsAParkedLazyScript() {
         RecordingSender sender = new RecordingSender();

@@ -208,6 +208,47 @@ public final class ScriptExecutor {
         return false;
     }
 
+    /** True while an instance with this id is still running. */
+    public boolean isRunning(int id) {
+        for (Instance instance : running) {
+            if (instance.id == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Outcome of a {@link #submitPid} — the caller turns it into a chat line. */
+    public enum PidResult { STARTED, REPLACED, REFUSED_RUNNING, REJECTED }
+
+    /**
+     * Runs a script under a caller-chosen id ("PID"). Without {@code replace},
+     * a live id is left alone ({@link PidResult#REFUSED_RUNNING}); with it, the
+     * old instance is aborted first. Claiming an id at or above the auto
+     * counter bumps the counter so a later auto-submit won't reuse it.
+     */
+    public PidResult submitPid(Script script, int id, boolean replace) {
+        boolean existed = isRunning(id);
+        if (existed && !replace) {
+            script.source().close();
+            return PidResult.REFUSED_RUNNING;
+        }
+        if (running.size() - (existed ? 1 : 0) >= limits.maxConcurrentScripts()
+                || (!script.isLazy() && script.statements().size() > limits.maxCommandsPerScript())) {
+            script.source().close();
+            return PidResult.REJECTED;
+        }
+        if (existed) {
+            abort(id); // replace: stop the old one first
+        }
+        running.addLast(new Instance(script, id));
+        if (id >= nextId) {
+            nextId = id + 1;
+        }
+        drain(clock);
+        return existed ? PidResult.REPLACED : PidResult.STARTED;
+    }
+
     private void cancelSameSource(String originalLine) {
         for (Iterator<Instance> iterator = running.iterator(); iterator.hasNext(); ) {
             Instance instance = iterator.next();
