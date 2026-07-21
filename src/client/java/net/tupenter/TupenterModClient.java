@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.ChatFormatting;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,6 +18,9 @@ import java.util.Queue;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.DeltaTracker;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.ClickEvent;
@@ -447,6 +451,62 @@ public class TupenterModClient implements ClientModInitializer {
         return line.length() > 50 ? line.substring(0, 50) + "…" : line;
     }
 
+    /** When true, the running-scripts list is drawn as an on-screen HUD panel (bypasses chat). */
+    private static boolean runningHudVisible;
+
+    /** /tupenter running hud — toggle the always-on-screen running list (survives chat spam). */
+    private static int runRunningHudToggle(CommandContext<FabricClientCommandSource> context) {
+        runningHudVisible = !runningHudVisible;
+        context.getSource().sendFeedback(Component.literal(runningHudVisible
+                ? "Running HUD on — the list now shows on screen (run again to hide)."
+                : "Running HUD off.").withStyle(runningHudVisible ? ChatFormatting.GREEN : ChatFormatting.GRAY));
+        return 1;
+    }
+
+    /** Draws the running-scripts panel top-left while the HUD is toggled on. */
+    private static void renderRunningHud(GuiGraphics graphics, DeltaTracker tickCounter) {
+        if (!runningHudVisible) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.options.hideGui) {
+            return;
+        }
+        Font font = mc.font;
+        java.util.List<ScriptExecutor.RunningInfo> infos = SCRIPT_EXECUTOR.runningInfos();
+
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        lines.add("Tupenter — running (" + infos.size() + ")");
+        if (infos.isEmpty()) {
+            lines.add("(nothing running)");
+        } else {
+            for (ScriptExecutor.RunningInfo info : infos) {
+                lines.add(info.line());
+            }
+        }
+
+        int pad = 3;
+        int lineH = font.lineHeight + 1;
+        int width = 0;
+        for (String line : lines) {
+            width = Math.max(width, font.width(line));
+        }
+        int x = 4;
+        int y = 4;
+        int boxW = width + pad * 2;
+        int boxH = lines.size() * lineH + pad * 2 - 1;
+        graphics.fill(x, y, x + boxW, y + boxH, 0xA0000000); // translucent black backdrop
+
+        int ty = y + pad;
+        for (int i = 0; i < lines.size(); i++) {
+            int color = i == 0 ? 0xFF55FFFF                    // header: aqua
+                    : (infos.isEmpty() ? 0xFF808080            // idle note: gray
+                    : 0xFFE0E0E0);                             // rows: near-white
+            graphics.drawString(font, lines.get(i), x + pad, ty, color);
+            ty += lineH;
+        }
+    }
+
     private static int runScriptsStatusCommand(CommandContext<FabricClientCommandSource> context) {
         TupenterConfig config = TupenterConfig.INSTANCE;
         String key = currentWorldKey();
@@ -804,7 +864,8 @@ public class TupenterModClient implements ClientModInitializer {
                                     .then(argument("id", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
                                             .executes(TupenterModClient::runAbortOneCommand)))
                             .then(literal("running")
-                                    .executes(TupenterModClient::runRunningCommand))
+                                    .executes(TupenterModClient::runRunningCommand)
+                                    .then(literal("hud").executes(TupenterModClient::runRunningHudToggle)))
                             .then(literal("scripts")
                                     .executes(TupenterModClient::runScriptsStatusCommand)
                                     .then(literal("on").executes(context -> runScriptsMasterCommand(context, true)))
@@ -919,6 +980,8 @@ public class TupenterModClient implements ClientModInitializer {
 		// Load Config
 		TupenterConfig.load();
 		PERSISTENT_VARIABLES.load(TupenterConfig.INSTANCE.persistentVariables);
+
+		HudRenderCallback.EVENT.register(TupenterModClient::renderRunningHud);
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
@@ -1697,7 +1760,7 @@ public class TupenterModClient implements ClientModInitializer {
             };
             case "tupenter" -> new String[]{
                     "§b/tupenter — mod control:",
-                    "§7running§r — list scripts executing right now (parked at #wait, mid-loop, ...) with their wait state",
+                    "§7running§r — list scripts executing right now (parked at #wait, mid-loop, ...) with a clickable [abort] per row; §7running hud§r toggles the same list as an on-screen panel that survives chat spam",
                     "§7abort§r — stop all running scripts + the resend queue, and disable tick scripts (panic switch)",
                     "§7scripts§r — what's armed in THIS world · §7scripts on|off§r — tick-script master switch",
                     "§7vars [group]§r — variables overview, or one group with live values",
