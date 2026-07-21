@@ -849,6 +849,37 @@ public final class ChatInputStyler {
     }
 
     /** The meta-command's own text: command word(s) gold, param declarations green like a signature. */
+    /** Index of the closing quote of a string starting at {@code open} ({@code \} escapes); -1 if unterminated. */
+    private static int closingQuoteIndex(String text, int open) {
+        for (int i = open + 1; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '"') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Colors a custom-command signature's "description" gray and its = gold, between the decls and the body. */
+    private static void styleDescriptionAndEquals(String full, Style[] styles, int from, int to) {
+        boolean quoted = false;
+        for (int i = from; i < to && i < full.length(); i++) {
+            char c = full.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '"') {
+                quoted = !quoted;
+                styles[i] = COMMAND_LITERAL;
+            } else if (quoted) {
+                styles[i] = COMMAND_LITERAL;
+            } else if (c == '=') {
+                styles[i] = Style.EMPTY.withColor(ChatFormatting.GOLD);
+            }
+        }
+    }
+
     private static void styleMetaHead(String full, Style[] styles, int to) {
         int wordEnd = skipWord(full, 0);
         fill(styles, 0, wordEnd, DIRECTIVE_WORD); // /unroll or /customcommand
@@ -915,8 +946,24 @@ public final class ChatInputStyler {
         if (depth < 8 && textStart == 0) {
             int inner = innerLineStart(full);
             if (inner > 0 && inner <= segment.end()) {
+                // an optional "description" then '=' can begin the body (custom
+                // command signatures) — color those and start statements past them
+                int bodyStart = inner;
+                int j = skipWhitespace(full, inner);
+                if (j < full.length() && full.charAt(j) == '"') {
+                    int q = closingQuoteIndex(full, j);
+                    if (q > 0) {
+                        j = skipWhitespace(full, q + 1);
+                    }
+                }
+                if (j < full.length() && j < segment.end() && full.charAt(j) == '=') {
+                    bodyStart = skipWhitespace(full, j + 1);
+                }
                 styleMetaHead(full, styles, inner);
-                styleStatements(full, inner, segment.end(), styles, depth + 1);
+                if (bodyStart > inner) {
+                    styleDescriptionAndEquals(full, styles, inner, bodyStart);
+                }
+                styleStatements(full, bodyStart, segment.end(), styles, depth + 1);
                 return;
             }
         }

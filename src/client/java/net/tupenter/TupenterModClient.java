@@ -675,6 +675,15 @@ public class TupenterModClient implements ClientModInitializer {
 
     /** /tupenter scripts enable|disable &lt;name&gt; — arms/disarms named tick script(s) for this world. */
     private static int runSetArmedByName(CommandContext<FabricClientCommandSource> context, boolean enable) {
+        return applyArmedByName(context, enable, enable ? "Enabled" : "Disabled");
+    }
+
+    /** /tupenter abort &lt;name&gt; — switch a named tick script OFF (same as disable, under the abort verb). */
+    private static int runAbortByName(CommandContext<FabricClientCommandSource> context) {
+        return applyArmedByName(context, false, "Aborted");
+    }
+
+    private static int applyArmedByName(CommandContext<FabricClientCommandSource> context, boolean enable, String verb) {
         String name = StringArgumentType.getString(context, "name");
         String worldKey = currentWorldKey();
         if (worldKey == null) {
@@ -684,7 +693,7 @@ public class TupenterModClient implements ClientModInitializer {
         java.util.List<TupenterConfig.ScriptRef> matches = TupenterConfig.INSTANCE.scriptsByName(worldKey, name);
         if (matches.isEmpty()) {
             context.getSource().sendFeedback(Component.literal(
-                    "No tick script named '" + name + "' here — /tupenter scripts lists them (only named scripts can be toggled this way).")
+                    "No tick script named '" + name + "' here — /tupenter scripts lists names, /tupenter running lists ids (only named scripts toggle by name).")
                     .withStyle(ChatFormatting.GRAY));
             return 0;
         }
@@ -701,14 +710,14 @@ public class TupenterModClient implements ClientModInitializer {
         String scope = scopeLabel(globals, matches.size() - globals);
         if (changed == 0) {
             context.getSource().sendFeedback(Component.literal(
-                    "'" + name + "' is already " + (enable ? "enabled" : "disabled") + " (" + scope + ").")
+                    "'" + name + "' is already " + (enable ? "enabled" : "off") + " (" + scope + ").")
                     .withStyle(ChatFormatting.GRAY));
             return 1;
         }
         String note = enable && !TupenterConfig.INSTANCE.tickScriptsEnabled
                 ? " Master is OFF — /tupenter scripts on to run it." : "";
         context.getSource().sendFeedback(Component.literal(
-                (enable ? "Enabled" : "Disabled") + " '" + name + "' (" + scope + ")." + note)
+                verb + " '" + name + "' (" + scope + ")." + note)
                 .withStyle(ChatFormatting.YELLOW));
         return 1;
     }
@@ -1146,7 +1155,10 @@ public class TupenterModClient implements ClientModInitializer {
                             .then(literal("abort")
                                     .executes(TupenterModClient::runAbortAllCommand)
                                     .then(argument("id", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
-                                            .executes(TupenterModClient::runAbortOneCommand)))
+                                            .executes(TupenterModClient::runAbortOneCommand))
+                                    .then(argument("name", StringArgumentType.word())
+                                            .suggests(TupenterModClient::suggestScriptNames)
+                                            .executes(TupenterModClient::runAbortByName)))
                             .then(literal("running")
                                     .executes(TupenterModClient::runRunningCommand)
                                     .then(literal("hud").executes(TupenterModClient::runRunningHudToggle)))
@@ -2056,7 +2068,7 @@ public class TupenterModClient implements ClientModInitializer {
             case "tupenter" -> new String[]{
                     "§b/tupenter — mod control:",
                     "§7running§r — armed tick scripts + running instances, each with an id and a clickable [abort]; §7running hud§r toggles the same list as an on-screen panel that survives chat spam",
-                    "§7abort <id>§r — stop one by its id: a running instance is killed; an armed tick script is switched OFF (its Mod Menu toggle). §7abort§r alone stops everything + disables tick scripts (panic switch)",
+                    "§7abort <id>§r — stop one by its id: a running instance is killed; an armed tick script is switched OFF (its Mod Menu toggle). §7abort <name>§r switches off a named tick script. §7abort§r alone stops everything + disables tick scripts (panic switch)",
                     "§7scripts§r — what's armed in THIS world · §7scripts on|off§r — tick-script master switch",
                     "§7vars [group]§r — variables overview, or one group with live values",
                     "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
@@ -2066,7 +2078,7 @@ public class TupenterModClient implements ClientModInitializer {
             case "customcommand" -> new String[]{
                     "§b/customcommand — make your own commands:",
                     "§7add <name> <body>§r — create · §7update <name> <body>§r — edit · §7remove <name>§r — delete",
-                    "§7Description:§r add a \"quoted note\" before the = : /customcommand add greet <name:word> \"&aWave at someone\" = /me waves at $name$ — shows when you run it with missing args and in /customcommand <name> (&-colors like /echo)",
+                    "§7Description:§r a \"quoted note\" goes right before a §c§lrequired =§r that starts the body: /customcommand add tickfreeze \"toggles time\" = #if ($frozen$) (/tick unfreeze) #else (/tick freeze). §cWithout the =§r, those quotes are just body text (why it stays white). Shows on missing args + in /customcommand <name>; &-colors like /echo.",
                     "§7list [verbose]§r — signatures (verbose: full bodies) · §7/customcommand <name>§r — one command + [edit] link",
                     "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing",
                     "§7Full guide§r (typed params, defaults, examples): /customcommand help",
@@ -2287,6 +2299,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "§7Create:§r /customcommand add <name> <body>  ·  Edit:§r /customcommand update <name> <body>  ·  Remove:§r /customcommand remove <name>  ·  List:§r /customcommand list",
                 "§7Bodies§r can hold commands, chat, && chains, $...$ expressions, directives (#repeat, #if, #silent, ...), and other custom commands. Commands need their /: sunny = /weather clear && Have fun!",
                 "§7Parameters§r go before the body: /customcommand add smite <target:player> /execute at $target$ run summon lightning_bolt — then /smite Steve. Use as $target$ or $1$.",
+                "§7Description:§r a \"quoted note\" right before a §c§lrequired =§r that begins the body. No params: /customcommand add tickfreeze \"toggles time\" = #if ($frozen$) (/tick unfreeze) #else (/tick freeze). With params: /customcommand add greet <who:player> \"wave at someone\" = /me waves at $who$. §cWithout the =§r those quotes are just body text. The note shows on missing args and in /customcommand <name>; &-colors like /echo.",
                 "§7Types:§r <name> or <name:string> = a word or \"anything quoted\" · <n:int> / <n:float> = numbers · <n:word> = one plain token (letters/digits/_-.+ only — no selectors!) · <n:selector> = @e[...] with tab-complete · <n:player> = player name · <n:text> = rest of the line (must be last) · <n:opt1,opt2,...> = one of a fixed list, tab-completed",
                 "§7Position types:§r <n:pos> = whole x y z with ~ support and targeted-block tab-complete · <n:vec3> = decimal x y z with ~ · <n:column_pos> = whole x z with ~ · <n:rotation> = yaw pitch with ~ · <n:angle> = one yaw with ~. Tuples bind $n$ = the joined coords plus $n.x$ $n.y$ $n.z$ (or $n.yaw$ $n.pitch$); angle binds a number.",
                 "§7More types:§r <n:time> = duration (10t / 1.5s / 2m / 3d), binds as ticks · <n:dimension> = dimension id, tab-completed · <n:color> = chat color, tab-completed · <n:id> = any namespaced id · <n:item> / <n:block> = item or block with full registry tab-complete (including [components] / [states]) · <n:itemset> / <n:blockset> = an item/block OR a #tag like #minecraft:logs, tab-completed · <n:entity> = entity type id with /summon-style tab-complete · <n:bool> = true/false, binds a boolean for #if/ternaries (a strictly-typed <g:bool=false> optional is skippable: /launch snowball true)",
