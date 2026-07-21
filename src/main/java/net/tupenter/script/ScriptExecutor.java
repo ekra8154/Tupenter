@@ -293,12 +293,23 @@ public final class ScriptExecutor {
         // pathological script can't spin the loop forever within one tick
         int pullsLeft = limits.maxCommandsPerTick() * 8 + 32;
 
-        for (Iterator<Instance> iterator = running.iterator(); iterator.hasNext(); ) {
-            Instance instance = iterator.next();
+        // Round-robin: each pass gives every READY instance a single statement,
+        // so concurrent scripts share the per-tick budget and interleave rather
+        // than the first one hogging it until it finishes. Keep passing while
+        // someone made progress and budget/pulls remain.
+        boolean progress = true;
+        while (progress && budgetUsedThisTick < limits.maxCommandsPerTick() && pullsLeft > 0) {
+            progress = false;
+            for (Iterator<Instance> iterator = running.iterator(); iterator.hasNext(); ) {
+                Instance instance = iterator.next();
+                if (!instance.isReady(clock)) {
+                    continue; // parked at a #wait — skip this pass
+                }
+                if (budgetUsedThisTick >= limits.maxCommandsPerTick() || pullsLeft <= 0) {
+                    break;
+                }
+                pullsLeft--;
 
-            while (instance.isReady(clock)
-                    && budgetUsedThisTick < limits.maxCommandsPerTick()
-                    && pullsLeft-- > 0) {
                 Script.SendStatement statement;
                 try {
                     statement = instance.next();
@@ -307,14 +318,15 @@ public final class ScriptExecutor {
                             + " (line: " + preview(instance.script.originalLine()) + ")");
                     instance.close();
                     iterator.remove();
-                    break;
+                    continue;
                 }
 
                 if (statement == null) {
                     instance.close();
                     iterator.remove();
-                    break;
+                    continue;
                 }
+                progress = true;
 
                 switch (statement.kind()) {
                     case COMMAND, CHAT -> {
@@ -345,12 +357,7 @@ public final class ScriptExecutor {
                 if (instance.drained()) {
                     instance.close();
                     iterator.remove();
-                    break;
                 }
-            }
-
-            if (budgetUsedThisTick >= limits.maxCommandsPerTick() || pullsLeft <= 0) {
-                break;
             }
         }
     }

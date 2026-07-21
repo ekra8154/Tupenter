@@ -536,6 +536,23 @@ class ScriptExecutorTest {
     }
 
     @Test
+    void concurrentScriptsShareTheBudgetFairly() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 2, 1000, 8); // 2 sends/tick
+
+        executor.submit(script("a1", "a2", "a3", "a4")); // immediate drain grabs a1,a2
+        executor.submit(script("b1", "b2", "b3", "b4"));
+        for (int i = 0; i < 6 && !executor.isIdle(); i++) {
+            executor.tick();
+        }
+
+        assertTrue(executor.isIdle());
+        // round-robin: the second script makes progress before the first ends
+        assertTrue(sender.sent.indexOf("/b1") < sender.sent.indexOf("/a4"),
+                "scripts interleave instead of FIFO-hogging the budget: " + sender.sent);
+    }
+
+    @Test
     void tickInstancesRunButAreNotUserListed() {
         RecordingSender sender = new RecordingSender();
         ScriptExecutor executor = executor(sender, 16, 1000, 8);
