@@ -65,7 +65,7 @@ public final class UserFunctions {
                         bindParam(def.params().get(i), args.get(i), bindings);
                     }
                     EvalContext scoped = new EvalContext(context.random(), overlay(bindings, context.variables()),
-                            context.tags(), context.blocks(), context.functions());
+                            context.tags(), context.blocks(), context.functions(), context.raycaster());
                     try {
                         // statement bodies run through the Walker; pure expressions stay on the fast path
                         if (ScriptParser.isStatementBody(def.body())) {

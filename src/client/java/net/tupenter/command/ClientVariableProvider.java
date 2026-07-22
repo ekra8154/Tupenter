@@ -62,6 +62,14 @@ public final class ClientVariableProvider implements VariableProvider {
             return Value.of(round2(v.x * 20) + " " + round2(v.y * 20) + " " + round2(v.z * 20)); // vec3, blocks/sec
         });
         register("client.facing", player -> Value.of(player.getDirection().getName())); // north/south/east/west
+        register("client.eye_pos", player -> {
+            net.minecraft.world.phys.Vec3 e = player.getEyePosition();
+            return Value.of(round2(e.x) + " " + round2(e.y) + " " + round2(e.z)); // precise eye vec3 — a ray origin
+        });
+        register("client.look", player -> {
+            net.minecraft.world.phys.Vec3 v = player.getLookAngle();
+            return Value.of(round2(v.x) + " " + round2(v.y) + " " + round2(v.z)); // unit look direction — a ray dir
+        });
         register("client.on_ground", player -> Value.of(player.onGround()));
         register("client.sneaking", player -> Value.of(player.isCrouching()));
         register("client.sprinting", player -> Value.of(player.isSprinting()));

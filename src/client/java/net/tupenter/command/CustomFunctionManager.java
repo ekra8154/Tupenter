@@ -25,7 +25,8 @@ public final class CustomFunctionManager {
     private static final Set<String> BUILTINS = Set.of(
             "int", "float", "abs", "floor", "ceil", "round", "min", "max", "len", "nth", "contains", "indexof",
             "trim", "upper", "lower", "substr", "replace", "rand", "randf", "sin", "cos", "tan", "sqrt", "range",
-            "itemset", "blockset", "effectset", "entityset", "block", "pick", "vec", "true", "false");
+            "itemset", "blockset", "effectset", "entityset", "block", "pick", "vec", "raycast", "raycast_block",
+            "true", "false");
 
     /** Statement directives allowed as the head of a statement-body function. */
     private static final Set<String> STATEMENT_BODY_DIRECTIVES = Set.of(

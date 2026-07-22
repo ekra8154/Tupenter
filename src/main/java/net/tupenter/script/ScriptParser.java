@@ -90,6 +90,7 @@ public final class ScriptParser {
             TagResolver tags,
             BlockReader blocks,
             FunctionResolver functions,
+            Raycaster raycaster,
             boolean lazyExecution
     ) {
         /** Convenience without world lookups (tests, contexts with no live world). */
@@ -99,7 +100,7 @@ public final class ScriptParser {
                        Random random, VariableProvider variables, SessionVariableStore sessionVariables) {
             this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
                     conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
-                    TagResolver.NONE, BlockReader.NONE, FunctionResolver.NONE, false);
+                    TagResolver.NONE, BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, false);
         }
 
         /** Convenience with tag lookup but no block reader and eager execution. */
@@ -110,25 +111,36 @@ public final class ScriptParser {
                        TagResolver tags) {
             this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
                     conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
-                    tags, BlockReader.NONE, FunctionResolver.NONE, false);
+                    tags, BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, false);
+        }
+
+        /** Full world wiring but Raycaster.NONE — keeps existing 15-arg call sites working. */
+        public Options(boolean chainingEnabled, NumberMathMode mathMode, Map<String, AliasDefinition> aliases,
+                       boolean silentDirectiveEnabled, boolean variablesEnabled, boolean loopsEnabled,
+                       boolean conditionalsEnabled, int maxLoopIterations, int maxCommandsPerScript,
+                       Random random, VariableProvider variables, SessionVariableStore sessionVariables,
+                       TagResolver tags, BlockReader blocks, FunctionResolver functions, boolean lazyExecution) {
+            this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
+                    conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
+                    tags, blocks, functions, Raycaster.NONE, lazyExecution);
         }
 
         public Options withLazyExecution(boolean lazy) {
             return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
                     loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
-                    sessionVariables, tags, blocks, functions, lazy);
+                    sessionVariables, tags, blocks, functions, raycaster, lazy);
         }
 
         public Options withSessionVariables(SessionVariableStore store) {
             return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
                     loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
-                    store, tags, blocks, functions, lazyExecution);
+                    store, tags, blocks, functions, raycaster, lazyExecution);
         }
 
         public Options withFunctions(FunctionResolver resolver) {
             return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
                     loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
-                    sessionVariables, tags, blocks, resolver, lazyExecution);
+                    sessionVariables, tags, blocks, resolver, raycaster, lazyExecution);
         }
     }
 
@@ -624,7 +636,7 @@ public final class ScriptParser {
                     return options.variables().resolve(name);
                 }
             };
-            this.context = new EvalContext(options.random(), lookup, options.tags(), options.blocks(), options.functions());
+            this.context = new EvalContext(options.random(), lookup, options.tags(), options.blocks(), options.functions(), options.raycaster());
         }
 
         private void processStatements(String text) {

@@ -237,7 +237,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
-                "trim", "upper", "lower", "substr", "replace", "vec"));
+                "trim", "upper", "lower", "substr", "replace", "vec", "raycast", "raycast_block"));
         names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too
         return new java.util.ArrayList<>(names);
     }
@@ -277,7 +277,7 @@ public class TupenterModClient implements ClientModInitializer {
             int tokens = 1;
             try {
                 if (ctx == null) {
-                    ctx = new net.tupenter.script.EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver());
+                    ctx = new net.tupenter.script.EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER);
                 }
                 String value = MathEvaluator.evaluateValue(text.substring(i + 1, close), ctx).substitutionString();
                 tokens = tokenCount(value);
@@ -782,6 +782,7 @@ public class TupenterModClient implements ClientModInitializer {
                 TAG_RESOLVER,
                 BLOCK_READER,
                 CustomFunctionManager.resolver(), // user-defined /customfunctions
+                RAYCASTER,
                 true // lazy execution
         );
     }
@@ -804,6 +805,52 @@ public class TupenterModClient implements ClientModInitializer {
         }
         return net.minecraft.core.registries.BuiltInRegistries.BLOCK
                 .getKey(level.getBlockState(pos).getBlock()).toString();
+    };
+
+    /**
+     * Backs raycast(...)/raycast_block(...) with the vanilla crosshair hit
+     * test: Level.clip with OUTLINE blocks + NONE fluids, so it hits the same
+     * collidable blocks your crosshair does (sub-block accurate, passes through
+     * grass/flowers/water). Null (→ the "miss" sentinel) on a miss or no world.
+     */
+    public static final net.tupenter.script.Raycaster RAYCASTER = new net.tupenter.script.Raycaster() {
+        @Override
+        public String fromPlayer(double maxDist) {
+            net.minecraft.client.player.LocalPlayer player = Minecraft.getInstance().player;
+            net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
+            if (player == null || level == null) {
+                return null;
+            }
+            // getViewVector(1.0) is already a unit look vector; eye pos is the ray origin
+            return clip(level, player.getEyePosition(), player.getViewVector(1.0F), maxDist, player);
+        }
+
+        @Override
+        public String cast(double ox, double oy, double oz, double dx, double dy, double dz, double maxDist) {
+            net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
+            if (level == null) {
+                return null;
+            }
+            net.minecraft.world.phys.Vec3 dir = new net.minecraft.world.phys.Vec3(dx, dy, dz).normalize();
+            return clip(level, new net.minecraft.world.phys.Vec3(ox, oy, oz), dir, maxDist, Minecraft.getInstance().player);
+        }
+
+        // from + dir*maxDist, then Level.clip. dir must be unit length. entity may be null (cast without a player).
+        private String clip(net.minecraft.client.multiplayer.ClientLevel level, net.minecraft.world.phys.Vec3 from,
+                            net.minecraft.world.phys.Vec3 dir, double maxDist, net.minecraft.world.entity.Entity entity) {
+            net.minecraft.world.phys.Vec3 to = from.add(dir.scale(maxDist));
+            net.minecraft.world.phys.shapes.CollisionContext collision = entity != null
+                    ? net.minecraft.world.phys.shapes.CollisionContext.of(entity)
+                    : net.minecraft.world.phys.shapes.CollisionContext.empty();
+            net.minecraft.world.phys.BlockHitResult hit = level.clip(new net.minecraft.world.level.ClipContext(
+                    from, to, net.minecraft.world.level.ClipContext.Block.OUTLINE,
+                    net.minecraft.world.level.ClipContext.Fluid.NONE, collision));
+            if (hit.getType() == net.minecraft.world.phys.HitResult.Type.MISS) {
+                return null;
+            }
+            net.minecraft.core.BlockPos pos = hit.getBlockPos();
+            return pos.getX() + " " + pos.getY() + " " + pos.getZ();
+        }
     };
 
     /**
@@ -2125,6 +2172,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7block(x, y, z)§r or block(\"x y z\") — the block id at a position: $block(0, 64, 0)$ → minecraft:stone",
                     "§7No round trip:§r reads come from YOUR client's synced world copy, so #if handles them instantly — this is /execute if block folded into the expression world, with a real #else.",
                     "§7Crosshair:§r $client.target_hit$ = \"block\"/\"entity\"/\"miss\" · $client.target_block$ = \"x y z\" (errors on a miss — gate with target_hit) · $client.target_entity$ = the entity id",
+                    "§7raycast(dist)§r or raycast(origin, dir, dist) — casts like your crosshair (hits collidable blocks): returns \"x y z\" or \"miss\". raycast_block(dist) returns the block id, or \"miss\". $client.eye_pos$ = your eye vec3 (a ray origin), $client.look$ = your unit look vec3 (a ray dir) — so raycast(client.eye_pos, client.look, 60) is the long-hand of raycast(60).",
                     "§7Pattern:§r #if (client.target_hit == \"block\" && block(client.target_block) == \"minecraft:diamond_ore\") (/echo &bfound it) — a condition is already an expression, so $ $ around names is optional",
                     "§7Limits:§r loaded chunks only (unloaded = loud error, never a guess) · states/NBT not included, just the id",
                     "§7Tick state:§r $world.tickrate$ (from /tick rate, ~20) · $world.frozen$ (is /tick freeze on) · $world.stepping$ (mid /tick step) — exact, synced from the server. So a freeze toggle is just: #if $world.frozen$ (/tick unfreeze) #else (/tick freeze)",
@@ -2423,7 +2471,7 @@ public class TupenterModClient implements ClientModInitializer {
                 && TupenterConfig.INSTANCE.numberMathMode != net.tupenter.script.NumberMathMode.DISABLED) {
             try {
                 text = MathEvaluator.applyNumberMath(text, net.tupenter.script.NumberMathMode.EXPLICIT_ONLY,
-                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver()));
+                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER));
             } catch (IllegalArgumentException ex) {
                 context.getSource().sendError(Component.literal(ex.getMessage()));
                 return null;
@@ -2521,7 +2569,7 @@ public class TupenterModClient implements ClientModInitializer {
         String expression = input.substring(0, input.length() - 1).trim();
         net.tupenter.script.Value value;
         try {
-            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver()));
+            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER));
         } catch (IllegalArgumentException ex) {
             sendLocalCalcError(Component.literal("Invalid math expression: " + ex.getMessage()));
             return true;
@@ -2570,7 +2618,7 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static int evaluateLocalCalcExpression(String expression, java.util.function.Consumer<Component> feedback, java.util.function.Consumer<Component> error) {
         try {
-            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver()));
+            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER));
             feedback.accept(Component.literal(result).withStyle(ChatFormatting.AQUA));
             return 1;
         } catch (IllegalArgumentException ex) {

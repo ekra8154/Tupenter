@@ -490,6 +490,8 @@ final class ExpressionEvaluator {
                 case "entityset" -> tagMembers("entityset", TagResolver.TagKind.ENTITY, args);
                 case "block" -> blockAt(args);
                 case "vec" -> vec(args);
+                case "raycast" -> raycast(args);
+                case "raycast_block" -> raycastBlock(args);
                 default -> {
                     // not a built-in — try a user-defined /customfunction
                     Value userValue = context.functions().call(identifier, args, context);
@@ -857,6 +859,72 @@ final class ExpressionEvaluator {
         }
 
         /**
+         * raycast(dist) — cast from the player's eyes along their look, up to
+         * dist blocks. raycast(origin, dir, dist) — a general ray (dir is
+         * normalized). Both return the hit block's "x y z" (integer coords),
+         * or the sentinel "miss" — a miss never throws, so it composes with a
+         * plain == "miss" gate. Uses the client's Level.clip (collision
+         * raycast: hits collidable blocks like your crosshair, sub-block
+         * accurate, passes through grass/fluids).
+         */
+        private Value raycast(List<Value> args) {
+            String pos;
+            if (args.size() == 1) {
+                pos = context.raycaster().fromPlayer(asNumber(args.get(0), "raycast(dist)").doubleValue());
+            } else if (args.size() == 3) {
+                double[] origin = coords3(args.get(0), "raycast origin");
+                double[] dir = coords3(args.get(1), "raycast direction");
+                pos = context.raycaster().cast(origin[0], origin[1], origin[2],
+                        dir[0], dir[1], dir[2], asNumber(args.get(2), "raycast(...) distance").doubleValue());
+            } else {
+                throw new ExpressionException("raycast(dist) or raycast(origin, dir, dist)");
+            }
+            return Value.of(pos != null ? pos : "miss");
+        }
+
+        /**
+         * raycast_block(dist) — like raycast(dist) but yields the BLOCK ID at
+         * the hit (e.g. "minecraft:grass_block") instead of its position, or
+         * "miss". Reads the id through the same BlockReader as block(...).
+         */
+        private Value raycastBlock(List<Value> args) {
+            if (args.size() != 1) {
+                throw new ExpressionException("raycast_block(dist) takes one distance");
+            }
+            String pos = context.raycaster().fromPlayer(asNumber(args.get(0), "raycast_block(dist)").doubleValue());
+            if (pos == null) {
+                return Value.of("miss");
+            }
+            String[] parts = Coords.split(pos);
+            long[] block = new long[3];
+            for (int i = 0; i < 3; i++) {
+                block[i] = Rational.parse(parts[i]).floor().wholeValue().longValueExact();
+            }
+            String id = context.blocks().blockAt(block[0], block[1], block[2]);
+            return Value.of(id != null ? id : "miss");
+        }
+
+        /** Reads a vec3 arg as three doubles — a "x y z" string or vec(...) result. */
+        private double[] coords3(Value value, String where) {
+            if (!(value instanceof Value.StringValue string)) {
+                throw new ExpressionException(where + " must be a vec3, e.g. \"0 64 0\" or vec(0, 64, 0)");
+            }
+            String[] parts = Coords.split(string.value());
+            if (parts.length != 3) {
+                throw new ExpressionException(where + " needs three coordinates, got \"" + string.value() + "\"");
+            }
+            double[] out = new double[3];
+            for (int i = 0; i < 3; i++) {
+                try {
+                    out[i] = Rational.parse(parts[i]).doubleValue();
+                } catch (IllegalArgumentException ex) {
+                    throw new ExpressionException(where + ": bad coordinate '" + parts[i] + "'");
+                }
+            }
+            return out;
+        }
+
+        /**
          * pick(a | b | c) — options are full expressions separated by
          * top-level '|' ('||' is still boolean or inside an option), so
          * picks nest and compute: pick(rand(1,5) | client.y | pick(1 | 2)).
@@ -924,7 +992,7 @@ final class ExpressionEvaluator {
             String best = null;
             int bestDistance = 3; // suggest only within edit distance 2
             List<String> candidates = new ArrayList<>(context.variables().names());
-            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains", "indexof", "trim", "upper", "lower", "substr", "replace"));
+            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains", "indexof", "trim", "upper", "lower", "substr", "replace", "raycast", "raycast_block"));
             for (String candidate : candidates) {
                 int distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
                 if (distance < bestDistance) {
