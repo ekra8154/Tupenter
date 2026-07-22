@@ -735,17 +735,20 @@ final class ExpressionEvaluator {
                     throw new ExpressionException(name + "(...) needs a tag id, e.g. " + name + "(#minecraft:logs) — or no argument for the whole registry");
                 }
             }
+            if (tag != null && !explicitTag) {
+                // BARE name: a concrete id of that name WINS over a same-named
+                // tag. minecraft:ice (a block) and #minecraft:ice (the ice
+                // family) both exist, so a bare "ice" must mean the single
+                // block — use "#ice" for the family. Only when there's no
+                // concrete id (e.g. "logs") does a bare name fall back to a tag.
+                String canonical = context.tags().lookup(kind, tag);
+                if (canonical != null) {
+                    return new Value.ListValue(List.of(Value.of(canonical)));
+                }
+            }
             List<String> ids = context.tags().resolve(kind, tag);
             if (ids == null) {
                 throw new ExpressionException(name + "(...) needs a live world to look up the registry");
-            }
-            if (ids.isEmpty() && tag != null && !explicitTag) {
-                // not a tag — a concrete id makes a one-element set, so
-                // "block OR blockset" params feed the same functions
-                String canonical = context.tags().lookup(kind, tag);
-                if (canonical != null) {
-                    ids = List.of(canonical);
-                }
             }
             if (ids.isEmpty()) {
                 throw new ExpressionException("Unknown " + kind.name().toLowerCase(java.util.Locale.ROOT)

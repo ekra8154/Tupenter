@@ -212,6 +212,10 @@ class ExpressionEvaluatorTest {
             if (kind == TagResolver.TagKind.BLOCK && tagId.equals("minecraft:logs")) {
                 return java.util.List.of("minecraft:oak_log", "minecraft:birch_log");
             }
+            // "ice" is BOTH a concrete block (see lookup) and a tag family
+            if (kind == TagResolver.TagKind.BLOCK && tagId.equals("minecraft:ice")) {
+                return java.util.List.of("minecraft:ice", "minecraft:packed_ice", "minecraft:blue_ice");
+            }
             if (kind == TagResolver.TagKind.ITEM && tagId.equals("c:ores")) {
                 return java.util.List.of("minecraft:iron_ore");
             }
@@ -220,9 +224,15 @@ class ExpressionEvaluatorTest {
 
         @Override
         public String lookup(TagKind kind, String id) {
-            // the stub registry knows exactly one concrete block
-            return kind == TagResolver.TagKind.BLOCK && (id.equals("minecraft:stone") || id.equals("stone"))
-                    ? "minecraft:stone" : null;
+            // the stub registry knows two concrete blocks: stone and ice
+            if (kind != TagResolver.TagKind.BLOCK) {
+                return null;
+            }
+            return switch (id) {
+                case "minecraft:stone", "stone" -> "minecraft:stone";
+                case "minecraft:ice", "ice" -> "minecraft:ice";
+                default -> null;
+            };
         }
     };
 
@@ -254,6 +264,16 @@ class ExpressionEvaluatorTest {
         // an explicit # is ALWAYS a tag — no silent fallback
         assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("blockset(#minecraft:stone)", tagContext()));
         assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("blockset(\"minecraft:nope\")", tagContext()));
+    }
+
+    @Test
+    void bareIdWinsOverASameNamedTag() {
+        // "ice" is both minecraft:ice (block) and #minecraft:ice (family) —
+        // a bare "ice" must be the single block, not the four-block tag
+        assertEquals("1", ExpressionEvaluator.evaluate("len(blockset(\"ice\"))", tagContext()).displayString());
+        assertEquals("minecraft:ice", ExpressionEvaluator.evaluate("rand(blockset(\"ice\"))", tagContext()).displayString());
+        // ...and an explicit #minecraft:ice still gets the whole family
+        assertEquals("3", ExpressionEvaluator.evaluate("len(blockset(#minecraft:ice))", tagContext()).displayString());
     }
 
     @Test
