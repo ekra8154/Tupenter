@@ -28,8 +28,34 @@ public abstract class MixinChatScreen extends Screen {
     @org.spongepowered.asm.mixin.Shadow
     protected EditBox input;
 
+    @org.spongepowered.asm.mixin.Shadow
+    public abstract void moveInHistory(int offset);
+
     protected MixinChatScreen(Component title) {
         super(title);
+    }
+
+    /**
+     * Ctrl+scroll steps through sent-message history in the chat bar instead of
+     * scrolling the chat log — reusing vanilla's own moveInHistory, so it saves
+     * your in-progress draft and restores it when you scroll back down to the
+     * bottom (exactly like the up/down arrows). Plain scroll still scrolls chat.
+     */
+    @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
+    private void tupenter$ctrlScrollHistory(double mouseX, double mouseY, double scrollX, double scrollY,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (net.tupenter.config.TupenterConfig.INSTANCE.ctrlScrollHistory && scrollY != 0 && tupenter$ctrlHeld()) {
+            moveInHistory(scrollY > 0 ? -1 : 1); // up = older, down = newer (restores the draft at the end)
+            cir.setReturnValue(true);
+        }
+    }
+
+    private static boolean tupenter$ctrlHeld() {
+        com.mojang.blaze3d.platform.Window window = net.minecraft.client.Minecraft.getInstance().getWindow();
+        return window != null && (com.mojang.blaze3d.platform.InputConstants.isKeyDown(window,
+                        com.mojang.blaze3d.platform.InputConstants.KEY_LCONTROL)
+                || com.mojang.blaze3d.platform.InputConstants.isKeyDown(window,
+                        com.mojang.blaze3d.platform.InputConstants.KEY_RCONTROL));
     }
 
     /**
