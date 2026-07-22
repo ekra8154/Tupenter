@@ -230,6 +230,11 @@ public class ModMenuIntegration implements ModMenuApi {
         // into it — they interdepend, so a partial subset never made sense.
         scripting.addEntry(enhancedCommandParsingEntry);
         scripting.addEntry(chatHighlightingEntry);
+        scripting.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.auto_close_brackets"), TupenterConfig.INSTANCE.autoCloseBrackets)
+                .setDefaultValue(false)
+                .setTooltip(Component.translatable("tooltip.tupenter.auto_close_brackets"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.autoCloseBrackets = newValue)
+                .build());
         scripting.addEntry(numberMathEntry);
         scripting.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.script_limits"),
                 List.of(maxCommandsPerTickEntry, maxCommandsPerScriptEntry, maxConcurrentScriptsEntry, maxLoopIterationsEntry))
@@ -266,12 +271,6 @@ public class ModMenuIntegration implements ModMenuApi {
                 .setDefaultValue(true)
                 .setTooltip(Component.translatable("tooltip.tupenter.chat_selection"))
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.chatSelectionEnabled = newValue)
-                .build());
-
-        general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.auto_close_brackets"), TupenterConfig.INSTANCE.autoCloseBrackets)
-                .setDefaultValue(false)
-                .setTooltip(Component.translatable("tooltip.tupenter.auto_close_brackets"))
-                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.autoCloseBrackets = newValue)
                 .build());
 
         general.addEntry(entryBuilder.startIntField(Component.translatable("option.tupenter.chat_input_length"), TupenterConfig.INSTANCE.chatInputLength)

@@ -76,6 +76,13 @@ public abstract class MixinCommandSuggestions {
             return;
         }
         String text = this.input.getValue();
+        // markers only evaluate on command (/) and directive (#) lines — see
+        // MixinConnection. In plain chat a $...$ is literal, so don't offer
+        // variable/function suggestions into it (matches auto-bracket's gate).
+        String lead = text.stripLeading();
+        if (!lead.startsWith("/") && !lead.startsWith("#")) {
+            return;
+        }
         int cursor = this.input.getCursorPosition();
         int tokenStart = ChatInputStyler.markerTokenStart(text, cursor);
         List<String> candidates;
