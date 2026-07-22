@@ -5,7 +5,6 @@ import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.tupenter.TupenterModClient;
-import net.tupenter.command.ChatInputStyler;
 import net.tupenter.config.TupenterConfig;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -34,9 +33,7 @@ public class MixinClientPacketListener {
      */
     @Inject(method = "sendCommand", at = @At("HEAD"), cancellable = true)
     private void tupenter$recordClientOnlyCommand(String command, CallbackInfo ci) {
-        if (TupenterConfig.INSTANCE.enhancedCommandParsingEnabled
-                && TupenterConfig.INSTANCE.commandChainingEnabled
-                && ChatInputStyler.segments("/" + command).size() > 1) {
+        if (TupenterModClient.isCommandChain(command)) {
             ClientPacketListener connection = Minecraft.getInstance().getConnection();
             if (connection != null) {
                 connection.getConnection().send(new ServerboundChatCommandPacket(command));

@@ -156,9 +156,24 @@ public class TupenterModClient implements ClientModInitializer {
         return true;
     }
 
+    /**
+     * A command line Tupenter's chain parser should own — it has a top-level
+     * {@code &&}. Such a line must NOT hit the client dispatcher (Brigadier
+     * chokes on the {@code &&}); it goes through sendCommand's reroute to
+     * MixinConnection instead.
+     */
+    public static boolean isCommandChain(String commandWithoutSlash) {
+        return TupenterConfig.INSTANCE.enhancedCommandParsingEnabled
+                && TupenterConfig.INSTANCE.commandChainingEnabled
+                && net.tupenter.command.ChatInputStyler.segments("/" + commandWithoutSlash).size() > 1;
+    }
+
     /** Sends a stored line the way the resend system and scripts need it sent. */
     public static void dispatchStoredCommand(Minecraft client, String commandWithoutSlash) {
-        if (tryExecuteClientCommand(commandWithoutSlash)) {
+        // A && chain must reach the script parser, not the client dispatcher —
+        // otherwise Brigadier parses the && as an argument (the /launch resend
+        // bug). sendCommand reroutes chains for us.
+        if (!isCommandChain(commandWithoutSlash) && tryExecuteClientCommand(commandWithoutSlash)) {
             return;
         }
         client.player.connection.sendCommand(commandWithoutSlash);
