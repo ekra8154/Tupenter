@@ -635,6 +635,81 @@ class ScriptParserTest {
         assertTrue(result.script().statements().get(0).silent(), "feedback is suppressed");
     }
 
+    // A circle centered on an absolute <pos> (not ~), so it never drifts as
+    // the player moves during lazy streaming. block-or-group random per spot,
+    // optional replace filter — the same recipe as randomfill, on a disc.
+    private static final String CIRCLE_BODY =
+            "<center:pos=~ ~ ~> <radius:int> <set:blockset> <replacing:blockset=any> "
+            + "#silent #local choices = blockset(set) && "
+            + "#foreach $dx$ in range(-radius, radius) (#foreach $dz$ in range(-radius, radius) "
+            + "(#if (dx*dx + dz*dz <= radius*radius) (#if (replacing == \"any\") "
+            + "(/setblock $center.x + dx$ $center.y$ $center.z + dz$ $rand(choices)$) "
+            + "#else (#if (contains(blockset(replacing), block(center.x + dx, center.y, center.z + dz))) "
+            + "(/setblock $center.x + dx$ $center.y$ $center.z + dz$ $rand(choices)$)))))";
+
+    private static TagResolver circleTags() {
+        return new TagResolver() {
+            @Override
+            public List<String> resolve(TagKind kind, String tagId) {
+                return kind == TagResolver.TagKind.BLOCK && "minecraft:logs".equals(tagId)
+                        ? List.of("minecraft:oak_log", "minecraft:birch_log")
+                        : List.of();
+            }
+
+            @Override
+            public String lookup(TagKind kind, String id) {
+                return kind == TagResolver.TagKind.BLOCK && id.endsWith("stone") ? "minecraft:stone" : null;
+            }
+        };
+    }
+
+    private static ScriptParser.Options circleOptions(BlockReader blocks) {
+        SessionVariableStore store = new SessionVariableStore();
+        return new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, aliasMap(Map.of("circle", CIRCLE_BODY)),
+                true, true, true, true, 100, 1000, new Random(42), store, store, circleTags(), blocks, FunctionResolver.NONE, false);
+    }
+
+    /** Circle options whose ~ resolves to a fixed player block position (client.bx/by/bz). */
+    private static ScriptParser.Options circleOptionsAnchored(BlockReader blocks, long bx, long by, long bz) {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.bx", Value.ofNumber(bx));
+        store.set("client.by", Value.ofNumber(by));
+        store.set("client.bz", Value.ofNumber(bz));
+        return new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, aliasMap(Map.of("circle", CIRCLE_BODY)),
+                true, true, true, true, 100, 1000, new Random(42), store, store, circleTags(), blocks, FunctionResolver.NONE, false);
+    }
+
+    @Test
+    void circleFillsAnAbsoluteDiscThatNeverDrifts() {
+        // radius 1 around origin: the 5 cells with dx^2+dz^2<=1, ALL absolute
+        // coords (no ~), which is exactly what keeps it stable mid-stream
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "circle 0 0 0 1 #minecraft:logs", circleOptions(BlockReader.NONE));
+        assertNull(result.error());
+        List<String> sent = contents(result);
+        assertEquals(5, sent.size(), "a radius-1 disc is a plus sign: 5 blocks");
+        java.util.Set<String> coords = new java.util.HashSet<>();
+        for (String line : sent) {
+            assertTrue(line.matches("setblock -?\\d+ 0 -?\\d+ minecraft:(oak|birch)_log"), line);
+            coords.add(line.substring("setblock ".length(), line.lastIndexOf(' ')));
+        }
+        assertEquals(java.util.Set.of("0 0 0", "1 0 0", "-1 0 0", "0 0 1", "0 0 -1"), coords);
+    }
+
+    @Test
+    void circleDefaultCenterResolvesRelativeToThePlayerOnce() {
+        // omit the center: ~ ~ ~ resolves to the player's absolute position
+        // a single time, so every block anchors to where you STARTED
+        ScriptParser.Options opts = circleOptionsAnchored(BlockReader.NONE, 10, 64, -20);
+        ScriptParser.ParseResult result = ScriptParser.parse("circle 1 stone", opts);
+        assertNull(result.error());
+        List<String> sent = contents(result);
+        assertEquals(5, sent.size());
+        assertTrue(sent.contains("setblock 10 64 -20 minecraft:stone"), sent.toString());
+        assertTrue(sent.contains("setblock 11 64 -20 minecraft:stone"), sent.toString());
+        assertTrue(sent.contains("setblock 10 64 -19 minecraft:stone"), sent.toString());
+    }
+
     @Test
     void randomfillFilterOnlyReplacesMatchingBlocks() {
         // world: dirt at even x, stone at odd x — filter "dirt" (a concrete
