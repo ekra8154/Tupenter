@@ -11,6 +11,7 @@ import net.tupenter.command.ChatSelection;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -43,6 +44,26 @@ public abstract class MixinChatScreen extends Screen {
         if (limit > 256) {
             this.input.setMaxLength(limit);
         }
+    }
+
+    /**
+     * Raising the input box's maxLength let you TYPE past 256, but submitting
+     * still ran the line through StringUtil.trimChatMessage — a hard 256 cap —
+     * BEFORE dispatch, so a long client command (/customcommand add ...) was
+     * silently truncated on Enter even though the whole thing fit in the box.
+     * Cap at the same configured limit instead; the real wire limits still
+     * hold via MixinConnection, which blocks over-256 FINAL packets with a
+     * clear local error. (limit &lt;= 256 keeps exact vanilla behavior.)
+     */
+    @Redirect(method = "normalizeChatMessage",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/util/StringUtil;trimChatMessage(Ljava/lang/String;)Ljava/lang/String;"))
+    private String tupenter$trimToConfiguredLimit(String message) {
+        int limit = net.tupenter.config.TupenterConfig.INSTANCE.chatInputLength;
+        if (limit <= 256) {
+            return net.minecraft.util.StringUtil.trimChatMessage(message); // untouched vanilla
+        }
+        return message.length() <= limit ? message : message.substring(0, limit);
     }
 
     @Inject(method = "mouseClicked", at = @At("HEAD"))
