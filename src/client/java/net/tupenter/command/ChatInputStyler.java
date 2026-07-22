@@ -174,6 +174,16 @@ public final class ChatInputStyler {
     }
 
     /**
+     * True when the line is a meta-command whose tail is an embedded body/line
+     * (/customcommand add|update, /customfunction add|update, /unroll). A top-level
+     * {@code &&} in such a line is BODY content, not a command chain — so chain
+     * routing must leave these alone (else the body's markers evaluate early).
+     */
+    public static boolean carriesEmbeddedLine(String full) {
+        return innerLineStart(full) > 0 || customFunctionInnerStart(full) > 0;
+    }
+
+    /**
      * Like {@link #innerLineStart}, but for {@code /customfunction add|update
      * <name> <decls...> = <expression>}: returns where the description/equals/
      * body region begins (past the name and parameter declarations), or 0 when

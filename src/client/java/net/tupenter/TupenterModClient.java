@@ -163,9 +163,17 @@ public class TupenterModClient implements ClientModInitializer {
      * MixinConnection instead.
      */
     public static boolean isCommandChain(String commandWithoutSlash) {
-        return TupenterConfig.INSTANCE.enhancedCommandParsingEnabled
-                && TupenterConfig.INSTANCE.commandChainingEnabled
-                && net.tupenter.command.ChatInputStyler.segments("/" + commandWithoutSlash).size() > 1;
+        if (!TupenterConfig.INSTANCE.enhancedCommandParsingEnabled
+                || !TupenterConfig.INSTANCE.commandChainingEnabled) {
+            return false;
+        }
+        // /customcommand, /customfunction, /unroll carry a whole body as their
+        // tail — a && there is body content, not a top-level chain (else adding
+        // a function/command whose body has && evaluates its markers early).
+        if (net.tupenter.command.ChatInputStyler.carriesEmbeddedLine("/" + commandWithoutSlash)) {
+            return false;
+        }
+        return net.tupenter.command.ChatInputStyler.segments("/" + commandWithoutSlash).size() > 1;
     }
 
     /** Sends a stored line the way the resend system and scripts need it sent. */
