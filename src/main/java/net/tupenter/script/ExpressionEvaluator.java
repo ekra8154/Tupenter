@@ -788,7 +788,18 @@ final class ExpressionEvaluator {
                     throw new ExpressionException(name + "(...) takes #tags and/or concrete ids — "
                             + name + "(\"oak_planks\", \"#minecraft:logs\") — or no argument for the whole registry");
                 }
-                union.addAll(resolveMember(name, kind, string.value().trim()));
+                // each argument may itself be a space-separated list of members, so a
+                // SINGLE scalar string carries a whole set — blockset("oak_log #wool").
+                // (Ids/tags/[states] never contain spaces, so this split is safe.) This
+                // is what lets a custom command's <set:blockset> param hold more than one:
+                // /sphere ... $"oak_planks oak_log #minecraft:wool"$
+                String trimmed = string.value().trim();
+                if (trimmed.isEmpty()) {
+                    throw new ExpressionException(name + "(...) needs a tag or id, e.g. " + name + "(#minecraft:logs)");
+                }
+                for (String token : trimmed.split("\\s+")) {
+                    union.addAll(resolveMember(name, kind, token));
+                }
             }
             return idListValue(union);
         }

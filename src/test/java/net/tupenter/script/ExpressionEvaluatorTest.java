@@ -420,6 +420,16 @@ class ExpressionEvaluatorTest {
     }
 
     @Test
+    void aSingleSpaceSeparatedStringIsAWholeSet() {
+        // one scalar string carries several members — how a <set:blockset> param passes a set
+        assertEquals("2", ExpressionEvaluator.evaluate("len(blockset(\"stone ice\"))", tagContext()).displayString());
+        assertEquals("3", ExpressionEvaluator.evaluate(
+                "len(blockset(\"stone #minecraft:logs\"))", tagContext()).displayString()); // stone + 2 logs
+        // extra whitespace is harmless; dedup still applies
+        assertEquals("1", ExpressionEvaluator.evaluate("len(blockset(\"  stone   stone \"))", tagContext()).displayString());
+    }
+
+    @Test
     void containsChecksMembership() {
         assertEquals("true", ExpressionEvaluator.evaluate(
                 "contains(blockset(#minecraft:logs), \"minecraft:oak_log\")", tagContext()).displayString());
