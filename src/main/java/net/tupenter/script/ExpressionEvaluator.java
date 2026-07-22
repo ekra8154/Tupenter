@@ -496,6 +496,9 @@ final class ExpressionEvaluator {
                 case "raycast" -> raycast(args);
                 case "raycast_block" -> raycastBlock(args);
                 case "entity_nbt" -> entityNbt(args);
+                case "entity_raycast" -> entityRaycast(args);
+                case "entities" -> entitiesWithin(args);
+                case "nearest_entity" -> nearestEntity(args);
                 default -> {
                     // not a built-in — try a user-defined /customfunction
                     Value userValue = context.functions().call(identifier, args, context);
@@ -948,7 +951,52 @@ final class ExpressionEvaluator {
             }
             String selector = args.get(0).displayString();
             String path = args.get(1).displayString();
-            return context.nbt().read(selector, path);
+            return context.entities().readNbt(selector, path);
+        }
+
+        /**
+         * entity_raycast(dist) — cast from the player's eyes along their look up
+         * to dist blocks and yield the UUID of the first entity hit, or the
+         * "miss" sentinel (so it gates with == "miss", like raycast). Feed the
+         * UUID straight to entity_nbt: entity_nbt(entity_raycast(30), "Health").
+         */
+        private Value entityRaycast(List<Value> args) {
+            double dist = asNumber(single(args, "entity_raycast"), "entity_raycast(dist)").doubleValue();
+            return Value.of(context.entities().raycastUuid(dist));
+        }
+
+        /**
+         * entities(radius) / entities(radius, type) — a LIST of the UUIDs of
+         * entities within radius blocks, optionally only those of one type
+         * ("minecraft:zombie"). Empty when nothing matches, so it composes with
+         * len(...) and #foreach: #foreach $e$ in entities(8, "minecraft:zombie").
+         */
+        private Value entitiesWithin(List<Value> args) {
+            if (args.isEmpty() || args.size() > 2) {
+                throw new ExpressionException("entities(radius) or entities(radius, type), "
+                        + "e.g. entities(8) or entities(8, \"minecraft:zombie\")");
+            }
+            double radius = asNumber(args.get(0), "entities radius").doubleValue();
+            String type = args.size() == 2 ? args.get(1).displayString() : null;
+            List<Value> out = new ArrayList<>();
+            for (String uuid : context.entities().nearbyUuids(radius, type)) {
+                out.add(Value.of(uuid));
+            }
+            return new Value.ListValue(List.copyOf(out));
+        }
+
+        /**
+         * nearest_entity(radius) / nearest_entity(radius, type) — the UUID of the
+         * closest entity within radius blocks (optionally of one type), or the
+         * "miss" sentinel when none match.
+         */
+        private Value nearestEntity(List<Value> args) {
+            if (args.isEmpty() || args.size() > 2) {
+                throw new ExpressionException("nearest_entity(radius) or nearest_entity(radius, type)");
+            }
+            double radius = asNumber(args.get(0), "nearest_entity radius").doubleValue();
+            String type = args.size() == 2 ? args.get(1).displayString() : null;
+            return Value.of(context.entities().nearestUuid(radius, type));
         }
 
         /** Reads a vec3 arg as three doubles — a "x y z" string or vec(...) result. */

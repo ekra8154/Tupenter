@@ -26,7 +26,8 @@ public final class CustomFunctionManager {
             "int", "float", "abs", "floor", "ceil", "round", "min", "max", "len", "nth", "contains", "indexof",
             "trim", "upper", "lower", "substr", "replace", "rand", "randf", "sin", "cos", "tan", "sqrt", "range",
             "itemset", "blockset", "effectset", "entityset", "block", "pick", "vec", "x", "y", "z",
-            "raycast", "raycast_block", "entity_nbt", "true", "false");
+            "raycast", "raycast_block", "entity_nbt", "entity_raycast", "entities", "nearest_entity",
+            "true", "false");
 
     /** Statement directives allowed as the head of a statement-body function. */
     private static final Set<String> STATEMENT_BODY_DIRECTIVES = Set.of(

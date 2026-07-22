@@ -237,7 +237,8 @@ public class TupenterModClient implements ClientModInitializer {
                 "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
-                "trim", "upper", "lower", "substr", "replace", "vec", "x", "y", "z", "raycast", "raycast_block", "entity_nbt"));
+                "trim", "upper", "lower", "substr", "replace", "vec", "x", "y", "z", "raycast", "raycast_block",
+                "entity_nbt", "entity_raycast", "entities", "nearest_entity"));
         names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too
         return new java.util.ArrayList<>(names);
     }
@@ -277,7 +278,7 @@ public class TupenterModClient implements ClientModInitializer {
             int tokens = 1;
             try {
                 if (ctx == null) {
-                    ctx = new net.tupenter.script.EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER, NBT_READER);
+                    ctx = new net.tupenter.script.EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER, ENTITY_ACCESS);
                 }
                 String value = MathEvaluator.evaluateValue(text.substring(i + 1, close), ctx).substitutionString();
                 tokens = tokenCount(value);
@@ -783,7 +784,7 @@ public class TupenterModClient implements ClientModInitializer {
                 BLOCK_READER,
                 CustomFunctionManager.resolver(), // user-defined /customfunctions
                 RAYCASTER,
-                NBT_READER,
+                ENTITY_ACCESS,
                 true // lazy execution
         );
     }
@@ -855,36 +856,12 @@ public class TupenterModClient implements ClientModInitializer {
     };
 
     /**
-     * Backs entity_nbt(selector, path): "self" = your player, "target" = the
-     * crosshair entity (same two entities the client.nbt / target.nbt variables
-     * read), or a UUID string resolved against the client world — so you can read
-     * ANY loaded entity, not just what you're looking at. Only sees what the
-     * client has synced (~render distance); an unresolvable UUID errors clearly.
+     * Backs entity_nbt / entity_raycast / entities / nearest_entity off the
+     * synced client world (~render distance). "self"/"target"/UUID selectors for
+     * NBT; ProjectileUtil + ClientLevel lookups for the UUID finders. See
+     * {@link net.tupenter.command.EntityAccessImpl}.
      */
-    public static final net.tupenter.script.NbtReader NBT_READER = (selector, path) -> {
-        String key = selector.trim();
-        net.minecraft.world.entity.Entity entity;
-        if (key.equalsIgnoreCase("self")) {
-            entity = net.tupenter.command.EntityNbtVariableProvider.clientEntity();
-        } else if (key.equalsIgnoreCase("target")) {
-            entity = net.tupenter.command.EntityNbtVariableProvider.targetEntity();
-        } else {
-            java.util.UUID uuid;
-            try {
-                uuid = java.util.UUID.fromString(key);
-            } catch (IllegalArgumentException ex) {
-                throw new net.tupenter.script.ExpressionException("entity_nbt: '" + selector
-                        + "' isn't \"self\", \"target\", or a valid UUID");
-            }
-            net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
-            entity = level == null ? null : level.getEntity(uuid);
-            if (entity == null) {
-                throw new net.tupenter.script.ExpressionException("entity_nbt: no entity with UUID " + uuid
-                        + " is loaded on the client (out of range, or not synced)");
-            }
-        }
-        return net.tupenter.command.EntityNbtVariableProvider.read(entity, path, "entity_nbt");
-    };
+    public static final net.tupenter.script.EntityAccess ENTITY_ACCESS = new net.tupenter.command.EntityAccessImpl();
 
     /**
      * Backs blockset/itemset/effectset with the connection's synced
@@ -2246,11 +2223,12 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Built-in:§r $client.x/y/z/health/held_item/target_block/target_hit...$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$ — target_hit = \"block\"/\"entity\"/\"miss\"; target_block errors on a miss (gate it with target_hit)",
                     "§7Environment:§r $client.biome$ · $client.light / light_block / light_sky$ · $client.facing$ · $client.chunk_x/chunk_z$ · $world.spawn$ · $world.key$ (the per-world scripts id)",
                     "§7Movement:§r $client.speed$ (full 3D b/s) · $client.speed_xz$ (horizontal) · $client.speed_y$ (vertical, signed) · $client.motion$ (vec3 \"vx vy vz\" b/s) · booleans: on_ground, sneaking, sprinting, swimming, flying, gliding",
-                    "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · slot (0-8), offhand_item, target_entity · gamemode, ping, fps, uuid",
+                    "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · slot (0-8), offhand_item, target_entity, target_uuid (the crosshair entity's UUID — an entity_nbt selector) · gamemode, ping, fps, uuid",
                     "§7Hazards & held:§r in_water, underwater, in_lava, on_fire, fall_distance, eye_y · riding + vehicle · effects (a LIST — #foreach $e$ in client.effects works) · held_count, offhand_count, held_durability/held_max_durability (error on non-damageable — guard with held_item)",
                     "§7Keys (a script IS a keybind):§r $client.key.<name>$ = held now · $client.keypress.<name>$ = the tick it goes down. <name> is a bind (jump, sneak, attack, hotbar.1 — follows your controls + mods) OR a physical key (g, space, f6). Arrows are up_arrow/down_arrow/left_arrow/right_arrow (bare left/right = the strafe binds). All false while a screen is open. Pair with a tick script: restock = #if (client.keypress.g) (/tp @s $client.target_block$)",
                     "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · browse with /tupenter dump",
                     "§7Any entity by UUID:§r $entity_nbt(uuid, \"path\")$ reads the same NBT for ANY loaded entity, not just self/target — entity_nbt(\"self\"|\"target\"|<uuid>, \"Health\") · e.g. $entity_nbt(client.uuid, \"Pos.1\")$. Client-synced only (~render distance); an out-of-range UUID errors.",
+                    "§7Finding UUIDs:§r entity_raycast(dist) = UUID you're aiming at (or \"miss\") · entities(radius[, type]) = LIST of nearby UUIDs for #foreach · nearest_entity(radius[, type]) = closest UUID (or \"miss\") · client.target_uuid = crosshair entity. Chain them: $entity_nbt(entity_raycast(30), \"Health\")$ · #foreach $e$ in entities(8, \"minecraft:zombie\") (...)",
                     "§7Discover:§r /tupenter vars — groups overview · /tupenter vars <group> — live values",
                     "§7In custom commands:§r declared params bind as $name$ or $1$..$n$",
             };
@@ -2506,7 +2484,7 @@ public class TupenterModClient implements ClientModInitializer {
                 && TupenterConfig.INSTANCE.numberMathMode != net.tupenter.script.NumberMathMode.DISABLED) {
             try {
                 text = MathEvaluator.applyNumberMath(text, net.tupenter.script.NumberMathMode.EXPLICIT_ONLY,
-                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER, NBT_READER));
+                        new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER, ENTITY_ACCESS));
             } catch (IllegalArgumentException ex) {
                 context.getSource().sendError(Component.literal(ex.getMessage()));
                 return null;
@@ -2604,7 +2582,7 @@ public class TupenterModClient implements ClientModInitializer {
         String expression = input.substring(0, input.length() - 1).trim();
         net.tupenter.script.Value value;
         try {
-            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER, NBT_READER));
+            value = MathEvaluator.evaluateValue(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER, ENTITY_ACCESS));
         } catch (IllegalArgumentException ex) {
             sendLocalCalcError(Component.literal("Invalid math expression: " + ex.getMessage()));
             return true;
@@ -2653,7 +2631,7 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static int evaluateLocalCalcExpression(String expression, java.util.function.Consumer<Component> feedback, java.util.function.Consumer<Component> error) {
         try {
-            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER, NBT_READER));
+            String result = MathEvaluator.evaluateForDisplay(expression, new EvalContext(SCRIPT_RANDOM, VARIABLE_REGISTRY, TAG_RESOLVER, BLOCK_READER, CustomFunctionManager.resolver(), RAYCASTER, ENTITY_ACCESS));
             feedback.accept(Component.literal(result).withStyle(ChatFormatting.AQUA));
             return 1;
         } catch (IllegalArgumentException ex) {

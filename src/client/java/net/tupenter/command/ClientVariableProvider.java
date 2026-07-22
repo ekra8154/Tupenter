@@ -46,6 +46,7 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.target_block", ClientVariableProvider::targetBlock);
         register("client.target_hit", ClientVariableProvider::targetHit);
         register("client.target_entity", ClientVariableProvider::targetEntity);
+        register("client.target_uuid", ClientVariableProvider::targetUuid);
 
         // movement + orientation
         register("client.speed", player -> {
@@ -202,6 +203,14 @@ public final class ClientVariableProvider implements VariableProvider {
             return Value.of(BuiltInRegistries.ENTITY_TYPE.getKey(hit.getEntity().getType()).toString());
         }
         throw new MissingValueException("client.target_entity: no entity under the crosshair — check $client.target_hit$ first");
+    }
+
+    /** UUID of the entity under the crosshair — a selector for entity_nbt(...). */
+    private static Value targetUuid(LocalPlayer player) {
+        if (Minecraft.getInstance().hitResult instanceof net.minecraft.world.phys.EntityHitResult hit) {
+            return Value.of(hit.getEntity().getStringUUID());
+        }
+        throw new MissingValueException("client.target_uuid: no entity under the crosshair — check $client.target_hit$ first");
     }
 
     /** "block", "entity", or "miss" — what the crosshair ray actually found. */

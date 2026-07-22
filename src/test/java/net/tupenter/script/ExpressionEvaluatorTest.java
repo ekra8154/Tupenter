@@ -69,32 +69,87 @@ class ExpressionEvaluatorTest {
         assertThrows(ExpressionException.class, () -> eval("z(42)"));         // a plain number
     }
 
-    @Test
-    void entityNbtReadsThroughTheReader() {
-        // a stub reader that answers "Health" for the "target" selector
-        NbtReader reader = (selector, path) -> {
-            if (selector.equals("target") && path.equals("Health")) {
-                return Value.ofNumber(18);
+    // A stub EntityAccess: "target" has 18 Health; two fake mobs sit at radius 3 and 7.
+    private static EvalContext entityCtx() {
+        EntityAccess access = new EntityAccess() {
+            @Override
+            public Value readNbt(String selector, String path) {
+                if (selector.equals("target") && path.equals("Health")) {
+                    return Value.ofNumber(18);
+                }
+                throw new ExpressionException("no such entity/path: " + selector + " / " + path);
             }
-            throw new ExpressionException("no such entity/path: " + selector + " / " + path);
+
+            @Override
+            public String raycastUuid(double maxDist) {
+                return maxDist >= 5 ? "uuid-hit" : "miss";
+            }
+
+            @Override
+            public java.util.List<String> nearbyUuids(double radius, String type) {
+                java.util.List<String> out = new java.util.ArrayList<>();
+                if (radius >= 3 && (type == null || type.equals("minecraft:zombie"))) {
+                    out.add("uuid-near");
+                }
+                if (radius >= 7 && type == null) {
+                    out.add("uuid-far");
+                }
+                return out;
+            }
+
+            @Override
+            public String nearestUuid(double radius, String type) {
+                return radius >= 3 ? "uuid-near" : "miss";
+            }
         };
-        EvalContext ctx = new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE,
-                BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, reader);
+        return new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE,
+                BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, access);
+    }
+
+    @Test
+    void entityNbtReadsThroughTheAccess() {
+        EvalContext ctx = entityCtx();
         assertEquals("18", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Health\")", ctx).displayString());
-        // the selector and path are just expressions — a variable UUID composes
+        // selector and path are just expressions — arithmetic composes
         assertEquals("20", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Health\") + 2", ctx).displayString());
     }
 
     @Test
-    void entityNbtValidatesArity() {
-        assertThrows(ExpressionException.class, () -> eval("entity_nbt(\"target\")"));
-        assertThrows(ExpressionException.class, () -> eval("entity_nbt(\"a\", \"b\", \"c\")"));
+    void entityRaycastReturnsUuidOrMiss() {
+        EvalContext ctx = entityCtx();
+        assertEquals("uuid-hit", ExpressionEvaluator.evaluate("entity_raycast(30)", ctx).displayString());
+        assertEquals("miss", ExpressionEvaluator.evaluate("entity_raycast(2)", ctx).displayString());
     }
 
     @Test
-    void entityNbtWithoutAReaderErrors() {
-        // the default NbtReader.NONE (no live world) throws, not returns a bogus value
+    void entitiesReturnsAList() {
+        EvalContext ctx = entityCtx();
+        assertEquals("2", ExpressionEvaluator.evaluate("len(entities(8))", ctx).displayString());
+        assertEquals("1", ExpressionEvaluator.evaluate("len(entities(8, \"minecraft:zombie\"))", ctx).displayString());
+        assertEquals("uuid-near", ExpressionEvaluator.evaluate("nth(entities(8), 0)", ctx).displayString());
+        assertEquals("0", ExpressionEvaluator.evaluate("len(entities(1))", ctx).displayString()); // nothing in range
+    }
+
+    @Test
+    void nearestEntityReturnsUuidOrMiss() {
+        EvalContext ctx = entityCtx();
+        assertEquals("uuid-near", ExpressionEvaluator.evaluate("nearest_entity(8)", ctx).displayString());
+        assertEquals("miss", ExpressionEvaluator.evaluate("nearest_entity(1)", ctx).displayString());
+    }
+
+    @Test
+    void entityFunctionsValidateArity() {
+        assertThrows(ExpressionException.class, () -> eval("entity_nbt(\"target\")"));
+        assertThrows(ExpressionException.class, () -> eval("entities()"));
+        assertThrows(ExpressionException.class, () -> eval("nearest_entity(1, \"a\", \"b\")"));
+    }
+
+    @Test
+    void entityFunctionsWithoutAWorldError() {
+        // the default EntityAccess.NONE (no live world) throws, not returns a bogus value
         assertThrows(ExpressionException.class, () -> eval("entity_nbt(\"self\", \"Health\")"));
+        assertThrows(ExpressionException.class, () -> eval("entity_raycast(10)"));
+        assertThrows(ExpressionException.class, () -> eval("entities(8)"));
     }
 
     @Test
