@@ -31,6 +31,8 @@
   "tooltip.tupenter.chat_selection": "Click and drag over chat messages (with chat open) to select text, then Ctrl+C to copy it. Selections span multiple messages — soft-wrapped lines join with a space, message boundaries become newlines. Plain clicks still trigger chat links and click-events; only an actual drag selects.",
   "option.tupenter.ctrl_scroll_history": "Ctrl+Scroll History",
   "tooltip.tupenter.ctrl_scroll_history": "Hold Ctrl and scroll while the chat is open to step through your sent-message history in the chat bar (up = older, down = newer) instead of scrolling the chat log. Reuses vanilla's history navigation, so it saves what you were typing and restores it when you scroll back down to the bottom. Plain scroll still scrolls chat. On by default.",
+  "option.tupenter.ctrl_space_send": "Ctrl+Space Sends",
+  "tooltip.tupenter.ctrl_space_send": "Press Ctrl+Space in the chat bar to send the line, exactly like Enter — so you can do a manual send without moving your hand off the mouse. On by default.",
   "option.tupenter.auto_close_brackets": "Auto-close Brackets",
   "tooltip.tupenter.auto_close_brackets": "While typing a command or #directive line (and in the Mod Menu script editor), auto-pair ( [ { \" and $: typing an opener inserts its closer with the caret between, selecting text then typing a bracket wraps it, typing a closer that's already ahead steps past it, and backspace inside an empty pair deletes both. $ only pairs where a $marker$ would actually evaluate (never in plain chat or inside a \"quoted string\"). Off by default.",
   "option.tupenter.lazy_execution": "Lazy Execution",

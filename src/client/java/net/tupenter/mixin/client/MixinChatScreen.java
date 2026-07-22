@@ -31,6 +31,9 @@ public abstract class MixinChatScreen extends Screen {
     @org.spongepowered.asm.mixin.Shadow
     public abstract void moveInHistory(int offset);
 
+    @org.spongepowered.asm.mixin.Shadow
+    public abstract void handleChatInput(String message, boolean addToRecentChat);
+
     protected MixinChatScreen(Component title) {
         super(title);
     }
@@ -118,6 +121,22 @@ public abstract class MixinChatScreen extends Screen {
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void tupenter$copySelection(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
         if (event.isCopy() && ChatSelection.copyToClipboard(this.minecraft)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    /**
+     * Ctrl+Space submits the chat line, exactly like Enter — a manual send you
+     * can trigger without lifting your hand off the mouse. Mirrors vanilla's
+     * Enter path (handleChatInput then close the screen); consuming the event
+     * keeps the space out of the box. Off falls straight through to a space.
+     */
+    @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
+    private void tupenter$ctrlSpaceSend(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (net.tupenter.config.TupenterConfig.INSTANCE.ctrlSpaceSend
+                && event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE && event.hasControlDown()) {
+            this.handleChatInput(this.input.getValue(), true);
+            this.minecraft.setScreen(null);
             cir.setReturnValue(true);
         }
     }

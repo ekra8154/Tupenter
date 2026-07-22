@@ -39,6 +39,8 @@ public class TupenterConfig {
     public boolean autoCloseBrackets = false;
     /** Ctrl+scroll in the chat bar steps through sent-message history instead of scrolling chat. */
     public boolean ctrlScrollHistory = true;
+    /** Ctrl+Space in the chat bar submits the line (a mouse-hand-friendly manual send). */
+    public boolean ctrlSpaceSend = true;
     public boolean lazyExecutionEnabled = true;
     /** Chat-bar typing limit. What's SENT still obeys the protocol: chat 256, commands 32766. */
     public int chatInputLength = 256;
@@ -365,6 +367,7 @@ public class TupenterConfig {
                     INSTANCE.chatSelectionEnabled = loaded.chatSelectionEnabled;
                     INSTANCE.autoCloseBrackets = loaded.autoCloseBrackets;
                     INSTANCE.ctrlScrollHistory = loaded.ctrlScrollHistory;
+                    INSTANCE.ctrlSpaceSend = loaded.ctrlSpaceSend;
                     INSTANCE.lazyExecutionEnabled = loaded.lazyExecutionEnabled;
                     INSTANCE.chatInputLength = clamp(loaded.chatInputLength, 256, 32766, 256);
                     INSTANCE.silentDirectiveEnabled = loaded.silentDirectiveEnabled;
