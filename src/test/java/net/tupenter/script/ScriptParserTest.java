@@ -749,6 +749,20 @@ class ScriptParserTest {
     }
 
     @Test
+    void moddedEntityIdKeepsItsOwnNamespace() {
+        // a mod id already carries a namespace (a colon), so the minecraft:
+        // default never touches it — exactly like vanilla, where a bare id
+        // means minecraft: and a mod entity must be spelled namespace:path
+        Map<String, String> aliases = Map.of("echoid", "<e:entity> /echo $e$");
+        assertEquals(List.of("echo alexsmobs:grizzly_bear"),
+                contents(parse("echoid alexsmobs:grizzly_bear", aliases)));
+        assertEquals(List.of("echo create:contraption"),
+                contents(parse("echoid create:contraption", aliases)));
+        // only the truly namespaceless id gets the minecraft: default
+        assertEquals(List.of("echo minecraft:pig"), contents(parse("echoid pig", aliases)));
+    }
+
+    @Test
     void optionalParamsUseDefaultsAndCanBeSkipped() {
         SessionVariableStore store = new SessionVariableStore();
         store.set("client.bx", Value.ofNumber(100));
