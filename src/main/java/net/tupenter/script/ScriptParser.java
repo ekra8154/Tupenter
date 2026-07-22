@@ -60,6 +60,11 @@ public final class ScriptParser {
     /** Directives handled by the statement scanner (own a (...) group). */
     private static final Set<String> SCANNER_DIRECTIVES = Set.of("#repeat", "#if", "#while", "#foreach", "#for", "#silent");
     private static final Set<String> STATEMENT_DIRECTIVES = Set.of(SET, SETDEFAULT, LOCAL, WAIT);
+    /** #return: sets a function's value and unwinds — only valid inside a function body. */
+    private static final String RETURN = "#return";
+    /** Keywords whose presence at the head of a top-level segment marks a function body as a STATEMENT body. */
+    private static final Set<String> FUNCTION_STATEMENT_KEYWORDS = Set.of(
+            SET, LOCAL, SETDEFAULT, "#for", "#foreach", "#while", "#if", RETURN);
     private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
             "rand", "randf", "pick", "int", "float", "range", "true", "false",
             "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len",
@@ -223,7 +228,8 @@ public final class ScriptParser {
                 || canon.equals(SILENT)
                 || canon.equals(NORECORD)
                 || canon.equals(RECORD)
-                || canon.equals(CHAT);
+                || canon.equals(CHAT)
+                || canon.equals(RETURN); // reserved everywhere so its "function-only" error can surface
     }
 
     /** Expands a leading run of shorthand prefix words (#s #nr #r) to canonical form; other text is untouched. */
@@ -488,6 +494,77 @@ public final class ScriptParser {
     }
 
     // =====================================================================
+    // User-function bodies (statement mode)
+    // =====================================================================
+
+    /**
+     * True when a custom-function body is a STATEMENT body (loops, locals,
+     * #return, ...) rather than a single expression. Detection: split the body
+     * into top-level segments (same &&-aware scan the Walker uses) and check
+     * whether any segment leads with a statement keyword. A tag literal like
+     * {@code #minecraft:wool} is not a keyword, so it stays an expression. A
+     * scan failure falls back to expression mode — the evaluator will report it.
+     */
+    static boolean isStatementBody(String body) {
+        List<Stmt> statements;
+        try {
+            statements = scanStatements(body, true);
+        } catch (ParseAbort abort) {
+            return false;
+        }
+        for (Stmt statement : statements) {
+            String head = statement instanceof DirectiveStmt directive
+                    ? directive.word()
+                    : firstWord(((RawStmt) statement).text().trim()).toLowerCase(Locale.ROOT);
+            if (FUNCTION_STATEMENT_KEYWORDS.contains(head)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Runs a statement-body function through the Walker in function mode and
+     * returns its computed value. Function bodies never send: bare segments are
+     * evaluated as expressions (last one is the tentative result), #set/#local
+     * write only to the call's local scope, and #return unwinds immediately. A
+     * {@link ParseAbort} inside becomes an {@link ExpressionException} so the
+     * failure surfaces to the caller like any other expression error.
+     */
+    static Value evaluateFunctionBody(String body, Options functionOptions) {
+        Walker walker = new Walker(functionOptions);
+        walker.functionMode = true;
+        Value result;
+        try {
+            walker.processStatements(body);
+            result = walker.functionResult;
+        } catch (ReturnSignal signal) {
+            return signal.value();
+        } catch (ParseAbort abort) {
+            throw new ExpressionException(abort.getMessage());
+        }
+        if (result == null) {
+            throw new ExpressionException(
+                    "this function produced no value — end its body with an expression or a #return");
+        }
+        return result;
+    }
+
+    /** Control-flow unwind for #return — carries the value out of any enclosing loops/ifs. */
+    private static final class ReturnSignal extends RuntimeException {
+        private final transient Value value;
+
+        private ReturnSignal(Value value) {
+            super(null, null, false, false); // control flow, not an error — no message/stacktrace
+            this.value = value;
+        }
+
+        private Value value() {
+            return value;
+        }
+    }
+
+    // =====================================================================
     // The unroll walker
     // =====================================================================
 
@@ -504,6 +581,10 @@ public final class ScriptParser {
         private final EvalContext context;
         private final VariableProvider lookup; // scopes + scriptScope + session/persistent/live — for #setdefault's absence check
         private boolean changed;
+        /** Function mode: bodies compute a value (no sends); #set is local, #return/#wait behave differently. */
+        private boolean functionMode;
+        /** The tentative return value in function mode — the last bare-expression segment wins. */
+        private Value functionResult;
         private int silentDepth;
         private Script.HistoryMode history = Script.HistoryMode.NORMAL;
         private int aliasExpansions;
@@ -574,6 +655,11 @@ public final class ScriptParser {
             }
             String content = normalized.content();
 
+            if (functionMode) {
+                processFunctionSegment(content, normalized.isCommand());
+                return;
+            }
+
             if (content.startsWith("#")) {
                 String word = firstWord(content).toLowerCase(Locale.ROOT);
                 if (word.equals(SET)) {
@@ -591,6 +677,9 @@ public final class ScriptParser {
                 if (word.equals(WAIT)) {
                     handleWait(content);
                     return;
+                }
+                if (word.equals(RETURN)) {
+                    throw new ParseAbort("#return only works inside a custom function body");
                 }
                 if (word.equals(SILENT) || word.equals(NORECORD)) {
                     throw new ParseAbort(word + " goes at the start of the line" + (word.equals(SILENT) ? ", or wrap statements: #silent (/cmd && /cmd)" : ""));
@@ -630,6 +719,46 @@ public final class ScriptParser {
                 processAliasInvocation(content);
             } else {
                 emitSend(content, isCommand);
+            }
+        }
+
+        /**
+         * A top-level segment of a function body. Directives write function-local
+         * state or unwind; a bare segment is an expression whose value becomes the
+         * tentative result (last wins). Nothing is ever sent — a command is an error.
+         */
+        private void processFunctionSegment(String content, boolean isCommand) {
+            if (content.startsWith("#")) {
+                String word = firstWord(content).toLowerCase(Locale.ROOT);
+                switch (word) {
+                    // #set behaves like #local here: function-local, never committed, no "$x$ =" notice
+                    case SET, LOCAL -> handleSet(content, word.equals(SET) ? SET : LOCAL, false, false);
+                    case SETDEFAULT -> handleSet(content, SETDEFAULT, false, true);
+                    case RETURN -> {
+                        String expr = content.substring(RETURN.length()).trim();
+                        if (expr.isEmpty()) {
+                            throw new ParseAbort("#return needs a value, e.g. #return vec(x, y, z)");
+                        }
+                        throw new ReturnSignal(evalFunctionExpression(expr));
+                    }
+                    case WAIT -> throw new ParseAbort("a function can't #wait — it computes a value synchronously");
+                    case SILENT, NORECORD, RECORD, "#stage", "#unstage", "#chat" ->
+                            throw new ParseAbort(word + " isn't meaningful in a function — its body computes a value");
+                    default -> throw new ParseAbort("Unknown directive " + firstWord(content));
+                }
+                return;
+            }
+            if (isCommand) {
+                throw new ParseAbort("a function can't run commands — its body computes a value");
+            }
+            functionResult = evalFunctionExpression(content);
+        }
+
+        private Value evalFunctionExpression(String expression) {
+            try {
+                return ExpressionEvaluator.evaluate(expression, context);
+            } catch (ExpressionException ex) {
+                throw new ParseAbort(ex.getMessage());
             }
         }
 
@@ -1314,7 +1443,10 @@ public final class ScriptParser {
          */
         private void processWhile(DirectiveStmt directive) {
             requireLoops("#while");
-            if (sink == null) {
+            // A function #while runs eagerly (it computes synchronously); the LoopGuard
+            // bounds it since nothing is emitted. Outside a function it spans ticks, so
+            // it needs lazy execution.
+            if (sink == null && !functionMode) {
                 throw new ParseAbort("#while needs Lazy Execution enabled (Scripting tab) — it runs across ticks.");
             }
             if (directive.header().isEmpty()) {
@@ -1447,6 +1579,11 @@ public final class ScriptParser {
                     lastEmit = emitCount;
                     stalled = 0;
                 } else if (++stalled > options.maxLoopIterations()) {
+                    // In a function the "add a #wait" advice is nonsense — it computes synchronously.
+                    if (functionMode) {
+                        throw new ParseAbort("a function loop ran past Max Loop Iterations ("
+                                + options.maxLoopIterations() + ") — raise the limit or shrink the loop.");
+                    }
                     throw new ParseAbort(word + " ran " + stalled + " iterations without sending or waiting"
                             + " — add a #wait (or a command) so it can spread across ticks, or shrink the loop."
                             + " (Runaway guard = Max Loop Iterations in the config.)");

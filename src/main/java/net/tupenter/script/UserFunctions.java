@@ -18,16 +18,27 @@ import java.util.Set;
  */
 public final class UserFunctions {
     private static final int MAX_DEPTH = 32;
+    /** Loop bound for callers that don't supply one (existing tests, non-config contexts). */
+    private static final int DEFAULT_MAX_LOOP_ITERATIONS = 100;
 
     private UserFunctions() {
+    }
+
+    /** Convenience: a resolver with the default loop bound. */
+    public static FunctionResolver resolver(Map<String, AliasDefinition> functions) {
+        return resolver(functions, DEFAULT_MAX_LOOP_ITERATIONS);
     }
 
     /**
      * Wraps a name → definition map as the evaluator's {@link FunctionResolver},
      * with a recursion guard. Returns null for an unknown name so the evaluator
      * falls through to its "unknown function" error.
+     *
+     * <p>A body is auto-detected as either a pure EXPRESSION (evaluated as today)
+     * or a STATEMENT body (loops/locals/#return, run through the Walker in
+     * function mode). {@code maxLoopIterations} bounds statement-body loops.
      */
-    public static FunctionResolver resolver(Map<String, AliasDefinition> functions) {
+    public static FunctionResolver resolver(Map<String, AliasDefinition> functions, int maxLoopIterations) {
         return new FunctionResolver() {
             private int depth;
 
@@ -56,6 +67,11 @@ public final class UserFunctions {
                     EvalContext scoped = new EvalContext(context.random(), overlay(bindings, context.variables()),
                             context.tags(), context.blocks(), context.functions());
                     try {
+                        // statement bodies run through the Walker; pure expressions stay on the fast path
+                        if (ScriptParser.isStatementBody(def.body())) {
+                            return ScriptParser.evaluateFunctionBody(def.body(),
+                                    functionOptions(scoped, maxLoopIterations));
+                        }
                         return MathEvaluator.evaluateValue(def.body(), scoped);
                     } catch (ExpressionException ex) {
                         // attribute body failures to the function, not the caller's marker
@@ -66,6 +82,33 @@ public final class UserFunctions {
                 }
             }
         };
+    }
+
+    /**
+     * The Options a statement-body function runs under: chaining on, explicit-only
+     * math, no aliases, all statement features enabled, loops bounded by
+     * {@code maxLoopIterations}, effectively no send cap (functions never send),
+     * and the world/params drawn from the scoped call context. A throwaway session
+     * store guarantees #set stays function-local (it is never committed anyway).
+     */
+    private static ScriptParser.Options functionOptions(EvalContext scoped, int maxLoopIterations) {
+        return new ScriptParser.Options(
+                true,                              // chainingEnabled
+                NumberMathMode.EXPLICIT_ONLY,      // mathMode
+                Map.of(),                          // aliases — functions don't expand custom commands
+                true,                              // silentDirectiveEnabled (unused; #silent errors in function mode)
+                true,                              // variablesEnabled
+                true,                              // loopsEnabled
+                true,                              // conditionalsEnabled
+                maxLoopIterations,
+                Integer.MAX_VALUE,                 // maxCommandsPerScript — a function never sends
+                scoped.random(),
+                scoped.variables(),                // the param overlay provider
+                new SessionVariableStore(),        // throwaway — nothing commits to it
+                scoped.tags(),
+                scoped.blocks(),
+                scoped.functions(),                // same resolver → nested calls keep the depth guard
+                false);                            // lazyExecution — functions compute synchronously
     }
 
     /** A provider that checks the param bindings first, then falls through to the live world. */

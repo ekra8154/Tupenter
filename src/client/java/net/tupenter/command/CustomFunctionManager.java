@@ -12,13 +12,13 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * User-defined expression functions — the {@code /customfunction} side of the
- * house. A function is stored like a custom command ({@code name <params> = body})
- * but its body is an EXPRESSION, and it's called inside {@code $...$} the way you
- * call {@code min} or {@code sqrt}: {@code $lightlevel()$}, {@code $dist(a, b)$}.
- *
- * <p>Slice 1: zero-arg functions. Parameters are parsed/stored (forward-compatible
- * with {@link AliasDefinition}) but rejected at save time until binding lands.
+ * User-defined value functions — the {@code /customfunction} side of the house.
+ * A function is stored like a custom command ({@code name <params> = body}) and
+ * called inside {@code $...$} the way you call {@code min} or {@code sqrt}:
+ * {@code $lightlevel()$}, {@code $dist(a, b)$}. The body returns a value — either
+ * a single expression, or a statement block ({@code #set}/{@code #for}/
+ * {@code #while}/{@code #if}/{@code #return}); see {@link UserFunctions}. No
+ * commands or chat — that's {@code /customcommand}.
  */
 public final class CustomFunctionManager {
     /** Names owned by the expression evaluator — a function can't shadow these. */
@@ -27,7 +27,20 @@ public final class CustomFunctionManager {
             "trim", "upper", "lower", "substr", "replace", "rand", "randf", "sin", "cos", "tan", "sqrt", "range",
             "itemset", "blockset", "effectset", "entityset", "block", "pick", "vec", "true", "false");
 
+    /** Statement directives allowed as the head of a statement-body function. */
+    private static final Set<String> STATEMENT_BODY_DIRECTIVES = Set.of(
+            "#set", "#local", "#setdefault", "#for", "#foreach", "#while", "#if", "#return");
+
     private CustomFunctionManager() {
+    }
+
+    /** The leading directive word of a body (lowercased), e.g. "#set" — used for save-time validation. */
+    private static String firstDirectiveWord(String body) {
+        int end = 0;
+        while (end < body.length() && !Character.isWhitespace(body.charAt(end)) && body.charAt(end) != '(') {
+            end++;
+        }
+        return body.substring(0, end).toLowerCase(java.util.Locale.ROOT);
     }
 
     /** Name → parsed definition (params + body expression). Invalid entries are skipped. */
@@ -74,8 +87,14 @@ public final class CustomFunctionManager {
         }
         AliasDefinition parsed = AliasDefinition.parse(body); // validates <params> + non-empty body
         String expr = parsed.body().trim();
-        if (expr.startsWith("/") || expr.startsWith("#")) {
-            throw new IllegalArgumentException("A function body must be an EXPRESSION that returns a value, not a command or directive — did you mean /customcommand?");
+        // A body may now be an expression OR a statement body (loops/locals/#return, etc.).
+        // Still reject a bare command; runtime enforces the finer rules (#wait, #silent, ...).
+        if (expr.startsWith("/")) {
+            throw new IllegalArgumentException("A function body can't be a command — it must compute a value. Did you mean /customcommand?");
+        }
+        if (expr.startsWith("#") && !STATEMENT_BODY_DIRECTIVES.contains(firstDirectiveWord(expr))) {
+            throw new IllegalArgumentException("A function body must be an EXPRESSION or use statement directives (#set, #for, #if, #return, ...), not '"
+                    + firstDirectiveWord(expr) + "' — did you mean /customcommand?");
         }
 
         List<String> updated = new ArrayList<>();
@@ -210,7 +229,7 @@ public final class CustomFunctionManager {
      * code path the game does.
      */
     public static FunctionResolver resolver() {
-        return UserFunctions.resolver(getFunctionMap());
+        return UserFunctions.resolver(getFunctionMap(), TupenterConfig.INSTANCE.maxLoopIterations);
     }
 
     public record ParsedFunction(String name, AliasDefinition definition) {
