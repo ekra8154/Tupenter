@@ -403,6 +403,23 @@ class ExpressionEvaluatorTest {
     }
 
     @Test
+    void multipleArgsBuildAnAdHocUnionSet() {
+        // two concrete blocks → a two-member set
+        assertEquals("2", ExpressionEvaluator.evaluate("len(blockset(\"stone\", \"ice\"))", tagContext()).displayString());
+        assertEquals("true", ExpressionEvaluator.evaluate(
+                "contains(blockset(\"stone\", \"ice\"), \"minecraft:ice\")", tagContext()).displayString());
+        // a concrete id unioned with a whole #tag
+        assertEquals("3", ExpressionEvaluator.evaluate(
+                "len(blockset(\"stone\", \"#minecraft:logs\"))", tagContext()).displayString()); // stone + oak_log + birch_log
+        // duplicates across members collapse (stone appears in both slots)
+        assertEquals("1", ExpressionEvaluator.evaluate(
+                "len(blockset(\"stone\", \"minecraft:stone\"))", tagContext()).displayString());
+        // an unknown member in the list still errors clearly
+        assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("blockset(\"stone\", \"minecraft:nope\")", tagContext()));
+    }
+
+    @Test
     void containsChecksMembership() {
         assertEquals("true", ExpressionEvaluator.evaluate(
                 "contains(blockset(#minecraft:logs), \"minecraft:oak_log\")", tagContext()).displayString());

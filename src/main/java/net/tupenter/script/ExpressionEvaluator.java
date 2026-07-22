@@ -772,23 +772,35 @@ final class ExpressionEvaluator {
          * the EvalContext's TagResolver, so this needs a live world.
          */
         private Value tagMembers(String name, TagResolver.TagKind kind, List<Value> args) {
-            String tag = null; // null = every entry in the registry
-            boolean explicitTag = false;
-            if (!args.isEmpty()) {
-                Value arg = single(args, name);
-                if (!(arg instanceof Value.StringValue string)) {
-                    throw new ExpressionException(name + "(...) takes a #tag or a concrete id — " + name + "(#minecraft:logs) — or no argument for the whole registry");
+            // no args → the whole registry
+            if (args.isEmpty()) {
+                List<String> ids = context.tags().resolve(kind, null);
+                if (ids == null) {
+                    throw new ExpressionException(name + "(...) needs a live world to look up the registry");
                 }
-                tag = string.value().trim();
-                if (tag.startsWith("#")) {
-                    explicitTag = true;
-                    tag = tag.substring(1);
-                }
-                if (tag.isEmpty()) {
-                    throw new ExpressionException(name + "(...) needs a tag id, e.g. " + name + "(#minecraft:logs) — or no argument for the whole registry");
-                }
+                return idListValue(ids);
             }
-            if (tag != null && !explicitTag) {
+            // one or more members, each a #tag or a concrete id — unioned into an
+            // ad-hoc set (dedup, first-seen order): blockset("oak_planks", "#minecraft:logs")
+            java.util.LinkedHashSet<String> union = new java.util.LinkedHashSet<>();
+            for (Value arg : args) {
+                if (!(arg instanceof Value.StringValue string)) {
+                    throw new ExpressionException(name + "(...) takes #tags and/or concrete ids — "
+                            + name + "(\"oak_planks\", \"#minecraft:logs\") — or no argument for the whole registry");
+                }
+                union.addAll(resolveMember(name, kind, string.value().trim()));
+            }
+            return idListValue(union);
+        }
+
+        /** One {@code blockset}/etc. member — a "#tag" expands to its members, a bare/concrete id resolves to itself. */
+        private List<String> resolveMember(String name, TagResolver.TagKind kind, String raw) {
+            boolean explicitTag = raw.startsWith("#");
+            String tag = explicitTag ? raw.substring(1) : raw;
+            if (tag.isEmpty()) {
+                throw new ExpressionException(name + "(...) needs a tag or id, e.g. " + name + "(#minecraft:logs)");
+            }
+            if (!explicitTag) {
                 // BARE name: a concrete id of that name WINS over a same-named
                 // tag. minecraft:ice (a block) and #minecraft:ice (the ice
                 // family) both exist, so a bare "ice" must mean the single
@@ -796,7 +808,7 @@ final class ExpressionEvaluator {
                 // concrete id (e.g. "logs") does a bare name fall back to a tag.
                 String canonical = context.tags().lookup(kind, tag);
                 if (canonical != null) {
-                    return new Value.ListValue(List.of(Value.of(canonical)));
+                    return List.of(canonical);
                 }
             }
             List<String> ids = context.tags().resolve(kind, tag);
@@ -807,6 +819,10 @@ final class ExpressionEvaluator {
                 throw new ExpressionException("Unknown " + kind.name().toLowerCase(java.util.Locale.ROOT)
                         + (explicitTag ? " tag: #" + tag : " tag or id: " + tag));
             }
+            return ids;
+        }
+
+        private static Value idListValue(java.util.Collection<String> ids) {
             List<Value> values = new ArrayList<>(ids.size());
             for (String id : ids) {
                 values.add(Value.of(id));
