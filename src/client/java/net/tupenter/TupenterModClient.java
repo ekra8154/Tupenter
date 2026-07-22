@@ -1260,11 +1260,13 @@ public class TupenterModClient implements ClientModInitializer {
                     dispatcher.register(literal("customfunction")
                             .then(literal("add")
                                     .then(argument("name", StringArgumentType.word())
+                                            .executes(context -> runFunctionPrefillCommand(context, true))
                                             .then(argument("body", StringArgumentType.greedyString())
                                                     .executes(context -> runFunctionSaveCommand(context, true)))))
                             .then(literal("update")
                                     .then(argument("name", StringArgumentType.word())
                                             .suggests(TupenterModClient::suggestFunctionNames)
+                                            .executes(context -> runFunctionPrefillCommand(context, false))
                                             .then(argument("body", StringArgumentType.greedyString())
                                                     .executes(context -> runFunctionSaveCommand(context, false)))))
                             .then(literal("remove")
@@ -1272,7 +1274,9 @@ public class TupenterModClient implements ClientModInitializer {
                                             .suggests(TupenterModClient::suggestFunctionNames)
                                             .executes(TupenterModClient::runFunctionRemoveCommand)))
                             .then(literal("list")
-                                    .executes(TupenterModClient::runFunctionListCommand)));
+                                    .executes(TupenterModClient::runFunctionListCommand))
+                            .then(literal("help")
+                                    .executes(TupenterModClient::runCustomFunctionHelp)));
 
                     for (Map.Entry<String, AliasDefinition> alias : CommandAliasManager.getAliasMap().entrySet()) {
                         dispatcher.register(ClientCommandRegistrar.buildAliasNode(alias.getKey(), alias.getValue(), registryAccess));
@@ -1832,6 +1836,35 @@ public class TupenterModClient implements ClientModInitializer {
         }
     }
 
+    /** /customfunction add|update <name> with no body: offer the existing definition for editing. */
+    private static int runFunctionPrefillCommand(CommandContext<FabricClientCommandSource> context, boolean fromAdd) {
+        String normalized = CommandAliasManager.normalizeName(StringArgumentType.getString(context, "name"));
+        String stored = CustomFunctionManager.getStoredDefinition(normalized);
+        if (stored == null) {
+            if (fromAdd) {
+                context.getSource().sendError(Component.literal("/customfunction add needs a body: /customfunction add "
+                        + normalized + " <params...> = <expression> — see /customfunction help"));
+            } else {
+                context.getSource().sendError(Component.literal(normalized + "() doesn't exist — create it with /customfunction add "
+                        + normalized + " ... — see /customfunction help"));
+            }
+            return 0;
+        }
+
+        String suggested = "/customfunction update " + stored;
+        net.minecraft.network.chat.MutableComponent message = fromAdd
+                ? Component.literal(normalized + "() already exists. ").withStyle(ChatFormatting.RED)
+                        .append(suggestLink("[edit it]", suggested))
+                : Component.literal("Edit " + normalized + "(): ").withStyle(ChatFormatting.YELLOW)
+                        .append(suggestLink("[put it in your chat bar]", suggested));
+        if (suggested.length() > 256) {
+            message.append(Component.literal(" (over 256 chars — the chat bar will cut it off)")
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        context.getSource().sendFeedback(message);
+        return 1;
+    }
+
     private static int runFunctionRemoveCommand(CommandContext<FabricClientCommandSource> context) {
         String name = StringArgumentType.getString(context, "name");
         if (CustomFunctionManager.removeFunction(name)) {
@@ -1853,7 +1886,31 @@ public class TupenterModClient implements ClientModInitializer {
         for (java.util.Map.Entry<String, AliasDefinition> entry : functions.entrySet()) {
             String decls = entry.getValue().declarationPrefix().trim();
             String sig = entry.getKey() + (decls.isEmpty() ? "()" : " " + decls);
-            context.getSource().sendFeedback(Component.literal(" • §f" + sig + "§r §8= " + previewLine(entry.getValue().body())).withStyle(ChatFormatting.GRAY));
+            net.minecraft.network.chat.MutableComponent row = Component.literal(
+                    " • §f" + sig + "§r §8= " + previewLine(entry.getValue().body())).withStyle(ChatFormatting.GRAY);
+            String stored = CustomFunctionManager.getStoredDefinition(entry.getKey());
+            if (stored != null) {
+                row.append(" ").append(suggestLink("[edit]", "/customfunction update " + stored));
+            }
+            context.getSource().sendFeedback(row);
+        }
+        return 1;
+    }
+
+    /** /customfunction help — the full guide, including how to pass coordinates. */
+    private static int runCustomFunctionHelp(CommandContext<FabricClientCommandSource> context) {
+        String[] lines = {
+                "§bCustom functions — your own min()/sqrt()-style functions for $...$ expressions:",
+                "§7Create:§r /customfunction add <name> <params...> = <expression>  ·  Edit:§r update  ·  Remove:§r remove <name>  ·  List:§r list",
+                "§7The body is an EXPRESSION§r that returns a value — no commands or directives (that's /customcommand). Example: /customfunction add dist <a:vec3> <b:vec3> = sqrt((a.x-b.x)^2 + (a.y-b.y)^2 + (a.z-b.z)^2)",
+                "§7Call it with parens inside any expression§r, alongside min or sqrt: /echo $dist(client.pos, \"0 64 0\")$ — args are full expressions themselves, and tab-complete works.",
+                "§7Passing coordinates:§r \"0 64 0\" (or \"0,64,0\") is a LITERAL — everything inside quotes stays as-is, $ included. To COMPUTE components use vec(x, y, z): each slot is its own expression — $dist(vec(client.x/2, 39+12, 1), \"0 0 0\")$. A vec3 variable like client.pos passes straight through, no quotes needed.",
+                "§7Param types§r are the custom-command ones: <a:vec3>/<a:pos> bind $a$ plus a.x/a.y/a.z · <n:int>/<n:float> numbers · bare <s> a word or \"quoted text\". Inside the body params are just variables: a.x - b.x.",
+                "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing (so does [edit] in list).",
+                "§7Functions can call functions§r — including yours — with recursion capped at depth 32.",
+        };
+        for (String line : lines) {
+            context.getSource().sendFeedback(Component.literal(line));
         }
         return 1;
     }
@@ -2119,6 +2176,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7/tupenter help scripts§r — the every-tick Scripts tab",
                     "§7/tupenter help command [name]§r — the mod's commands, with per-command detail pages",
                     "§7/customcommand help§r — make your own commands (typed params, autocomplete)",
+                    "§7/customfunction help§r — write your own min()-style functions for expressions",
                     "§7Quick taste:§r #set $x$ = rand(1,10) && /give @s stick $x$ && /echo got $x$!",
             };
         };
@@ -2139,6 +2197,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§bCommands Tupenter adds (all client-side) — detail: /tupenter help command <name>:",
                     "§7/tupenter§r — running · abort · scripts · vars · var save/delete · dump · help",
                     "§7/customcommand§r — add · update · remove · list · make your own commands",
+                    "§7/customfunction§r — add · update · remove · list · your own $name(...)$ expression functions",
                     "§7/echo <text>§r — local-only output, &-colors, evaluates $...$ · §7/echohud <text>§r — same, on the action bar (auto-fades)",
                     "§7/calc <expr>§r · §7/$ expr $§r — local calculator / top-down shorthand",
                     "§7/unroll <line>§r — dry-run debugger",
@@ -2161,6 +2220,13 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7list [verbose]§r — signatures (verbose: full bodies) · §7/customcommand <name>§r — one command + [edit] link",
                     "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing",
                     "§7Full guide§r (typed params, defaults, examples): /customcommand help",
+            };
+            case "customfunction" -> new String[]{
+                    "§b/customfunction — your own expression functions:",
+                    "§7add <name> <params...> = <expr>§r — create · §7update§r — edit · §7remove§r — delete · §7list§r — signatures with [edit] links",
+                    "§7Called like built-ins inside $...$:§r $dist(client.pos, \"0 0 0\")$ — bodies are expressions that return a value, not commands",
+                    "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing",
+                    "§7Full guide§r (param types, passing coordinates, vec() vs quotes): /customfunction help",
             };
             case "echo" -> new String[]{
                     "§b/echo <text> — show text only to yourself (nothing is sent):",

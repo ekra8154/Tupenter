@@ -122,6 +122,18 @@ public final class CustomFunctionManager {
         return def == null ? null : def.body();
     }
 
+    /** The full stored line ("name <decls...> = body") for a function, or null — what [edit] links re-offer. */
+    public static String getStoredDefinition(String rawName) {
+        String name = CommandAliasManager.normalizeName(rawName);
+        for (String definition : TupenterConfig.INSTANCE.functions) {
+            ParsedFunction parsed = parseDefinition(definition);
+            if (parsed != null && parsed.name().equals(name)) {
+                return toSingleLine(definition).trim();
+            }
+        }
+        return null;
+    }
+
     private static String formatDefinition(String name, String body) {
         try {
             AliasDefinition parsed = AliasDefinition.parse(toSingleLine(body).trim());
