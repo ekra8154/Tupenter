@@ -44,6 +44,32 @@ class ExpressionEvaluatorTest {
     }
 
     @Test
+    void componentFunctionsIndexAnyVec() {
+        assertEquals("0", eval("x(vec(0, 64, 128))"));
+        assertEquals("64", eval("y(vec(0, 64, 128))"));
+        assertEquals("128", eval("z(vec(0, 64, 128))"));
+        // works on a bare vec string, comma- or space-separated
+        assertEquals("64", eval("y(\"0 64 128\")"));
+        assertEquals("128", eval("z(\"0,64,128\")"));
+        // the component is a real number you can compute with
+        assertEquals("130", eval("z(\"0 64 128\") + 2"));
+    }
+
+    @Test
+    void componentFunctionsKeepExactPrecision() {
+        // not routed through a lossy double — 1/3 stays 1/3
+        assertEquals("0.5", eval("x(vec(1/2, 0, 0))"));
+        assertEquals("2.5", eval("x(\"2.5 0 0\") "));
+    }
+
+    @Test
+    void componentOnANonVecErrors() {
+        assertThrows(ExpressionException.class, () -> eval("x(\"miss\")"));   // a missed raycast
+        assertThrows(ExpressionException.class, () -> eval("y(\"0 64\")"));   // only two components
+        assertThrows(ExpressionException.class, () -> eval("z(42)"));         // a plain number
+    }
+
+    @Test
     void functionArgsAcceptAQuotedStringWithSpaces() {
         assertEquals("5", eval("len(\"0 0 0\")")); // one spaced-string arg
         FunctionResolver f = (name, args, ctx) -> name.equalsIgnoreCase("second") ? args.get(1) : null;

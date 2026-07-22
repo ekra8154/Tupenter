@@ -490,6 +490,9 @@ final class ExpressionEvaluator {
                 case "entityset" -> tagMembers("entityset", TagResolver.TagKind.ENTITY, args);
                 case "block" -> blockAt(args);
                 case "vec" -> vec(args);
+                case "x" -> component(args, 0, "x");
+                case "y" -> component(args, 1, "y");
+                case "z" -> component(args, 2, "z");
                 case "raycast" -> raycast(args);
                 case "raycast_block" -> raycastBlock(args);
                 default -> {
@@ -856,6 +859,31 @@ final class ExpressionEvaluator {
                     new Value.NumberValue(asNumber(args.get(0), "vec(...)")).displayString() + " "
                             + new Value.NumberValue(asNumber(args.get(1), "vec(...)")).displayString() + " "
                             + new Value.NumberValue(asNumber(args.get(2), "vec(...)")).displayString());
+        }
+
+        /**
+         * x(v) / y(v) / z(v) — pull one component out of a vec3, so any vec can
+         * be indexed in an expression: x(client.pos), y(raycast(500)),
+         * z(client.look), x(vec(1, 2, 3)). Keeps the exact Rational (no lossy
+         * double), so component math stays precise. A non-vec (e.g. the "miss"
+         * sentinel) errors clearly — gate a raycast with == "miss" first.
+         */
+        private Value component(List<Value> args, int slot, String name) {
+            Value value = single(args, name);
+            if (!(value instanceof Value.StringValue string)) {
+                throw new ExpressionException(name + "(v) takes a vec3, e.g. " + name
+                        + "(client.pos) or " + name + "(vec(1, 2, 3))");
+            }
+            String[] parts = Coords.split(string.value());
+            if (parts.length != 3) {
+                throw new ExpressionException(name + "(v) expected a vec3 with three components, got \""
+                        + string.value() + "\"");
+            }
+            try {
+                return new Value.NumberValue(Rational.parse(parts[slot]));
+            } catch (IllegalArgumentException ex) {
+                throw new ExpressionException(name + "(v): '" + parts[slot] + "' isn't a number");
+            }
         }
 
         /**
