@@ -36,7 +36,7 @@ public final class MathEvaluator {
                 break;
             }
 
-            int end = indexOfUnescapedMarker(command, start + 1);
+            int end = indexOfMarkerEnd(command, start);
             if (end < 0) {
                 appendUnmarkedSegment(result, command.substring(index), mode);
                 break;
@@ -52,6 +52,55 @@ public final class MathEvaluator {
         }
 
         return result.toString();
+    }
+
+    /**
+     * The closing $ for the marker opened at {@code start}: the first unescaped
+     * $ whose enclosed content is lexically balanced (parens and quotes closed).
+     * An unbalanced candidate means the $ belongs to explicit wrapping INSIDE
+     * the expression — {@code $dist($client.pos$, "0 0 0")$} — so the scan
+     * extends past it; the evaluator treats inner $...$ as grouping. When
+     * nothing balances, falls back to the first candidate so the error reads
+     * the same as it always has. Public because the chat highlighter must
+     * agree with the runtime about where a marker ends.
+     */
+    public static int indexOfMarkerEnd(String command, int start) {
+        int first = -1;
+        int candidate = indexOfUnescapedMarker(command, start + 1);
+        while (candidate >= 0) {
+            if (first < 0) {
+                first = candidate;
+            }
+            if (isLexicallyBalanced(command, start + 1, candidate)) {
+                return candidate;
+            }
+            candidate = indexOfUnescapedMarker(command, candidate + 1);
+        }
+        return first;
+    }
+
+    /** Parens closed, quotes closed, no ')' before its '(' — over [from, to). */
+    private static boolean isLexicallyBalanced(String text, int from, int to) {
+        int depth = 0;
+        boolean quoted = false;
+        for (int i = from; i < to; i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++; // escaped character — not structure
+            } else if (c == '"') {
+                quoted = !quoted;
+            } else if (!quoted) {
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth--;
+                    if (depth < 0) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return depth == 0 && !quoted;
     }
 
     private static int indexOfUnescapedMarker(String command, int from) {

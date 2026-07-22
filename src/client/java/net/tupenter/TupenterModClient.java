@@ -239,16 +239,9 @@ public class TupenterModClient implements ClientModInitializer {
                 i++;
                 continue;
             }
-            int close = -1;
-            for (int j = i + 1; j < text.length(); j++) {
-                char d = text.charAt(j);
-                if (d == '\\') {
-                    j++;
-                } else if (d == '$') {
-                    close = j;
-                    break;
-                }
-            }
+            // balance-aware: the runtime's own rule for where this marker ends,
+            // so masking never splits $dist($client.pos$, ...)$ at the inner $
+            int close = MathEvaluator.indexOfMarkerEnd(text, i);
             if (close < 0) {
                 break; // unclosed marker — the variable-suggestion path owns the cursor there
             }

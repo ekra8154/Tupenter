@@ -119,6 +119,28 @@ class MathEvaluatorTest {
     }
 
     @Test
+    void markerExtendsPastExplicitlyWrappedInnerExpression() {
+        // the inner $...$ is explicit wrapping (grouping), not a marker
+        // boundary — the scan extends because "min(" isn't balanced
+        assertEquals("give @s stick 3", apply("give @s stick $min($1+2$, 5)$", NumberMathMode.EXPLICIT_ONLY));
+        // balanced content still closes at the FIRST $ — two independent markers
+        assertEquals("tp @s 10 64 20", apply("tp @s $5+5$ 64 $4*5$", NumberMathMode.EXPLICIT_ONLY));
+    }
+
+    @Test
+    void markerExtendsPastDollarInsideAQuotedString() {
+        // the first candidate cuts mid-string, so the scan extends and the
+        // $ inside the quotes is just a character
+        assertEquals("say a$b", apply("say $\"a$b\"$", NumberMathMode.EXPLICIT_ONLY));
+    }
+
+    @Test
+    void unbalancedMarkerStillReportsTheFirstCandidateError() {
+        // nothing balances — fall back to the first $ pair, same error as ever
+        assertThrows(ExpressionException.class, () -> apply("say $min(1,$ oops", NumberMathMode.EXPLICIT_ONLY));
+    }
+
+    @Test
     void invalidMarkerExpressionIsAHardError() {
         assertThrows(ExpressionException.class, () -> apply("say $hello world$", NumberMathMode.EXPLICIT_ONLY));
         assertThrows(ExpressionException.class, () -> apply("say $1/0$", NumberMathMode.EXPLICIT_ONLY));

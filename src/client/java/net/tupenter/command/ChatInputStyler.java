@@ -115,6 +115,9 @@ public final class ChatInputStyler {
             if (innerLineStart(full) > 0) {
                 return true; // /unroll <line> or /customcommand add|update — the argument is a whole line
             }
+            if (customFunctionInnerStart(full) > 0) {
+                return true; // /customfunction add|update — the tail is an expression
+            }
             boolean chained = TupenterConfig.INSTANCE.commandChainingEnabled && segments(full).size() > 1;
             return chained || containsMarker(full);
         }
@@ -164,6 +167,38 @@ public final class ChatInputStyler {
             int close = angleClose(full, i);
             if (close < 0) {
                 return i; // unfinished declaration — statements "start" here
+            }
+            i = skipWhitespace(full, close + 1);
+        }
+        return i;
+    }
+
+    /**
+     * Like {@link #innerLineStart}, but for {@code /customfunction add|update
+     * <name> <decls...> = <expression>}: returns where the description/equals/
+     * body region begins (past the name and parameter declarations), or 0 when
+     * this isn't such a command. The tail is an EXPRESSION, not a line.
+     */
+    private static int customFunctionInnerStart(String full) {
+        if (!full.regionMatches(true, 0, "/customfunction ", 0, 16)) {
+            return 0;
+        }
+        int i = skipWhitespace(full, 16);
+        int subEnd = skipWord(full, i);
+        String sub = full.substring(i, subEnd).toLowerCase(java.util.Locale.ROOT);
+        if (!sub.equals("add") && !sub.equals("update")) {
+            return 0;
+        }
+        i = skipWhitespace(full, subEnd);
+        int nameEnd = skipWord(full, i);
+        if (nameEnd == i) {
+            return 0; // no name yet
+        }
+        i = skipWhitespace(full, nameEnd);
+        while (i < full.length() && full.charAt(i) == '<') {
+            int close = angleClose(full, i);
+            if (close < 0) {
+                return i; // unfinished declaration — the body "starts" here
             }
             i = skipWhitespace(full, close + 1);
         }
@@ -538,50 +573,48 @@ public final class ChatInputStyler {
 
     /** Markers overlay everything — they're Tupenter's, not the command's. */
     private static void overlayMarkers(String text, Style[] styles) {
-        boolean marker = false;
-        int lastOpen = -1;
-        for (int i = 0; i < text.length(); i++) {
+        int i = 0;
+        while (i < text.length()) {
             char c = text.charAt(i);
             if (c == '\\') {
+                i += 2;
+                continue;
+            }
+            if (c != '$') {
                 i++;
                 continue;
             }
-            if (c == '$') {
-                styles[i] = MARKER;
-                if (marker) {
-                    flagUnbalancedParens(text, styles, lastOpen + 1, i); // validate the expression
-                    marker = false;
-                } else {
-                    lastOpen = i;
-                    marker = true;
-                }
-            } else if (marker) {
-                styles[i] = MARKER;
+            // the runtime's balance-aware rule: an inner $...$ (explicit
+            // wrapping) doesn't end the marker — $dist($client.pos$, "0 0 0")$
+            // is ONE marker, painted as one
+            int end = net.tupenter.script.MathEvaluator.indexOfMarkerEnd(text, i);
+            if (end < 0) {
+                styles[i] = ERROR; // unclosed marker — its opening $ turns red
+                break;
             }
-        }
-        if (marker && lastOpen >= 0) {
-            styles[lastOpen] = ERROR; // unclosed marker — its opening $ turns red
+            fill(styles, i, end + 1, MARKER);
+            flagUnbalancedParens(text, styles, i + 1, end); // validate the expression
+            i = end + 1;
         }
     }
 
     /**
      * Within an expression span [from, to) (a $...$ interior or a scanner
      * header), turns any unmatched '(' or ')' red — the same live-paren
-     * feedback commands get, but for Tupenter's expression grammar. Nested
-     * $...$ markers and "quoted" strings are skipped.
+     * feedback commands get, but for Tupenter's expression grammar. Inner
+     * $...$ wrapping is transparent (its parens pair with the whole
+     * expression); "quoted" strings are skipped.
      */
     private static void flagUnbalancedParens(String text, Style[] styles, int from, int to) {
         java.util.Deque<Integer> opens = new java.util.ArrayDeque<>();
         boolean quoted = false;
-        boolean marker = false;
         for (int i = Math.max(0, from); i < Math.min(to, text.length()); i++) {
             char c = text.charAt(i);
             if (c == '\\') {
                 i++;
             } else if (c == '$') {
-                marker = !marker;
-            } else if (marker) {
-                // skip nested marker interiors
+                // transparent: an inner $...$ is explicit wrapping (grouping),
+                // so its parens pair with the rest of the expression
             } else if (c == '"') {
                 quoted = !quoted;
             } else if (!quoted) {
@@ -944,6 +977,33 @@ public final class ChatInputStyler {
         // a whole line — style their head, then the embedded statements for real
         int textStart = segment.textStart();
         if (depth < 8 && textStart == 0) {
+            // /customfunction add|update: head + decls like a custom command,
+            // but the tail is an EXPRESSION — aqua with live paren matching,
+            // so an unbalanced body can't hide in a flat argument color
+            int fnInner = customFunctionInnerStart(full);
+            if (fnInner > 0 && fnInner <= segment.end()) {
+                styleMetaHead(full, styles, fnInner);
+                int bodyStart = fnInner;
+                int j = skipWhitespace(full, fnInner);
+                if (j < full.length() && full.charAt(j) == '"') {
+                    int q = closingQuoteIndex(full, j);
+                    if (q > 0) {
+                        j = skipWhitespace(full, q + 1);
+                    }
+                }
+                if (j < full.length() && j < segment.end() && full.charAt(j) == '=') {
+                    bodyStart = skipWhitespace(full, j + 1);
+                }
+                if (bodyStart > fnInner) {
+                    styleDescriptionAndEquals(full, styles, fnInner, bodyStart);
+                }
+                int bodyEnd = trimmedEnd(full, segment);
+                if (bodyStart < bodyEnd) {
+                    fill(styles, bodyStart, bodyEnd, MARKER);
+                    flagUnbalancedParens(full, styles, bodyStart, bodyEnd);
+                }
+                return;
+            }
             int inner = innerLineStart(full);
             if (inner > 0 && inner <= segment.end()) {
                 // an optional "description" then '=' can begin the body (custom

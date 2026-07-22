@@ -58,6 +58,13 @@ class UserFunctionsTest {
     }
 
     @Test
+    void distWithExplicitlyWrappedVariableArg() {
+        // /echo $dist($client.pos$, "0 0 0")$ — the inner $...$ is explicit
+        // wrapping; the marker scan must extend past it, not close at it
+        assertEquals("5", echo("$dist($client.pos$, \"0 0 0\")$"));
+    }
+
+    @Test
     void distAcceptsCommaSeparatedVecLiterals() {
         assertEquals("5", echo("$dist(\"3,4,0\", \"0 0 0\")$"));
     }
