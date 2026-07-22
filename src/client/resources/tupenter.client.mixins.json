@@ -8,7 +8,9 @@
 		"MixinClientPacketListener",
 		"MixinCommandSuggestions",
 		"ChatComponentAccessor",
-		"MixinChatScreen"
+		"MixinChatScreen",
+		"EditBoxAccessor",
+		"MixinEditBox"
 	],
 	"injectors": {
 		"defaultRequire": 1

@@ -35,6 +35,8 @@ public class TupenterConfig {
     public boolean commandChainingEnabled = true;
     public boolean chatHighlightingEnabled = true;
     public boolean chatSelectionEnabled = true;
+    /** Auto-close/wrap brackets and $ markers while typing commands/scripts. Opt-in. */
+    public boolean autoCloseBrackets = false;
     public boolean lazyExecutionEnabled = true;
     /** Chat-bar typing limit. What's SENT still obeys the protocol: chat 256, commands 32766. */
     public int chatInputLength = 256;
@@ -359,6 +361,7 @@ public class TupenterConfig {
                     INSTANCE.commandChainingEnabled = loaded.commandChainingEnabled;
                     INSTANCE.chatHighlightingEnabled = loaded.chatHighlightingEnabled;
                     INSTANCE.chatSelectionEnabled = loaded.chatSelectionEnabled;
+                    INSTANCE.autoCloseBrackets = loaded.autoCloseBrackets;
                     INSTANCE.lazyExecutionEnabled = loaded.lazyExecutionEnabled;
                     INSTANCE.chatInputLength = clamp(loaded.chatInputLength, 256, 32766, 256);
                     INSTANCE.silentDirectiveEnabled = loaded.silentDirectiveEnabled;

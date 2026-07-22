@@ -5,10 +5,15 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.MultilineTextField;
+import net.minecraft.client.gui.components.Whence;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Style;
 import net.tupenter.command.ChatInputStyler;
+import net.tupenter.config.TupenterConfig;
+import net.tupenter.script.AutoBracket;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * MultiLineEditBox with Tupenter script smarts (via access widener):
@@ -69,6 +74,32 @@ public class ScriptEditBox extends MultiLineEditBox {
         }
     }
 
+    // the editor is always a script/expression context, so auto-bracket needs
+    // no per-line gate here — just the opt-in setting. Same chars as the chat bar.
+    private static final String AUTO_BRACKET_CHARS = "([{)]}\"$";
+
+    @Override
+    public boolean charTyped(CharacterEvent event) {
+        int codepoint = event.codepoint();
+        if (autoBracketEnabled() && codepoint <= Character.MAX_VALUE
+                && AUTO_BRACKET_CHARS.indexOf((char) codepoint) >= 0) {
+            int cursor = this.textField.cursor();
+            int selStart = cursor;
+            int selEnd = cursor;
+            if (this.textField.hasSelection()) {
+                MultilineTextField.StringView sel = this.textField.getSelected();
+                selStart = sel.beginIndex();
+                selEnd = sel.endIndex();
+            }
+            AutoBracket.Edit edit = AutoBracket.onChar(getValue(), selStart, selEnd, (char) codepoint);
+            if (edit != null) {
+                applyEdit(edit);
+                return true;
+            }
+        }
+        return super.charTyped(event);
+    }
+
     @Override
     public boolean keyPressed(KeyEvent event) {
         if (event.key() == InputConstants.KEY_TAB) {
@@ -79,7 +110,24 @@ public class ScriptEditBox extends MultiLineEditBox {
             this.textField.insertText("\n" + currentLineIndent());
             return true;
         }
+        if (event.key() == GLFW.GLFW_KEY_BACKSPACE && autoBracketEnabled() && !this.textField.hasSelection()) {
+            AutoBracket.Edit edit = AutoBracket.onBackspace(getValue(), this.textField.cursor());
+            if (edit != null) {
+                applyEdit(edit);
+                return true;
+            }
+        }
         return super.keyPressed(event);
+    }
+
+    private static boolean autoBracketEnabled() {
+        return TupenterConfig.INSTANCE.autoCloseBrackets
+                && TupenterConfig.INSTANCE.enhancedCommandParsingEnabled;
+    }
+
+    private void applyEdit(AutoBracket.Edit edit) {
+        this.textField.setValue(edit.text());
+        this.textField.seekCursor(Whence.ABSOLUTE, edit.cursor());
     }
 
     private String currentLineIndent() {
