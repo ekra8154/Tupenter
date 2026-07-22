@@ -726,15 +726,26 @@ class ScriptParserTest {
     }
 
     @Test
-    void itemsetAndBlocksetParamsBindTagsVerbatim() {
+    void concreteResourceParamsDefaultBareIdsToMinecraftButSetsStayVerbatim() {
         Map<String, String> aliases = Map.of("swap", "<from:blockset> <to:block> /fill ~ ~ ~ ~ ~ ~ $to$ replace $from$");
-        ScriptParser.ParseResult result = parse("swap #minecraft:logs[axis=y] minecraft:stone", aliases);
-        assertNull(result.error());
-        assertEquals(List.of("fill ~ ~ ~ ~ ~ ~ minecraft:stone replace #minecraft:logs[axis=y]"), contents(result));
-
-        // a concrete block is just as valid for a blockset param
-        assertEquals(List.of("fill ~ ~ ~ ~ ~ ~ air replace dirt"),
+        // <to:block> is concrete: a bare id gains minecraft: (the fireball fix).
+        // <from:blockset> is a set/predicate: left verbatim so #tags and "any"
+        // sentinels survive (blockset() canonicalizes concrete ids itself).
+        assertEquals(List.of("fill ~ ~ ~ ~ ~ ~ minecraft:air replace dirt"),
                 contents(parse("swap dirt air", aliases)));
+        // already-namespaced ids and #tags (with [state]) pass through untouched
+        assertEquals(List.of("fill ~ ~ ~ ~ ~ ~ minecraft:stone replace #minecraft:logs[axis=y]"),
+                contents(parse("swap #minecraft:logs[axis=y] minecraft:stone", aliases)));
+    }
+
+    @Test
+    void bareEntityIdComparesEqualToTheNamespacedForm() {
+        // the exact /launch shape: a bare entity id must satisfy e == "minecraft:fireball"
+        Map<String, String> aliases = Map.of("kind",
+                "<e:entity> /echo $e == \"minecraft:fireball\" ? \"boom\" : \"plain\"$");
+        assertEquals(List.of("echo boom"), contents(parse("kind fireball", aliases)));
+        assertEquals(List.of("echo boom"), contents(parse("kind minecraft:fireball", aliases)));
+        assertEquals(List.of("echo plain"), contents(parse("kind ender_pearl", aliases)));
     }
 
     @Test

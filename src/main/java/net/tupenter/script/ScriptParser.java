@@ -1178,10 +1178,46 @@ public final class ScriptParser {
                     }
                     throw new ParseAbort("<" + param.name() + "> must be true or false, got '" + token + "'. " + usage);
                 }
+                case ENTITY, ID, ITEM, BLOCK, DIMENSION -> {
+                    // concrete resource ids: give a bare id the implied minecraft:
+                    // namespace, so a script's /launch fireball binds
+                    // "minecraft:fireball" and compares equal to the tab-completed
+                    // form (vanilla treats them the same). NOT the set/predicate
+                    // types (itemset/blockset): those carry #tags and "any"-style
+                    // sentinels, and blockset()/itemset() canonicalize concrete ids
+                    // themselves. Any [state]/{nbt} suffix is preserved.
+                    return Value.of(canonicalizeId(token));
+                }
                 default -> {
                     return Value.of(token);
                 }
             }
+        }
+
+        /**
+         * Adds the default {@code minecraft:} namespace to a bare resource id.
+         * Leaves it alone when it already has a namespace, isn't a plain
+         * lowercase id (e.g. a $marker$ that slipped through), or is empty.
+         * A leading {@code #} (tag) and any {@code [state]}/{@code {nbt}} suffix
+         * are kept: {@code #logs[axis=y]} -> {@code #minecraft:logs[axis=y]}.
+         */
+        private static String canonicalizeId(String token) {
+            int cut = token.length();
+            for (int i = 0; i < token.length(); i++) {
+                char c = token.charAt(i);
+                if (c == '[' || c == '{') {
+                    cut = i;
+                    break;
+                }
+            }
+            String id = token.substring(0, cut);
+            String suffix = token.substring(cut);
+            boolean tag = id.startsWith("#");
+            String core = tag ? id.substring(1) : id;
+            if (core.isEmpty() || core.indexOf(':') >= 0 || !core.matches("[a-z0-9_.\\-/]+")) {
+                return token; // already namespaced, empty, or not a plain id
+            }
+            return (tag ? "#" : "") + "minecraft:" + core + suffix;
         }
 
         private static final List<String> CHAT_COLORS = List.of(
