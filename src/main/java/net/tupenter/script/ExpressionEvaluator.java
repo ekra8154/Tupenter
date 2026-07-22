@@ -495,6 +495,7 @@ final class ExpressionEvaluator {
                 case "z" -> component(args, 2, "z");
                 case "raycast" -> raycast(args);
                 case "raycast_block" -> raycastBlock(args);
+                case "entity_nbt" -> entityNbt(args);
                 default -> {
                     // not a built-in — try a user-defined /customfunction
                     Value userValue = context.functions().call(identifier, args, context);
@@ -930,6 +931,24 @@ final class ExpressionEvaluator {
             }
             String id = context.blocks().blockAt(block[0], block[1], block[2]);
             return Value.of(id != null ? id : "miss");
+        }
+
+        /**
+         * entity_nbt(selector, path) — read one value out of an entity's synced
+         * NBT, the runtime-selectable cousin of the target.nbt / client.nbt vars. The
+         * selector is "self", "target", or a UUID string (e.g. client.uuid, or a
+         * UUID pulled from elsewhere); path dot-walks the tree, numbers indexing
+         * lists: entity_nbt("target", "Health"), entity_nbt(client.uuid, "Pos.1").
+         * A missing entity or bad path errors clearly (same as the variable form).
+         */
+        private Value entityNbt(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("entity_nbt(selector, path) takes an entity selector "
+                        + "(\"self\", \"target\", or a UUID) and an NBT path, e.g. entity_nbt(\"target\", \"Health\")");
+            }
+            String selector = args.get(0).displayString();
+            String path = args.get(1).displayString();
+            return context.nbt().read(selector, path);
         }
 
         /** Reads a vec3 arg as three doubles — a "x y z" string or vec(...) result. */

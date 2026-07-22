@@ -91,6 +91,7 @@ public final class ScriptParser {
             BlockReader blocks,
             FunctionResolver functions,
             Raycaster raycaster,
+            NbtReader nbt,
             boolean lazyExecution
     ) {
         /** Convenience without world lookups (tests, contexts with no live world). */
@@ -100,7 +101,7 @@ public final class ScriptParser {
                        Random random, VariableProvider variables, SessionVariableStore sessionVariables) {
             this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
                     conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
-                    TagResolver.NONE, BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, false);
+                    TagResolver.NONE, BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, NbtReader.NONE, false);
         }
 
         /** Convenience with tag lookup but no block reader and eager execution. */
@@ -111,10 +112,10 @@ public final class ScriptParser {
                        TagResolver tags) {
             this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
                     conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
-                    tags, BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, false);
+                    tags, BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, NbtReader.NONE, false);
         }
 
-        /** Full world wiring but Raycaster.NONE — keeps existing 15-arg call sites working. */
+        /** Full world wiring but Raycaster.NONE/NbtReader.NONE — keeps existing 15-arg call sites working. */
         public Options(boolean chainingEnabled, NumberMathMode mathMode, Map<String, AliasDefinition> aliases,
                        boolean silentDirectiveEnabled, boolean variablesEnabled, boolean loopsEnabled,
                        boolean conditionalsEnabled, int maxLoopIterations, int maxCommandsPerScript,
@@ -122,25 +123,25 @@ public final class ScriptParser {
                        TagResolver tags, BlockReader blocks, FunctionResolver functions, boolean lazyExecution) {
             this(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled, loopsEnabled,
                     conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables, sessionVariables,
-                    tags, blocks, functions, Raycaster.NONE, lazyExecution);
+                    tags, blocks, functions, Raycaster.NONE, NbtReader.NONE, lazyExecution);
         }
 
         public Options withLazyExecution(boolean lazy) {
             return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
                     loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
-                    sessionVariables, tags, blocks, functions, raycaster, lazy);
+                    sessionVariables, tags, blocks, functions, raycaster, nbt, lazy);
         }
 
         public Options withSessionVariables(SessionVariableStore store) {
             return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
                     loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
-                    store, tags, blocks, functions, raycaster, lazyExecution);
+                    store, tags, blocks, functions, raycaster, nbt, lazyExecution);
         }
 
         public Options withFunctions(FunctionResolver resolver) {
             return new Options(chainingEnabled, mathMode, aliases, silentDirectiveEnabled, variablesEnabled,
                     loopsEnabled, conditionalsEnabled, maxLoopIterations, maxCommandsPerScript, random, variables,
-                    sessionVariables, tags, blocks, resolver, raycaster, lazyExecution);
+                    sessionVariables, tags, blocks, resolver, raycaster, nbt, lazyExecution);
         }
     }
 
@@ -636,7 +637,7 @@ public final class ScriptParser {
                     return options.variables().resolve(name);
                 }
             };
-            this.context = new EvalContext(options.random(), lookup, options.tags(), options.blocks(), options.functions(), options.raycaster());
+            this.context = new EvalContext(options.random(), lookup, options.tags(), options.blocks(), options.functions(), options.raycaster(), options.nbt());
         }
 
         private void processStatements(String text) {

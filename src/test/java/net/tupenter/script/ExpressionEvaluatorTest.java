@@ -70,6 +70,34 @@ class ExpressionEvaluatorTest {
     }
 
     @Test
+    void entityNbtReadsThroughTheReader() {
+        // a stub reader that answers "Health" for the "target" selector
+        NbtReader reader = (selector, path) -> {
+            if (selector.equals("target") && path.equals("Health")) {
+                return Value.ofNumber(18);
+            }
+            throw new ExpressionException("no such entity/path: " + selector + " / " + path);
+        };
+        EvalContext ctx = new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE,
+                BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, reader);
+        assertEquals("18", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Health\")", ctx).displayString());
+        // the selector and path are just expressions — a variable UUID composes
+        assertEquals("20", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Health\") + 2", ctx).displayString());
+    }
+
+    @Test
+    void entityNbtValidatesArity() {
+        assertThrows(ExpressionException.class, () -> eval("entity_nbt(\"target\")"));
+        assertThrows(ExpressionException.class, () -> eval("entity_nbt(\"a\", \"b\", \"c\")"));
+    }
+
+    @Test
+    void entityNbtWithoutAReaderErrors() {
+        // the default NbtReader.NONE (no live world) throws, not returns a bogus value
+        assertThrows(ExpressionException.class, () -> eval("entity_nbt(\"self\", \"Health\")"));
+    }
+
+    @Test
     void functionArgsAcceptAQuotedStringWithSpaces() {
         assertEquals("5", eval("len(\"0 0 0\")")); // one spaced-string arg
         FunctionResolver f = (name, args, ctx) -> name.equalsIgnoreCase("second") ? args.get(1) : null;

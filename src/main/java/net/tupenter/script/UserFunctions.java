@@ -65,7 +65,7 @@ public final class UserFunctions {
                         bindParam(def.params().get(i), args.get(i), bindings);
                     }
                     EvalContext scoped = new EvalContext(context.random(), overlay(bindings, context.variables()),
-                            context.tags(), context.blocks(), context.functions(), context.raycaster());
+                            context.tags(), context.blocks(), context.functions(), context.raycaster(), context.nbt());
                     try {
                         // statement bodies run through the Walker; pure expressions stay on the fast path
                         if (ScriptParser.isStatementBody(def.body())) {
@@ -108,6 +108,8 @@ public final class UserFunctions {
                 scoped.tags(),
                 scoped.blocks(),
                 scoped.functions(),                // same resolver → nested calls keep the depth guard
+                scoped.raycaster(),                // raycast(...) works in statement-body functions too
+                scoped.nbt(),                      // ...and entity_nbt(...)
                 false);                            // lazyExecution — functions compute synchronously
     }
 
