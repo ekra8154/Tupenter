@@ -33,6 +33,7 @@ import net.tupenter.command.CustomFunctionManager;
 import net.tupenter.config.TupenterConfig;
 import net.tupenter.command.ClientCommandRegistrar;
 import net.tupenter.command.ClientVariableProvider;
+import net.tupenter.command.KeyStateProvider;
 import net.tupenter.command.EntityNbtVariableProvider;
 import net.tupenter.command.PlayersVariableProvider;
 import net.tupenter.command.TickScriptRunner;
@@ -180,6 +181,7 @@ public class TupenterModClient implements ClientModInitializer {
     private static final VariableRegistry VARIABLE_REGISTRY = new VariableRegistry();
 
     private static final ClientVariableProvider CLIENT_VARIABLES = new ClientVariableProvider();
+    private static final KeyStateProvider KEY_STATES = new KeyStateProvider();
     private static final WorldVariableProvider WORLD_VARIABLES = new WorldVariableProvider();
     private static final PlayersVariableProvider PLAYERS_VARIABLES = new PlayersVariableProvider();
     private static final RealTimeVariableProvider REAL_VARIABLES = new RealTimeVariableProvider();
@@ -188,6 +190,7 @@ public class TupenterModClient implements ClientModInitializer {
         VARIABLE_REGISTRY.register(SESSION_VARIABLES);
         VARIABLE_REGISTRY.register(PERSISTENT_VARIABLES);
         VARIABLE_REGISTRY.register(CLIENT_VARIABLES);
+        VARIABLE_REGISTRY.register(KEY_STATES);
         VARIABLE_REGISTRY.register(WORLD_VARIABLES);
         VARIABLE_REGISTRY.register(PLAYERS_VARIABLES);
         VARIABLE_REGISTRY.register(REAL_VARIABLES);
@@ -1320,6 +1323,11 @@ public class TupenterModClient implements ClientModInitializer {
             // Mod Menu "Scripts" list — runs every tick while enabled
             TICK_SCRIPTS.tick(SCRIPT_EXECUTOR);
 
+            // Snapshot key states AFTER scripts polled them this tick, so
+            // client.keypress.* sees "down now vs. down last tick" and an edge
+            // fires exactly once per press.
+            KEY_STATES.tick();
+
             // =========================================================
             // 0. GLOBAL INPUT HANDLING (Always runs)
             // =========================================================
@@ -2132,6 +2140,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Movement:§r $client.speed$ (full 3D b/s) · $client.speed_xz$ (horizontal) · $client.speed_y$ (vertical, signed) · $client.motion$ (vec3 \"vx vy vz\" b/s) · booleans: on_ground, sneaking, sprinting, swimming, flying, gliding",
                     "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · slot (0-8), offhand_item, target_entity · gamemode, ping, fps, uuid",
                     "§7Hazards & held:§r in_water, underwater, in_lava, on_fire, fall_distance, eye_y · riding + vehicle · effects (a LIST — #foreach $e$ in client.effects works) · held_count, offhand_count, held_durability/held_max_durability (error on non-damageable — guard with held_item)",
+                    "§7Keys (a script IS a keybind):§r $client.key.<name>$ = held now · $client.keypress.<name>$ = the tick it goes down. <name> is a bind (jump, sneak, attack, hotbar.1 — follows your controls + mods) OR a physical key (g, space, f6). Arrows are up_arrow/down_arrow/left_arrow/right_arrow (bare left/right = the strafe binds). All false while a screen is open. Pair with a tick script: restock = #if (client.keypress.g) (/tp @s $client.target_block$)",
                     "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · browse with /tupenter dump",
                     "§7Discover:§r /tupenter vars — groups overview · /tupenter vars <group> — live values",
                     "§7In custom commands:§r declared params bind as $name$ or $1$..$n$",
