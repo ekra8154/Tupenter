@@ -8,11 +8,13 @@ import net.minecraft.client.gui.components.MultilineTextField;
 import net.minecraft.client.gui.components.Whence;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Style;
 import net.tupenter.command.ChatInputStyler;
 import net.tupenter.config.TupenterConfig;
 import net.tupenter.script.AutoBracket;
+import net.tupenter.script.UndoHistory;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -35,6 +37,8 @@ public class ScriptEditBox extends MultiLineEditBox {
     private final boolean perLine; // true = each newline is a separate command (resend presets)
     private String styledFor;
     private Style[] styleCache;
+    private UndoHistory undoHistory;   // lazily seeded from the box's initial value
+    private boolean restoring;         // true while applying an undo/redo (don't re-record it)
 
     public ScriptEditBox(Font font, int width, int height, boolean definition) {
         this(font, width, height, definition, false);
@@ -80,6 +84,7 @@ public class ScriptEditBox extends MultiLineEditBox {
 
     @Override
     public boolean charTyped(CharacterEvent event) {
+        ensureHistory();
         int codepoint = event.codepoint();
         if (autoBracketEnabled() && codepoint <= Character.MAX_VALUE
                 && AUTO_BRACKET_CHARS.indexOf((char) codepoint) >= 0) {
@@ -94,30 +99,59 @@ public class ScriptEditBox extends MultiLineEditBox {
             AutoBracket.Edit edit = AutoBracket.onChar(getValue(), selStart, selEnd, (char) codepoint);
             if (edit != null) {
                 applyEdit(edit);
+                recordUndo();
                 return true;
             }
         }
-        return super.charTyped(event);
+        boolean handled = super.charTyped(event);
+        if (handled) {
+            recordUndo();
+        }
+        return handled;
     }
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        ensureHistory();
+        if (event.hasControlDown() && !event.hasShiftDown() && event.key() == GLFW.GLFW_KEY_Z) {
+            applyRestore(undoHistory.undo());
+            return true;
+        }
+        if (event.hasControlDown() && (event.key() == GLFW.GLFW_KEY_Y
+                || (event.hasShiftDown() && event.key() == GLFW.GLFW_KEY_Z))) {
+            applyRestore(undoHistory.redo());
+            return true;
+        }
         if (event.key() == InputConstants.KEY_TAB) {
             this.textField.insertText("  ");
+            recordUndo();
             return true;
         }
         if (event.key() == InputConstants.KEY_RETURN || event.key() == InputConstants.KEY_NUMPADENTER) {
             this.textField.insertText("\n" + currentLineIndent());
+            recordUndo();
             return true;
         }
         if (event.key() == GLFW.GLFW_KEY_BACKSPACE && autoBracketEnabled() && !this.textField.hasSelection()) {
             AutoBracket.Edit edit = AutoBracket.onBackspace(getValue(), this.textField.cursor());
             if (edit != null) {
                 applyEdit(edit);
+                recordUndo();
                 return true;
             }
         }
-        return super.keyPressed(event);
+        boolean handled = super.keyPressed(event);
+        if (handled) {
+            recordUndo(); // typing, delete, paste, cut, select-all-then-type, …
+        }
+        return handled;
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        boolean handled = super.mouseClicked(event, doubleClick);
+        recordUndo(); // a click that moves the caret ends the current undo group
+        return handled;
     }
 
     /**
@@ -143,6 +177,33 @@ public class ScriptEditBox extends MultiLineEditBox {
     private void applyEdit(AutoBracket.Edit edit) {
         this.textField.setValue(edit.text());
         this.textField.seekCursor(Whence.ABSOLUTE, edit.cursor());
+    }
+
+    /** Seed the undo history from the box's value the first time it's touched. */
+    private void ensureHistory() {
+        if (undoHistory == null) {
+            undoHistory = new UndoHistory(getValue(), this.textField.cursor());
+        }
+    }
+
+    /** Feed the current state to the history — skipped while we're applying an undo. */
+    private void recordUndo() {
+        if (!restoring && undoHistory != null) {
+            undoHistory.record(getValue(), this.textField.cursor(), System.currentTimeMillis());
+        }
+    }
+
+    private void applyRestore(UndoHistory.State state) {
+        if (state == null) {
+            return; // nothing to undo/redo
+        }
+        restoring = true;
+        try {
+            this.textField.setValue(state.text());
+            this.textField.seekCursor(Whence.ABSOLUTE, state.cursor());
+        } finally {
+            restoring = false;
+        }
     }
 
     private String currentLineIndent() {
