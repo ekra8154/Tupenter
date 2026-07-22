@@ -200,7 +200,7 @@ public class TupenterModClient implements ClientModInitializer {
     private static final TickScriptRunner TICK_SCRIPTS = new TickScriptRunner();
 
     public static void resetTickScriptFaults() {
-        TICK_SCRIPTS.reset();
+        TICK_SCRIPTS.clearFaults();
     }
 
     /** Everything worth tab-completing inside a $...$ marker. */

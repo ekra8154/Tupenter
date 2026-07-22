@@ -565,6 +565,33 @@ class ScriptExecutorTest {
     }
 
     @Test
+    void editingATickBodyReplacesTheOldLoopInsteadOfStackingIt() {
+        // the reconciler's edit path: start the new body, abort the old one by
+        // its source label. The two must not coexist (the "echo still fires
+        // after I changed it to fireball" bug was the runner losing track of
+        // the old loop, so this abort never happened).
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        ScriptParser.ParseResult oldLoop = ScriptParser.parseGeneratedLine(
+                "#while (1 > 0) (/echo old && #wait 1t)", "/echo old", lazyOptions(new SessionVariableStore()));
+        executor.trySubmit(oldLoop.script());
+
+        ScriptParser.ParseResult newLoop = ScriptParser.parseGeneratedLine(
+                "#while (1 > 0) (/fireball && #wait 1t)", "/fireball", lazyOptions(new SessionVariableStore()));
+        executor.trySubmit(newLoop.script());
+        assertEquals(1, executor.abortSource("/echo old"), "old body stopped");
+
+        sender.sent.clear();
+        executor.tick();
+        executor.tick();
+        assertFalse(sender.sent.contains("/echo old"), "the edited-away body must not keep firing: " + sender.sent);
+        assertTrue(sender.sent.contains("/fireball"), "the new body runs: " + sender.sent);
+        assertTrue(executor.isRunningSource("/fireball"));
+        assertFalse(executor.isRunningSource("/echo old"));
+    }
+
+    @Test
     void concurrentScriptsShareTheBudgetFairly() {
         RecordingSender sender = new RecordingSender();
         ScriptExecutor executor = executor(sender, 2, 1000, 8); // 2 sends/tick

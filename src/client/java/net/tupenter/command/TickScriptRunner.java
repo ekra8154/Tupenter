@@ -37,9 +37,23 @@ public final class TickScriptRunner {
     private final Set<String> faulted = new HashSet<>();  // bodies that errored — don't respin
     private final Set<String> active = new HashSet<>();   // bodies we've started a loop for
 
+    /** Full reset — for a world/session change, where the executor is also cleared (abortAll). */
     public void reset() {
         faulted.clear();
         active.clear();
+    }
+
+    /**
+     * Give edited scripts a fresh chance WITHOUT forgetting what's running.
+     * Clearing {@code active} too (as {@link #reset} does) would orphan the
+     * still-running loop of any script whose body just changed: the reconciler
+     * would no longer know to abort the OLD body, so it would keep looping
+     * alongside the new one. Keeping {@code active} lets the normal desired-vs-
+     * active diff stop the old body and start the new — while a cleared
+     * {@code faulted} lets a previously-broken (now-edited) script retry.
+     */
+    public void clearFaults() {
+        faulted.clear();
     }
 
     public void tick(ScriptExecutor executor) {
