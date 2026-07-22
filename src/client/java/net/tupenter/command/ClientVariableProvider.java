@@ -70,6 +70,15 @@ public final class ClientVariableProvider implements VariableProvider {
             net.minecraft.world.phys.Vec3 v = player.getLookAngle();
             return Value.of(round2(v.x) + " " + round2(v.y) + " " + round2(v.z)); // unit look direction — a ray dir
         });
+        // Full-precision components — vec strings can't be indexed in an expression, so
+        // expose x/y/z directly for math (e.g. Motion:[look.x*speed, ...]). Not rounded:
+        // rounding is a display convenience; math wants the exact unit vector.
+        register("client.look.x", player -> Value.ofNumber(player.getLookAngle().x));
+        register("client.look.y", player -> Value.ofNumber(player.getLookAngle().y));
+        register("client.look.z", player -> Value.ofNumber(player.getLookAngle().z));
+        register("client.eye_pos.x", player -> Value.ofNumber(player.getEyePosition().x));
+        register("client.eye_pos.y", player -> Value.ofNumber(player.getEyePosition().y));
+        register("client.eye_pos.z", player -> Value.ofNumber(player.getEyePosition().z));
         register("client.on_ground", player -> Value.of(player.onGround()));
         register("client.sneaking", player -> Value.of(player.isCrouching()));
         register("client.sprinting", player -> Value.of(player.isSprinting()));
