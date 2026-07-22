@@ -26,6 +26,34 @@ class ExpressionEvaluatorTest {
         assertThrows(ExpressionException.class, () -> eval("vec(0, 64)"));
     }
 
+    @Test
+    void functionArgsAcceptAQuotedStringWithSpaces() {
+        assertEquals("5", eval("len(\"0 0 0\")")); // one spaced-string arg
+        FunctionResolver f = (name, args, ctx) -> name.equalsIgnoreCase("second") ? args.get(1) : null;
+        EvalContext ctx = new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE, BlockReader.NONE, f);
+        assertEquals("0 0 0", ExpressionEvaluator.evaluate("second(1, \"0 0 0\")", ctx).displayString());
+    }
+
+    @Test
+    void functionCallWithADottedVariableThenQuotedString() {
+        VariableProvider vars = new VariableProvider() {
+            @Override
+            public Set<String> names() {
+                return Set.of("client.pos");
+            }
+
+            @Override
+            public java.util.Optional<Value> resolve(String n) {
+                return n.equalsIgnoreCase("client.pos") ? java.util.Optional.of(Value.of("1 2 3")) : java.util.Optional.empty();
+            }
+        };
+        FunctionResolver f = (name, args, ctx) -> name.equalsIgnoreCase("dist") ? args.get(1) : null;
+        EvalContext ctx = new EvalContext(new Random(1), vars, TagResolver.NONE, BlockReader.NONE, f);
+        assertEquals("0 0 0", ExpressionEvaluator.evaluate("dist(client.pos, \"0 0 0\")", ctx).displayString());
+        // through the /echo marker path too
+        assertEquals("0 0 0", MathEvaluator.applyNumberMath("$dist(client.pos, \"0 0 0\")$", NumberMathMode.EXPLICIT_ONLY, ctx));
+    }
+
     // --- numbers (inherited behavior) ---
 
     @Test
