@@ -749,6 +749,20 @@ class ScriptParserTest {
     }
 
     @Test
+    void chainStartingWithAnOptionalParamAliasExpandsEverySegment() {
+        // the /launch chain bug: split on && FIRST, so the alias binds its
+        // omitted optional param instead of a downstream parser choking on &&
+        Map<String, String> aliases = Map.of("launch",
+                "<e:entity> <speed:float=5> <ng:bool=false> /summon $e$ ~ ~ ~ {NoGravity:$ng ? 1 : 0$b}");
+        // optional ng omitted, mid-chain
+        assertEquals(List.of("summon minecraft:pig ~ ~ ~ {NoGravity:0b}", "say done"),
+                contents(parse("launch pig 10 && /say done", aliases)));
+        // explicit ng still fine
+        assertEquals(List.of("summon minecraft:pig ~ ~ ~ {NoGravity:1b}", "say done"),
+                contents(parse("launch pig 10 true && /say done", aliases)));
+    }
+
+    @Test
     void moddedEntityIdKeepsItsOwnNamespace() {
         // a mod id already carries a namespace (a colon), so the minecraft:
         // default never touches it — exactly like vanilla, where a bare id
