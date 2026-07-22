@@ -1590,8 +1590,11 @@ public class TupenterModClient implements ClientModInitializer {
 
     /**
      * A body with unbalanced parens or an unclosed marker is usually a
-     * definition VANILLA'S 256-CHAR CHAT LIMIT truncated mid-paste — warn
-     * right at save time instead of erroring mid-run later.
+     * definition the CHAT INPUT BOX'S typing cap truncated mid-paste — warn
+     * right at save time instead of erroring mid-run later. That cap is the
+     * Chat Input Length setting (vanilla 256 by default, raisable to 32766);
+     * it's a UI limit on the edit box, NOT a send limit — these commands are
+     * client-only and never reach the server.
      */
     private static void warnUnbalancedDefinition(CommandContext<FabricClientCommandSource> context, String command) {
         int depth = 0;
@@ -1623,8 +1626,11 @@ public class TupenterModClient implements ClientModInitializer {
         String what = depth != 0
                 ? Math.abs(depth) + " unclosed " + (depth > 0 ? "'('" : "')'")
                 : "an unclosed $...$ marker";
-        String hint = command.length() >= 230
-                ? " Chat cuts input at 256 characters — this definition was likely truncated. Edit long commands in Mod Menu → Tupenter → Custom Commands instead."
+        int limit = TupenterConfig.INSTANCE.chatInputLength; // the edit box's typing cap
+        String hint = command.length() >= limit - 26
+                ? " The chat box only accepts " + limit + " typed characters, so this was likely cut off mid-paste"
+                        + " (it's a UI limit, not a send limit — these never go to the server). Raise it in Mod Menu"
+                        + " → Tupenter → Chat Input Length, or edit long commands in Custom Commands (no cap there)."
                 : "";
         context.getSource().sendFeedback(Component.literal(
                 "⚠ Saved, but the body has " + what + " — it will error when run." + hint)
@@ -1763,8 +1769,9 @@ public class TupenterModClient implements ClientModInitializer {
                         .append(suggestLink("[edit it]", suggested))
                 : Component.literal("Edit /" + normalized + ": ").withStyle(ChatFormatting.YELLOW)
                         .append(suggestLink("[put it in your chat bar]", suggested));
-        if (suggested.length() > 256) {
-            message.append(Component.literal(" (over 256 chars — the chat bar will cut it off; edit long commands in Mod Menu)")
+        if (suggested.length() > TupenterConfig.INSTANCE.chatInputLength) {
+            message.append(Component.literal(" (over " + TupenterConfig.INSTANCE.chatInputLength
+                    + " chars — the chat bar will cut it off; raise Chat Input Length or edit in Mod Menu)")
                     .withStyle(ChatFormatting.GRAY));
         }
         context.getSource().sendFeedback(message);
@@ -1857,8 +1864,9 @@ public class TupenterModClient implements ClientModInitializer {
                         .append(suggestLink("[edit it]", suggested))
                 : Component.literal("Edit " + normalized + "(): ").withStyle(ChatFormatting.YELLOW)
                         .append(suggestLink("[put it in your chat bar]", suggested));
-        if (suggested.length() > 256) {
-            message.append(Component.literal(" (over 256 chars — the chat bar will cut it off)")
+        if (suggested.length() > TupenterConfig.INSTANCE.chatInputLength) {
+            message.append(Component.literal(" (over " + TupenterConfig.INSTANCE.chatInputLength
+                    + " chars — the chat bar will cut it off; raise Chat Input Length or edit in Mod Menu)")
                     .withStyle(ChatFormatting.GRAY));
         }
         context.getSource().sendFeedback(message);
