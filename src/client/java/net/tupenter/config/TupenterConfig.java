@@ -338,6 +338,10 @@ public class TupenterConfig {
             try (FileReader reader = new FileReader(configFile)) {
                 TupenterConfig loaded = GSON.fromJson(reader, TupenterConfig.class);
                 if (loaded != null) {
+                    // FOOTGUN: every field must be copied here BY HAND. A field
+                    // that's saved but not copied loads as its default and the
+                    // next save() erases it from disk (the /customfunction
+                    // vanishing bug). Adding a config field? Add its copy line.
                     INSTANCE.resetOnNewSession = loaded.resetOnNewSession;
                     INSTANCE.rapidResendDelay = loaded.rapidResendDelay;
                     INSTANCE.resendDelay = Math.max(0, loaded.resendDelay);
@@ -370,6 +374,7 @@ public class TupenterConfig {
                     INSTANCE.tickScriptsMigrationNoticePending = loaded.tickScriptsMigrationNoticePending;
                     INSTANCE.numberMathMode = loaded.numberMathMode != null ? loaded.numberMathMode : NumberMathMode.AUTO_DETECT;
                     INSTANCE.aliases = loaded.aliases != null ? loaded.aliases : new ArrayList<>();
+                    INSTANCE.functions = loaded.functions != null ? loaded.functions : new ArrayList<>();
                     INSTANCE.maxCommandsPerTick = clamp(loaded.maxCommandsPerTick, 1, 512, 16);
                     INSTANCE.maxCommandsPerScript = clamp(loaded.maxCommandsPerScript, 1, 100000, 1000);
                     INSTANCE.maxConcurrentScripts = clamp(loaded.maxConcurrentScripts, 1, 64, 8);
