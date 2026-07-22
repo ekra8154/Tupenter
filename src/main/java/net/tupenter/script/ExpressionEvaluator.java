@@ -241,7 +241,42 @@ final class ExpressionEvaluator {
                 return new Value.BoolValue(!asBool(value, "after !"));
             }
 
-            return parsePostfix();
+            return parsePower();
+        }
+
+        /** {@code base ^ exponent} — power, binds tighter than * / , right-associative (2^3^2 = 2^512... = 2^9). */
+        private Value parsePower() {
+            Value base = parsePostfix();
+            skipWhitespace();
+            if (!atEnd() && peek() == '^') {
+                index++;
+                Value exponent = parseUnary(); // right-assoc, and lets the exponent be negative
+                return new Value.NumberValue(power(asNumber(base, "base of ^"), asNumber(exponent, "exponent of ^")));
+            }
+            return base;
+        }
+
+        /** Exact for a whole exponent (repeated multiply); falls back to double for a fractional one. */
+        private static Rational power(Rational base, Rational exponent) {
+            if (exponent.isWhole()) {
+                java.math.BigInteger n = exponent.wholeValue();
+                if (n.abs().compareTo(java.math.BigInteger.valueOf(1024)) > 0) {
+                    throw new ExpressionException("^ exponent is too large (max 1024)");
+                }
+                int e = n.intValue();
+                Rational result = Rational.of(1);
+                for (int k = 0; k < Math.abs(e); k++) {
+                    result = result.multiply(base);
+                }
+                if (e < 0) {
+                    if (base.equals(Rational.ZERO)) {
+                        throw new ExpressionException("0 raised to a negative power");
+                    }
+                    result = Rational.of(1).divide(result);
+                }
+                return result;
+            }
+            return Rational.fromDouble(Math.pow(base.doubleValue(), exponent.doubleValue()));
         }
 
         private Value parsePostfix() {

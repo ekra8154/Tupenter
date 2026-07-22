@@ -1984,6 +1984,7 @@ public class TupenterModClient implements ClientModInitializer {
             case "math" -> new String[]{
                     "§bExpressions · math:",
                     "§7Arithmetic:§r + - * / % and implicit multiplication: $2(3+4)$ = 14 · % is floored modulo (like scoreboard %=): $-1 % 3$ = 2",
+                    "§7Power:§r ^ raises to a power: $3^2$ = 9 · $2^-1$ = 0.5 · binds tighter than * and than unary - ($-2^2$ = -4) · exact for whole exponents. Great for squares: sqrt((a.x-b.x)^2 + (a.y-b.y)^2 + (a.z-b.z)^2)",
                     "§7Exact fractions:§r $1/3 * 3$ is exactly 1 — no float drift, ever",
                     "§7Stacks:§r a number with an s suffix is stacks of 64: $3s$ = 192 · $1.5s$ = 96",
                     "§7Rounding:§r int(x) truncates · floor / ceil / round · abs, min(a,b,...), max(a,b,...), sqrt",

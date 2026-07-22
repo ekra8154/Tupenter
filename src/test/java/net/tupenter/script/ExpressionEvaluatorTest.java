@@ -16,6 +16,23 @@ class ExpressionEvaluatorTest {
     }
 
     @Test
+    void powerOperator() {
+        assertEquals("9", eval("3^2"));
+        assertEquals("8", eval("2^3"));
+        assertEquals("-4", eval("-2^2"));       // ^ binds tighter than unary minus: -(2^2)
+        assertEquals("0.125", eval("2^-3"));    // negative exponent
+        assertEquals("512", eval("2^3^2"));     // right-associative: 2^(3^2) = 2^9
+        assertEquals("25", eval("(2+3)^2"));
+        assertEquals("12", eval("2^2 * 3"));    // power before multiply
+    }
+
+    @Test
+    void powerInsideSqrtLikeADistanceBody() {
+        // the exact shape that broke: sqrt of a sum of squares
+        assertEquals("5", eval("sqrt((0-3)^2 + (0-4)^2)"));
+    }
+
+    @Test
     void vecBuildsAPositionString() {
         assertEquals("0 64 0", eval("vec(0, 64, 0)"));
         assertEquals("1.5 -2 10", eval("vec(1.5, -2, 5 + 5)"));
