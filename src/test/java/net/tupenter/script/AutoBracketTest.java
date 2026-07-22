@@ -66,6 +66,20 @@ class AutoBracketTest {
     }
 
     @Test
+    void doesNotAutoCloseAfterABackslashEscape() {
+        // \$ \( … is an escape for a literal char — don't pair it
+        assertNull(type("/echo \\", 7, '$'));
+        assertNull(type("/say \\", 6, '('));
+    }
+
+    @Test
+    void anEscapedBackslashStillAutoCloses() {
+        // \\ is an escaped backslash, so the next char is NOT escaped
+        AutoBracket.Edit e = type("/echo \\\\", 8, '$');
+        assertEquals("/echo \\\\$$", e.text());
+    }
+
+    @Test
     void deletesAnEmptyPairOnBackspace() {
         AutoBracket.Edit e = AutoBracket.onBackspace("/say ()", 6);
         assertEquals("/say ", e.text());

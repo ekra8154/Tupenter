@@ -873,9 +873,16 @@ public class ModMenuIntegration implements ModMenuApi {
             cloth.selectedCategoryIndex = tabIndex;
         }
         Minecraft.getInstance().setScreen(screen); // init() runs synchronously in here
-        if (screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth
-                && cloth.listWidget != null) {
-            cloth.listWidget.capYPosition(scroll); // clamps if the list shrank
+        if (screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth) {
+            // capYPosition clamps to getMaxScroll(), which is 0 until the list
+            // has laid out on its first render — restoring now would snap us to
+            // the top. Defer to the next main-thread pass, after that frame.
+            double target = scroll;
+            Minecraft.getInstance().execute(() -> {
+                if (Minecraft.getInstance().screen == cloth && cloth.listWidget != null) {
+                    cloth.listWidget.capYPosition(target); // clamps if the list shrank
+                }
+            });
         }
     }
 

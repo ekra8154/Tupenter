@@ -71,12 +71,22 @@ public final class AutoBracket {
         if (isCloser(typed) && cursor < text.length() && text.charAt(cursor) == typed) {
             return new Edit(text, cursor + 1);
         }
-        // auto-close — but not inside a quoted string (a literal zone)
-        if (close != 0 && !inQuotedString(text, cursor)) {
+        // auto-close — but not inside a quoted string (a literal zone), and not
+        // right after a backslash (\$ \( … is an escape — the user wants a literal)
+        if (close != 0 && !inQuotedString(text, cursor) && !isEscaped(text, cursor)) {
             String inserted = text.substring(0, cursor) + typed + close + text.substring(cursor);
             return new Edit(inserted, cursor + 1); // caret between the pair
         }
         return null;
+    }
+
+    /** True when the caret sits after an odd run of backslashes — the next char is escaped. */
+    private static boolean isEscaped(String text, int cursor) {
+        int backslashes = 0;
+        for (int i = cursor - 1; i >= 0 && text.charAt(i) == '\\'; i--) {
+            backslashes++;
+        }
+        return backslashes % 2 == 1;
     }
 
     /**

@@ -120,6 +120,21 @@ public class ScriptEditBox extends MultiLineEditBox {
         return super.keyPressed(event);
     }
 
+    /**
+     * When the box is already at its scroll limit (or too short to scroll),
+     * don't swallow the wheel — let the Mod Menu page scroll instead. Vanilla
+     * consumes every scroll while hovered, which traps you inside the editor.
+     */
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        boolean atTop = scrollAmount() <= 0.0;
+        boolean atBottom = scrollAmount() >= maxScrollAmount();
+        if ((scrollY > 0 && atTop) || (scrollY < 0 && atBottom)) {
+            return false; // nothing left to scroll here — pass it to the page
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
     private static boolean autoBracketEnabled() {
         return TupenterConfig.INSTANCE.autoCloseBrackets
                 && TupenterConfig.INSTANCE.enhancedCommandParsingEnabled;
