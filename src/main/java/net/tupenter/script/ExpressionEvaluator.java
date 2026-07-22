@@ -15,8 +15,12 @@ import java.util.List;
  *   →   + -   →   * / and implicit multiplication   →   unary -, 's' stack
  *   suffix (×64)   →   literals, parens, functions
  *
- * Note: both ternary branches are evaluated (values, not lazy AST). Revisit
- * when variables land in Phase 3.
+ * Short-circuit: ternary {@code ?:}, {@code &&}, and {@code ||} evaluate only
+ * the taken side. The untaken side is dry-parsed in "skip" mode (see the
+ * {@code skipping} field) — index still advances exactly per the grammar, but
+ * no call/resolve/arithmetic fires. That's what stops a recursive call in a
+ * dead branch (infinite recursion) and lets guards like {@code x != 0 ? 10/x : 0}
+ * avoid dividing by zero.
  */
 final class ExpressionEvaluator {
 
@@ -34,13 +38,29 @@ final class ExpressionEvaluator {
     }
 
     private static final class Parser {
+        /** A dead branch's stand-in: never inspected in skip mode, never leaks to eval mode. */
+        private static final Value SKIP = Value.ofNumber(0);
+
         private final String input;
         private final EvalContext context;
         private int index;
+        /** When true, parse (advance index) but perform NO call/resolve/arithmetic — dry-parse a dead branch. */
+        private boolean skipping;
 
         private Parser(String input, EvalContext context) {
             this.input = input;
             this.context = context;
+        }
+
+        /** Parses {@code production}, forcing skip mode when {@code skip} (already-skipping is sticky). Restores after. */
+        private Value parseSkippable(boolean skip, java.util.function.Supplier<Value> production) {
+            boolean saved = skipping;
+            skipping = skipping || skip;
+            try {
+                return production.get();
+            } finally {
+                skipping = saved; // restore so nested short-circuits don't leak their mode outward
+            }
         }
 
         private Value parseTernary() {
@@ -48,14 +68,18 @@ final class ExpressionEvaluator {
             skipWhitespace();
             if (!atEnd() && peek() == '?') {
                 index++;
-                Value whenTrue = parseTernary();
+                // short-circuit: only the taken branch evaluates; the other is
+                // dry-parsed so a recursive call there never fires and a guard
+                // like x != 0 ? 10/x : 0 doesn't divide by zero.
+                boolean takeTrue = !skipping && asBool(condition, "before '?'");
+                Value whenTrue = parseSkippable(!takeTrue, this::parseTernary);
                 skipWhitespace();
                 if (atEnd() || peek() != ':') {
                     throw new ExpressionException("Expected ':' in condition ? a : b");
                 }
                 index++;
-                Value whenFalse = parseTernary();
-                return asBool(condition, "before '?'") ? whenTrue : whenFalse;
+                Value whenFalse = parseSkippable(takeTrue, this::parseTernary);
+                return skipping ? SKIP : (takeTrue ? whenTrue : whenFalse);
             }
             return condition;
         }
@@ -66,8 +90,11 @@ final class ExpressionEvaluator {
                 skipWhitespace();
                 if (matches("||")) {
                     index += 2;
-                    Value right = parseAnd();
-                    value = new Value.BoolValue(asBool(value, "left of ||") | asBool(right, "right of ||"));
+                    // short-circuit: a true left makes the right operand dead — dry-parse it
+                    boolean leftTrue = !skipping && asBool(value, "left of ||");
+                    Value right = parseSkippable(leftTrue, this::parseAnd);
+                    value = skipping ? SKIP
+                            : new Value.BoolValue(leftTrue || asBool(right, "right of ||"));
                     continue;
                 }
                 return value;
@@ -80,8 +107,11 @@ final class ExpressionEvaluator {
                 skipWhitespace();
                 if (matches("&&")) {
                     index += 2;
-                    Value right = parseComparison();
-                    value = new Value.BoolValue(asBool(value, "left of &&") & asBool(right, "right of &&"));
+                    // short-circuit: a false left makes the right operand dead — dry-parse it
+                    boolean leftFalse = !skipping && !asBool(value, "left of &&");
+                    Value right = parseSkippable(leftFalse, this::parseComparison);
+                    value = skipping ? SKIP
+                            : new Value.BoolValue(!leftFalse && asBool(right, "right of &&"));
                     continue;
                 }
                 return value;
@@ -104,7 +134,7 @@ final class ExpressionEvaluator {
             }
             index += op.length();
             Value right = parseAdditive();
-            return new Value.BoolValue(compare(left, op, right));
+            return skipping ? SKIP : new Value.BoolValue(compare(left, op, right));
         }
 
         private boolean compare(Value left, String op, Value right) {
@@ -152,14 +182,15 @@ final class ExpressionEvaluator {
                 if (operator == '+') {
                     index++;
                     Value right = parseMultiplicative();
-                    value = addOrConcat(value, right);
+                    value = skipping ? SKIP : addOrConcat(value, right);
                     continue;
                 }
 
                 if (operator == '-') {
                     index++;
                     Value right = parseMultiplicative();
-                    value = new Value.NumberValue(asNumber(value, "left of -").subtract(asNumber(right, "right of -")));
+                    value = skipping ? SKIP
+                            : new Value.NumberValue(asNumber(value, "left of -").subtract(asNumber(right, "right of -")));
                     continue;
                 }
 
@@ -187,6 +218,10 @@ final class ExpressionEvaluator {
                     // "||" is handled a level up; a lone '/' here is division
                     index++;
                     Value right = parseUnary();
+                    if (skipping) { // dead: no divide/coerce
+                        value = SKIP;
+                        continue;
+                    }
                     Rational l = asNumber(value, "left of " + operator);
                     Rational r = asNumber(right, "right of " + operator);
                     value = new Value.NumberValue(switch (operator) {
@@ -202,7 +237,8 @@ final class ExpressionEvaluator {
 
                 if (startsImplicitMultiplication()) {
                     Value right = parseUnary();
-                    value = new Value.NumberValue(asNumber(value, "left of implicit multiplication")
+                    value = skipping ? SKIP
+                            : new Value.NumberValue(asNumber(value, "left of implicit multiplication")
                             .multiply(asNumber(right, "right of implicit multiplication")));
                     continue;
                 }
@@ -232,13 +268,13 @@ final class ExpressionEvaluator {
             if (current == '-') {
                 index++;
                 Value value = parseUnary();
-                return new Value.NumberValue(asNumber(value, "after unary -").negate());
+                return skipping ? SKIP : new Value.NumberValue(asNumber(value, "after unary -").negate());
             }
 
             if (current == '!' && !matches("!=")) {
                 index++;
                 Value value = parseUnary();
-                return new Value.BoolValue(!asBool(value, "after !"));
+                return skipping ? SKIP : new Value.BoolValue(!asBool(value, "after !"));
             }
 
             return parsePower();
@@ -251,7 +287,8 @@ final class ExpressionEvaluator {
             if (!atEnd() && peek() == '^') {
                 index++;
                 Value exponent = parseUnary(); // right-assoc, and lets the exponent be negative
-                return new Value.NumberValue(power(asNumber(base, "base of ^"), asNumber(exponent, "exponent of ^")));
+                return skipping ? SKIP
+                        : new Value.NumberValue(power(asNumber(base, "base of ^"), asNumber(exponent, "exponent of ^")));
             }
             return base;
         }
@@ -285,7 +322,8 @@ final class ExpressionEvaluator {
                 skipWhitespace();
                 if (!atEnd() && (peek() == 's' || peek() == 'S')) {
                     index++;
-                    value = new Value.NumberValue(asNumber(value, "before stack suffix 's'").multiply(Rational.of(64)));
+                    value = skipping ? SKIP
+                            : new Value.NumberValue(asNumber(value, "before stack suffix 's'").multiply(Rational.of(64)));
                     continue;
                 }
                 return value;
@@ -327,7 +365,7 @@ final class ExpressionEvaluator {
                     skipWhitespace();
                     if (!atEnd() && peek() == '$') {
                         index++;
-                        return resolveVariable(digits);
+                        return skipping ? SKIP : resolveVariable(digits);
                     }
                     index = save; // the digits started an expression: $1+2$
                 }
@@ -406,7 +444,7 @@ final class ExpressionEvaluator {
             skipWhitespace();
             if (atEnd() || peek() != '(') {
                 // bare identifier → variable reference
-                return resolveVariable(identifier);
+                return skipping ? SKIP : resolveVariable(identifier);
             }
             index++; // consume '('
 
@@ -415,6 +453,11 @@ final class ExpressionEvaluator {
             }
 
             List<Value> args = parseFunctionArgs();
+            if (skipping) {
+                // dead call: skip the builtin math AND the user-function call —
+                // the latter is what stops a recursive call in an untaken branch
+                return SKIP;
+            }
             return switch (identifier.toLowerCase()) {
                 case "int" -> new Value.NumberValue(asNumber(single(args, "int"), "int(...)").truncate());
                 case "float" -> new Value.NumberValue(asNumber(single(args, "float"), "float(...)"));
@@ -835,7 +878,8 @@ final class ExpressionEvaluator {
                 }
                 if (c == ')') {
                     index++;
-                    return options.get(context.random().nextInt(options.size()));
+                    // dead pick: no random draw; options were still dry-parsed to advance
+                    return skipping ? SKIP : options.get(context.random().nextInt(options.size()));
                 }
                 throw new ExpressionException("pick(...): expected '|' or ')' but found '" + c + "'");
             }
