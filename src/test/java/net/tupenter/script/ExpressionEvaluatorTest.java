@@ -81,6 +81,14 @@ class ExpressionEvaluatorTest {
             }
 
             @Override
+            public String typeId(String selector) {
+                if (selector.equals("target") || selector.equals("uuid-hit")) {
+                    return "minecraft:zombie";
+                }
+                throw new ExpressionException("no entity: " + selector);
+            }
+
+            @Override
             public String raycastUuid(double maxDist) {
                 return maxDist >= 5 ? "uuid-hit" : "miss";
             }
@@ -112,6 +120,15 @@ class ExpressionEvaluatorTest {
         assertEquals("18", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Health\")", ctx).displayString());
         // selector and path are just expressions — arithmetic composes
         assertEquals("20", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Health\") + 2", ctx).displayString());
+    }
+
+    @Test
+    void entityTypeNamesTheEntity() {
+        EvalContext ctx = entityCtx();
+        assertEquals("minecraft:zombie", ExpressionEvaluator.evaluate("entity_type(\"target\")", ctx).displayString());
+        // the exact "what am I aiming at" composition
+        assertEquals("minecraft:zombie",
+                ExpressionEvaluator.evaluate("entity_type(entity_raycast(30))", ctx).displayString());
     }
 
     @Test

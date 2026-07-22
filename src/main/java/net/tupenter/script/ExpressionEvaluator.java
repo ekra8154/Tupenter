@@ -496,6 +496,7 @@ final class ExpressionEvaluator {
                 case "raycast" -> raycast(args);
                 case "raycast_block" -> raycastBlock(args);
                 case "entity_nbt" -> entityNbt(args);
+                case "entity_type" -> entityType(args);
                 case "entity_raycast" -> entityRaycast(args);
                 case "entities" -> entitiesWithin(args);
                 case "nearest_entity" -> nearestEntity(args);
@@ -952,6 +953,18 @@ final class ExpressionEvaluator {
             String selector = args.get(0).displayString();
             String path = args.get(1).displayString();
             return context.entities().readNbt(selector, path);
+        }
+
+        /**
+         * entity_type(selector) — the type id ("minecraft:zombie") of the entity
+         * a selector picks ("self", "target", or a UUID). The counterpart to
+         * entity_nbt for the one field NBT can't give you: the client stores
+         * entities without their "id" tag, so entity_nbt(uuid, "id") has nothing
+         * to read. entity_type(entity_raycast(100)) names what you're aiming at.
+         */
+        private Value entityType(List<Value> args) {
+            String selector = single(args, "entity_type").displayString();
+            return Value.of(context.entities().typeId(selector));
         }
 
         /**

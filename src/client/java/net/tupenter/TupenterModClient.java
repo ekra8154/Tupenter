@@ -238,7 +238,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
                 "trim", "upper", "lower", "substr", "replace", "vec", "x", "y", "z", "raycast", "raycast_block",
-                "entity_nbt", "entity_raycast", "entities", "nearest_entity"));
+                "entity_nbt", "entity_type", "entity_raycast", "entities", "nearest_entity"));
         names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too
         return new java.util.ArrayList<>(names);
     }
@@ -2229,6 +2229,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · browse with /tupenter dump",
                     "§7Any entity by UUID:§r $entity_nbt(uuid, \"path\")$ reads the same NBT for ANY loaded entity, not just self/target — entity_nbt(\"self\"|\"target\"|<uuid>, \"Health\") · e.g. $entity_nbt(client.uuid, \"Pos.1\")$. Client-synced only (~render distance); an out-of-range UUID errors.",
                     "§7Finding UUIDs:§r entity_raycast(dist) = UUID you're aiming at (or \"miss\") · entities(radius[, type]) = LIST of nearby UUIDs for #foreach · nearest_entity(radius[, type]) = closest UUID (or \"miss\") · client.target_uuid = crosshair entity. Chain them: $entity_nbt(entity_raycast(30), \"Health\")$ · #foreach $e$ in entities(8, \"minecraft:zombie\") (...)",
+                    "§7Entity type from a UUID:§r entity_type(selector) = the type id (\"minecraft:zombie\") — entity_nbt can't (entities are stored without their id tag). Name what you're aiming at: /echo This is a $entity_type(entity_raycast(100))$",
                     "§7Discover:§r /tupenter vars — groups overview · /tupenter vars <group> — live values",
                     "§7In custom commands:§r declared params bind as $name$ or $1$..$n$",
             };

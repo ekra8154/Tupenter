@@ -33,6 +33,11 @@ public final class EntityAccessImpl implements EntityAccess {
         return EntityNbtVariableProvider.read(resolveEntity(selector), path, "entity_nbt");
     }
 
+    @Override
+    public String typeId(String selector) {
+        return BuiltInRegistries.ENTITY_TYPE.getKey(resolveEntity(selector).getType()).toString();
+    }
+
     /** "self" / "target" / a UUID → the entity, or a clear error. */
     private static Entity resolveEntity(String selector) {
         String key = selector.trim();
@@ -46,12 +51,13 @@ public final class EntityAccessImpl implements EntityAccess {
         try {
             uuid = UUID.fromString(key);
         } catch (IllegalArgumentException ex) {
-            throw new ExpressionException("entity_nbt: '" + selector + "' isn't \"self\", \"target\", or a valid UUID");
+            throw new ExpressionException("entity selector '" + selector
+                    + "' isn't \"self\", \"target\", or a valid UUID");
         }
         ClientLevel level = Minecraft.getInstance().level;
         Entity entity = level == null ? null : level.getEntity(uuid);
         if (entity == null) {
-            throw new ExpressionException("entity_nbt: no entity with UUID " + uuid
+            throw new ExpressionException("no entity with UUID " + uuid
                     + " is loaded on the client (out of range, or not synced)");
         }
         return entity;

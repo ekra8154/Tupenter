@@ -21,6 +21,11 @@ public interface EntityAccess {
         }
 
         @Override
+        public String typeId(String selector) {
+            throw new ExpressionException("entity_type(...) needs a live world");
+        }
+
+        @Override
         public String raycastUuid(double maxDist) {
             throw new ExpressionException("entity_raycast(...) needs a live world");
         }
@@ -38,6 +43,9 @@ public interface EntityAccess {
 
     /** The scalar NBT value at {@code path} for the entity {@code selector} ("self"/"target"/UUID) picks, or throws. */
     Value readNbt(String selector, String path);
+
+    /** The entity type id (e.g. "minecraft:zombie") of the entity {@code selector} picks, or throws. */
+    String typeId(String selector);
 
     /** UUID of the entity under a ray from the eyes along look up to {@code maxDist} blocks, or "miss". */
     String raycastUuid(double maxDist);
