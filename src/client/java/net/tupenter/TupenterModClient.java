@@ -2061,10 +2061,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing (so does [edit] in list).",
                 "§7Functions can call functions§r — including yours — with recursion capped at depth 32.",
         };
-        for (String line : lines) {
-            context.getSource().sendFeedback(Component.literal(line));
-        }
-        return 1;
+        return sendHelpPage(lines);
     }
 
     private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestFunctionNames(
@@ -2191,9 +2188,57 @@ public class TupenterModClient implements ClientModInitializer {
         return names;
     }
 
+    /**
+     * Help renders as a PAGE, not a log append: the exact components of the last
+     * page are remembered, and the next page deletes them from chat history
+     * before printing — clicking through the help index NAVIGATES instead of
+     * piling pages up. Only lines printed through helpLine are ever touched;
+     * ordinary chat stays exactly where it is.
+     */
+    private static final List<Component> HELP_PAGE_LINES = new ArrayList<>();
+
+    private static void beginHelpPage() {
+        net.minecraft.client.gui.components.ChatComponent chat = Minecraft.getInstance().gui.getChat();
+        if (!HELP_PAGE_LINES.isEmpty()) {
+            // identity, not equals — we delete the exact component instances we added
+            java.util.Set<Component> previous = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            previous.addAll(HELP_PAGE_LINES);
+            net.tupenter.mixin.client.ChatComponentAccessor accessor = (net.tupenter.mixin.client.ChatComponentAccessor) chat;
+            if (accessor.tupenter$allMessages().removeIf(message -> previous.contains(message.content()))) {
+                accessor.tupenter$refreshTrimmedMessages();
+            }
+            HELP_PAGE_LINES.clear();
+        }
+    }
+
+    private static void helpLine(Component line) {
+        HELP_PAGE_LINES.add(line);
+        Minecraft.getInstance().gui.getChat().addMessage(line);
+    }
+
+    private static void helpLine(String line) {
+        helpLine(Component.literal(line));
+    }
+
+    /** Snap chat to the bottom — a page you navigated to should be LOOKED AT, not appended out of view. */
+    private static void endHelpPage() {
+        Minecraft.getInstance().gui.getChat().resetChatScroll();
+    }
+
+    /** A whole page of plain §-styled lines, replacing the previous page. */
+    private static int sendHelpPage(String[] lines) {
+        beginHelpPage();
+        for (String line : lines) {
+            helpLine(line);
+        }
+        endHelpPage();
+        return 1;
+    }
+
     /** Clickable chat line that RUNS a (read-only, navigation-only) command; hover shows the command. */
-    private static Component runLink(String label, String command) {
+    private static Component runLink(String label, ChatFormatting color, String command) {
         return Component.literal(label).withStyle(style -> style
+                .withColor(color)
                 .withClickEvent(new ClickEvent.RunCommand(command))
                 .withHoverEvent(new HoverEvent.ShowText(Component.literal(command))));
     }
@@ -2202,21 +2247,27 @@ public class TupenterModClient implements ClientModInitializer {
      * /tupenter help functions — the index. One blurb line per built-in, grouped,
      * every line clickable through to its detail page. Rendered straight from the
      * BuiltinFunctions registry, so it cannot advertise a function that doesn't
-     * exist (or miss one that does).
+     * exist (or miss one that does). Built from styled components, not §-codes —
+     * legacy codes reset the style mid-line and punch holes in the click region.
      */
     private static int runFunctionsIndexCommand(CommandContext<FabricClientCommandSource> context) {
-        FabricClientCommandSource source = context.getSource();
-        source.sendFeedback(Component.literal("§bFunctions — click one (or /tupenter help <name>) for details and examples:"));
+        beginHelpPage();
+        helpLine("§bFunctions — click one (or /tupenter help <name>) for details and examples:");
         net.tupenter.script.BuiltinFunctions.Group group = null;
         for (net.tupenter.script.BuiltinFunctions.Doc doc : net.tupenter.script.BuiltinFunctions.ALL) {
             if (doc.group() != group) {
                 group = doc.group();
-                source.sendFeedback(Component.literal("§3" + group.label() + ":"));
+                helpLine(Component.literal(group.label() + ":").withStyle(ChatFormatting.DARK_AQUA));
             }
-            source.sendFeedback(runLink(" §f" + doc.signature() + "§r §7— " + doc.blurb() + " §9→",
-                    "/tupenter help " + doc.name()));
+            String command = "/tupenter help " + doc.name();
+            MutableComponent line = Component.literal(" " + doc.signature()).withStyle(ChatFormatting.WHITE)
+                    .append(Component.literal(" — " + doc.blurb()).withStyle(ChatFormatting.GRAY));
+            helpLine(line.withStyle(style -> style
+                    .withClickEvent(new ClickEvent.RunCommand(command))
+                    .withHoverEvent(new HoverEvent.ShowText(Component.literal(command)))));
         }
-        source.sendFeedback(Component.literal("§8Yours too: /customfunction list · /customcommand list — /tupenter help <name> opens those as well."));
+        helpLine("§8Yours too: /customfunction list · /customcommand list — /tupenter help <name> opens those as well.");
+        endHelpPage();
         return 1;
     }
 
@@ -2249,14 +2300,17 @@ public class TupenterModClient implements ClientModInitializer {
 
     /** One built-in function in depth: blurb, the details, and two clickable examples. */
     private static int renderFunctionPage(CommandContext<FabricClientCommandSource> context, net.tupenter.script.BuiltinFunctions.Doc doc) {
-        FabricClientCommandSource source = context.getSource();
-        source.sendFeedback(Component.literal("§b" + doc.signature() + "§r §7— " + doc.blurb()));
+        beginHelpPage();
+        helpLine("§b" + doc.signature() + "§r §7— " + doc.blurb());
         for (String line : doc.detail()) {
-            source.sendFeedback(Component.literal(line));
+            helpLine(line);
         }
-        source.sendFeedback(Component.literal("§7Try: ").append(suggestLink(doc.exampleSimple(), doc.exampleSimple())));
-        source.sendFeedback(Component.literal("§7Then: ").append(suggestLink(doc.exampleComposed(), doc.exampleComposed())));
-        source.sendFeedback(runLink("§8Every function: /tupenter help functions §9→", "/tupenter help functions"));
+        helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY)
+                .append(suggestLink(doc.exampleSimple(), doc.exampleSimple())));
+        helpLine(Component.literal("Then: ").withStyle(ChatFormatting.GRAY)
+                .append(suggestLink(doc.exampleComposed(), doc.exampleComposed())));
+        helpLine(runLink("« all functions", ChatFormatting.DARK_GRAY, "/tupenter help functions"));
+        endHelpPage();
         return 1;
     }
 
@@ -2268,15 +2322,16 @@ public class TupenterModClient implements ClientModInitializer {
             context.getSource().sendError(Component.literal("No custom function '" + name + "' — see /customfunction list"));
             return 0;
         }
-        FabricClientCommandSource source = context.getSource();
+        beginHelpPage();
         String decls = definition.declarationPrefix().trim();
-        source.sendFeedback(Component.literal("§b" + name + (decls.isEmpty() ? "()" : " " + decls)
-                + "§r §7— your custom function (call it in any $...$)"));
-        source.sendFeedback(Component.literal(" §8= §f" + definition.body()));
+        helpLine("§b" + name + (decls.isEmpty() ? "()" : " " + decls)
+                + "§r §7— your custom function (call it in any $...$)");
+        helpLine(" §8= §f" + definition.body());
         String stored = CustomFunctionManager.getStoredDefinition(name);
         if (stored != null) {
-            source.sendFeedback(Component.literal(" ").append(suggestLink("[edit]", "/customfunction update " + stored)));
+            helpLine(Component.literal(" ").append(suggestLink("[edit]", "/customfunction update " + stored)));
         }
+        endHelpPage();
         return 1;
     }
 
@@ -2345,10 +2400,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§cUnknown expressions topic '" + topic + "' — try: math, text, logic, random, lists, world",
             };
         };
-        for (String line : lines) {
-            context.getSource().sendFeedback(Component.literal(line));
-        }
-        return 1;
+        return sendHelpPage(lines);
     }
 
     private static int runHelpCommand(CommandContext<FabricClientCommandSource> context, String topic) {
@@ -2444,10 +2496,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Quick taste:§r #set $x$ = rand(1,10) && /give @s stick $x$ && /echo got $x$!",
             };
         };
-        for (String line : lines) {
-            context.getSource().sendFeedback(Component.literal(line));
-        }
-        return 1;
+        return sendHelpPage(lines);
     }
 
     /** /tupenter help command [name] — brief overview, or one command in depth. */
@@ -2529,10 +2578,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§cNo command page for '" + rawName + "' — try: all, tupenter, customcommand, echo, echohud, calc, unroll",
             };
         };
-        for (String line : lines) {
-            context.getSource().sendFeedback(Component.literal(line));
-        }
-        return 1;
+        return sendHelpPage(lines);
     }
 
     private static int runDumpCommand(CommandContext<FabricClientCommandSource> context, String which, String path) {
@@ -2623,17 +2669,19 @@ public class TupenterModClient implements ClientModInitializer {
             context.getSource().sendError(Component.literal("No custom command /" + name + " — see /customcommand list"));
             return 0;
         }
-        context.getSource().sendFeedback(Component.literal("/").withStyle(ChatFormatting.GRAY)
+        beginHelpPage();
+        helpLine(Component.literal("/").withStyle(ChatFormatting.GRAY)
                 .append(Component.literal(name).withStyle(ChatFormatting.AQUA))
                 .append(Component.literal(definition.params().isEmpty() ? "" : " " + definition.declarationPrefix().trim()).withStyle(ChatFormatting.YELLOW))
                 .append(Component.literal("  "))
                 .append(suggestLink("[edit]", "/customcommand update " + name + " " + CommandAliasManager.getRawCommand(name))));
         if (!definition.description().isEmpty()) {
-            context.getSource().sendFeedback(Component.literal(" ")
+            helpLine(Component.literal(" ")
                     .append(Component.literal(applyAmpersandColors(definition.description())).withStyle(ChatFormatting.GRAY)));
         }
-        context.getSource().sendFeedback(Component.literal(" body: ").withStyle(ChatFormatting.DARK_GRAY)
+        helpLine(Component.literal(" body: ").withStyle(ChatFormatting.DARK_GRAY)
                 .append(Component.literal(definition.body()).withStyle(ChatFormatting.WHITE)));
+        endHelpPage();
         return 1;
     }
 
@@ -2717,10 +2765,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "§7Selectors:§r use <name:selector>, or quote them into a plain <name>: /cmd \"@e[type=!player,limit=1]\"",
                 "§7Example:§r /customcommand add waves <count:int> <mob:word> #repeat $count$ (/summon $mob$ ~ ~ ~)  →  /waves 3 zombie",
         };
-        for (String line : lines) {
-            context.getSource().sendFeedback(Component.literal(line));
-        }
-        return 1;
+        return sendHelpPage(lines);
     }
 
     public static boolean handleLocalCalcAlias(String command) {
