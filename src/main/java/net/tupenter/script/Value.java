@@ -74,7 +74,8 @@ public sealed interface Value {
     record ListValue(java.util.List<Value> values) implements Value {
         @Override
         public String substitutionString() {
-            throw new ExpressionException("A list can't be inserted into a command — loop over it with #foreach");
+            throw new ExpressionException("A list can't be inserted into a command — rand(...) picks one from it, "
+                    + "or loop over it with #foreach");
         }
 
         /**
