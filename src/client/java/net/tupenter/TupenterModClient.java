@@ -1344,7 +1344,7 @@ public class TupenterModClient implements ClientModInitializer {
                                             .executes(context -> runCommandHelp(context, "all"))
                                             .then(argument("name", StringArgumentType.word())
                                                     .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
-                                                            new String[]{"all", "tupenter", "customcommand", "echo", "echohud", "calc", "unroll"}, b))
+                                                            new String[]{"all", "tupenter", "customcommand", "customfunction", "echo", "echohud", "calc", "unroll"}, b))
                                                     .executes(context -> runCommandHelp(context, StringArgumentType.getString(context, "name")))))
                                     .then(literal("functions").executes(TupenterModClient::runFunctionsIndexCommand))
                                     // any function or custom definition by name: /tupenter help blockset
@@ -2273,11 +2273,14 @@ public class TupenterModClient implements ClientModInitializer {
         return false;
     }
 
-    /** A whole page of plain §-styled lines, replacing the previous page. */
-    private static int sendHelpPage(String[] lines) {
+    /** A whole page of plain §-styled lines, replacing the previous page; backLink (nullable) navigates up a level. */
+    private static int sendHelpPage(String[] lines, Component backLink) {
         beginHelpPage();
         for (String line : lines) {
             helpLine(line);
+        }
+        if (backLink != null) {
+            helpLine(backLink);
         }
         endHelpPage();
         return 1;
@@ -2338,7 +2341,7 @@ public class TupenterModClient implements ClientModInitializer {
         if (doc != null) {
             return renderFunctionPage(context, doc);
         }
-        if (java.util.Set.of("all", "tupenter", "customcommand", "echo", "echohud", "calc", "unroll").contains(name)) {
+        if (java.util.Set.of("all", "tupenter", "customcommand", "customfunction", "echo", "echohud", "calc", "unroll").contains(name)) {
             return runCommandHelp(context, name);
         }
         if (CustomFunctionManager.hasFunction(name)) {
@@ -2456,24 +2459,55 @@ public class TupenterModClient implements ClientModInitializer {
                     "§cUnknown expressions topic '" + topic + "' — try: math, text, logic, random, lists, world",
             };
         };
-        return sendHelpPage(lines);
+        return sendHelpPage(lines, runLink("« expressions topics", ChatFormatting.DARK_GRAY, "/tupenter help expressions"));
+    }
+
+    /** /tupenter help — the front door: every topic as a clickable row. */
+    private static int runHelpIndex(CommandContext<FabricClientCommandSource> context) {
+        String taste = "#set $x$ = rand(1,10) && /give @s stick $x$ && /echo got $x$!";
+        beginHelpPage();
+        helpLine("§bTupenter help — pick a topic:");
+        helpLine(navRow("expressions", "the $...$ language: math, text, logic, random, lists, world", "/tupenter help expressions"));
+        helpLine(navRow("functions", "every function at a glance — /tupenter help <name> opens any one", "/tupenter help functions"));
+        helpLine(navRow("variables", "#set, #local, client.*/world.*/nbt paths, groups", "/tupenter help variables"));
+        helpLine(navRow("flow", "&& chains, #repeat, #for, #foreach, #if/#elseif, #while", "/tupenter help flow"));
+        helpLine(navRow("prefixes", "#silent, #norecord, #stage, /echo", "/tupenter help prefixes"));
+        helpLine(navRow("scripts", "the every-tick Scripts tab", "/tupenter help scripts"));
+        helpLine(navRow("commands", "the mod's commands, each with a detail page", "/tupenter help command"));
+        helpLine(navRow("custom commands", "make your own /commands (typed params, autocomplete)", "/customcommand help"));
+        helpLine(navRow("custom functions", "write your own min()-style functions for expressions", "/customfunction help"));
+        helpLine(Component.literal("Quick taste: ").withStyle(ChatFormatting.GRAY).append(suggestLink(taste, taste)));
+        endHelpPage();
+        return 1;
+    }
+
+    /** /tupenter help expressions — the overview; the six subtopics are clickable rows. */
+    private static int runExpressionsOverview(CommandContext<FabricClientCommandSource> context) {
+        beginHelpPage();
+        helpLine("§bExpressions — $...$ evaluates before sending:");
+        helpLine("§7The rule:§r inside $...$ you're writing CODE, not command text — quotes say what it is (\"air\" = text, air = a variable), position says what it becomes.");
+        helpLine("§7Works everywhere:§r commands, chat, directives, custom command bodies, tick scripts. A bad $...$ shows a local error and sends NOTHING. \\$ = literal dollar.");
+        helpLine("§7Try it:§r /calc <expr> evaluates locally · /$ expr $ is top-down: numbers display, a string result RUNS as a fresh line");
+        helpLine(navRow("math", "arithmetic, exact fractions, stack suffix, rounding, trig", "/tupenter help expressions math"));
+        helpLine(navRow("text", "strings, joining, comparisons, strings that run", "/tupenter help expressions text"));
+        helpLine(navRow("logic", "booleans, conditions, ternary, #if", "/tupenter help expressions logic"));
+        helpLine(navRow("random", "rand, randf, pick, and re-roll rules", "/tupenter help expressions random"));
+        helpLine(navRow("lists", "range, len, registry sets, #foreach", "/tupenter help expressions lists"));
+        helpLine(navRow("world", "block(x,y,z) and reading your client's world copy", "/tupenter help expressions world"));
+        helpLine(navRow("functions", "the full function index — every one with its own page", "/tupenter help functions"));
+        helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
+        endHelpPage();
+        return 1;
     }
 
     private static int runHelpCommand(CommandContext<FabricClientCommandSource> context, String topic) {
+        if (topic.equals("index")) {
+            return runHelpIndex(context);
+        }
+        if (topic.equals("expressions")) {
+            return runExpressionsOverview(context);
+        }
         String[] lines = switch (topic) {
-            case "expressions" -> new String[]{
-                    "§bExpressions — $...$ evaluates before sending:",
-                    "§7The rule:§r inside $...$ you're writing CODE, not command text — quotes say what it is (\"air\" = text, air = a variable), position says what it becomes.",
-                    "§7Works everywhere:§r commands, chat, directives, custom command bodies, tick scripts. A bad $...$ shows a local error and sends NOTHING. \\$ = literal dollar.",
-                    "§7Try it:§r /calc <expr> evaluates locally · /$ expr $ is top-down: numbers display, a string result RUNS as a fresh line",
-                    "§7Go deeper — /tupenter help expressions <topic>:",
-                    "§7  math§r — arithmetic, exact fractions, stack suffix, rounding, trig",
-                    "§7  text§r — strings, joining, comparisons, strings that run",
-                    "§7  logic§r — booleans, conditions, ternary, #if",
-                    "§7  random§r — rand, randf, pick, and re-roll rules",
-                    "§7  lists§r — range, len, registry sets, #foreach",
-                    "§7  world§r — block(x,y,z) and reading your client's world copy",
-            };
             case "variables" -> new String[]{
                     "§bVariables — use anywhere as $name$:",
                     "§7Yours:§r #set x = 5 (session, cleared on join) · #set x += 1 (also -= *= /= %=) · #local x = 5 (this line only, silent) · $ around the name is optional · dotted groups allowed: #set hitlist.bob = \"wanted\"",
@@ -2538,21 +2572,12 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Errors report once and pause that script until edited (or re-enabled) · tick scripts never touch resend history and never print #set notices.",
                     "§7Panic:§r /tupenter abort — also flips the master toggle off",
             };
-            default -> new String[]{
-                    "§bTupenter help — pick a topic:",
-                    "§7/tupenter help expressions [topic]§r — the $...$ language: math, text, logic, random, lists, world",
-                    "§7/tupenter help functions§r — every function at a glance · /tupenter help <name> — any one in depth (help blockset)",
-                    "§7/tupenter help variables§r — #set, #local, client.*/world.*/nbt paths, groups",
-                    "§7/tupenter help flow§r — && chains, #repeat, #for, #foreach, #if/#elseif, #while",
-                    "§7/tupenter help prefixes§r — #silent, #norecord, #stage, /echo",
-                    "§7/tupenter help scripts§r — the every-tick Scripts tab",
-                    "§7/tupenter help command [name]§r — the mod's commands, with per-command detail pages",
-                    "§7/customcommand help§r — make your own commands (typed params, autocomplete)",
-                    "§7/customfunction help§r — write your own min()-style functions for expressions",
-                    "§7Quick taste:§r #set $x$ = rand(1,10) && /give @s stick $x$ && /echo got $x$!",
-            };
+            default -> null;
         };
-        return sendHelpPage(lines);
+        if (lines == null) {
+            return runHelpIndex(context);
+        }
+        return sendHelpPage(lines, runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
     }
 
     /** /tupenter help command [name] — brief overview, or one command in depth. */
@@ -2561,17 +2586,22 @@ public class TupenterModClient implements ClientModInitializer {
         if (name.startsWith("/")) {
             name = name.substring(1);
         }
+        if (name.equals("all") || name.equals("commands")) {
+            beginHelpPage();
+            helpLine("§bCommands Tupenter adds (all client-side) — click one for its page:");
+            helpLine(navRow("/tupenter", "running · abort · scripts · vars · var save/delete · dump · help", "/tupenter help command tupenter"));
+            helpLine(navRow("/customcommand", "add · update · remove · list — make your own commands", "/tupenter help command customcommand"));
+            helpLine(navRow("/customfunction", "add · update · remove · list — your own $name(...)$ expression functions", "/tupenter help command customfunction"));
+            helpLine(navRow("/echo <text>", "local-only output, &-colors, evaluates $...$", "/tupenter help command echo"));
+            helpLine(navRow("/echohud <text>", "same, on the action bar (auto-fades)", "/tupenter help command echohud"));
+            helpLine(navRow("/calc <expr>", "local calculator · /$ expr $ is the top-down shorthand", "/tupenter help command calc"));
+            helpLine(navRow("/unroll <line>", "dry-run debugger", "/tupenter help command unroll"));
+            helpLine("§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking");
+            helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
+            endHelpPage();
+            return 1;
+        }
         String[] lines = switch (name) {
-            case "all", "commands" -> new String[]{
-                    "§bCommands Tupenter adds (all client-side) — detail: /tupenter help command <name>:",
-                    "§7/tupenter§r — running · abort · scripts · vars · var save/delete · dump · help",
-                    "§7/customcommand§r — add · update · remove · list · make your own commands",
-                    "§7/customfunction§r — add · update · remove · list · your own $name(...)$ expression functions",
-                    "§7/echo <text>§r — local-only output, &-colors, evaluates $...$ · §7/echohud <text>§r — same, on the action bar (auto-fades)",
-                    "§7/calc <expr>§r · §7/$ expr $§r — local calculator / top-down shorthand",
-                    "§7/unroll <line>§r — dry-run debugger",
-                    "§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking",
-            };
             case "tupenter" -> new String[]{
                     "§b/tupenter — mod control:",
                     "§7running§r — armed tick scripts + running instances, each with an id and a clickable [abort]; §7running hud§r toggles the same list as an on-screen panel that survives chat spam",
@@ -2631,10 +2661,10 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Example: /unroll /blink 200 — see exactly what /blink would send.",
             };
             default -> new String[]{
-                    "§cNo command page for '" + rawName + "' — try: all, tupenter, customcommand, echo, echohud, calc, unroll",
+                    "§cNo command page for '" + rawName + "' — try: all, tupenter, customcommand, customfunction, echo, echohud, calc, unroll",
             };
         };
-        return sendHelpPage(lines);
+        return sendHelpPage(lines, runLink("« all commands", ChatFormatting.DARK_GRAY, "/tupenter help command"));
     }
 
     private static int runDumpCommand(CommandContext<FabricClientCommandSource> context, String which, String path) {
