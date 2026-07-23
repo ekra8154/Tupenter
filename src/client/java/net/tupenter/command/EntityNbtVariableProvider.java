@@ -251,12 +251,31 @@ public final class EntityNbtVariableProvider implements VariableProvider {
             return Value.of(string.value());
         }
         if (tag instanceof CompoundTag compound) {
-            throw new ExpressionException(fullName + " is a compound — pick a field: " + previewKeys(compound));
+            throw new ExpressionException(fullName + " is a compound — pick a field: " + previewKeys(compound)
+                    + " · or list its keys: " + keysHint(fullName));
         }
         if (tag instanceof CollectionTag list) {
-            throw new ExpressionException(fullName + " is a list with " + list.size() + " entries — index it, e.g. " + fullName + ".0");
+            throw new ExpressionException(fullName + " is a list with " + list.size() + " entries — index it, e.g. "
+                    + fullName + ".0 · or loop it: #foreach $i$ in " + keysHint(fullName));
         }
         throw new ExpressionException(fullName + ": unsupported value type " + tag.getClass().getSimpleName());
+    }
+
+    /**
+     * The keys(...) call that WOULD work, rebuilt from the dotted name that just
+     * failed. A compound or list has no value to hand back, and the next thing
+     * you want is almost always its members — so the dead end names its own way
+     * out instead of leaving you to translate the address by hand.
+     */
+    private static String keysHint(String fullName) {
+        String lower = fullName.toLowerCase(Locale.ROOT);
+        if (lower.startsWith(TARGET_PREFIX)) {
+            return "keys(\"target\", \"nbt." + fullName.substring(TARGET_PREFIX.length()) + "\")";
+        }
+        if (lower.startsWith(CLIENT_PREFIX)) {
+            return "keys(\"self\", \"nbt." + fullName.substring(CLIENT_PREFIX.length()) + "\")";
+        }
+        return "keys(selector, \"nbt.<path>\")"; // reached via entity(...), where the label isn't an address
     }
 
     private static String previewKeys(CompoundTag compound) {
