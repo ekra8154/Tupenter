@@ -191,9 +191,46 @@ class ExpressionEvaluatorTest {
                     default -> throw new ExpressionException("unknown slot field: " + field);
                 };
             }
+
+            // a mending+unbreaking chestplate; anything else is an absent path
+            @Override
+            public java.util.List<String> nbtKeys(String selector, String path) {
+                return switch (path) {
+                    case "nbt.equipment.chest.components.minecraft:enchantments" ->
+                            java.util.List.of("minecraft:mending", "minecraft:unbreaking");
+                    case "nbt.Inventory" -> java.util.List.of("0", "1", "2");
+                    default -> java.util.List.of(); // absent or scalar — "nothing here"
+                };
+            }
         };
         return new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE,
                 BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, access);
+    }
+
+    @Test
+    void keysBridgesNbtIntoTheListVocabulary() {
+        EvalContext ctx = entityCtx();
+        String enchants = "\"nbt.equipment.chest.components.minecraft:enchantments\"";
+
+        // the membership test that started this: a compound is not a list, its KEYS are
+        assertEquals("2", ExpressionEvaluator.evaluate(
+                "len(keys(\"self\", " + enchants + "))", ctx).displayString());
+        assertEquals("true", ExpressionEvaluator.evaluate(
+                "contains(keys(\"self\", " + enchants + "), \"minecraft:mending\")", ctx).displayString());
+        assertEquals("false", ExpressionEvaluator.evaluate(
+                "contains(keys(\"self\", " + enchants + "), \"minecraft:fortune\")", ctx).displayString());
+
+        // an NBT list yields indices, which is what makes it loopable at all
+        assertEquals("3", ExpressionEvaluator.evaluate("len(keys(\"self\", \"nbt.Inventory\"))", ctx).displayString());
+        assertEquals("0", ExpressionEvaluator.evaluate("nth(keys(\"self\", \"nbt.Inventory\"), 0)", ctx).displayString());
+
+        // absent path is an EMPTY list, not an error — an unenchanted item answers "none"
+        assertEquals("0", ExpressionEvaluator.evaluate("len(keys(\"self\", \"nbt.nope\"))", ctx).displayString());
+        assertEquals("false", ExpressionEvaluator.evaluate(
+                "contains(keys(\"self\", \"nbt.nope\"), \"anything\")", ctx).displayString());
+
+        assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("keys(\"self\")", ctx));
     }
 
     @Test

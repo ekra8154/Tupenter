@@ -33,6 +33,13 @@ public final class EntityAccessImpl implements EntityAccess {
         return EntityFields.read(EntityFields.resolve(selector), field);
     }
 
+    @Override
+    public List<String> nbtKeys(String selector, String path) {
+        // resolve() may throw MissingValueException (no crosshair entity, UUID
+        // out of range) — transient state, so a condition reads false
+        return EntityNbtVariableProvider.childAddresses(EntityFields.resolve(selector), path);
+    }
+
     /** The readable fields of a slot — shared with the client.slot.&lt;slot&gt;.&lt;field&gt; variable form. */
     public static final List<String> FIELDS = List.of("id", "count", "durability", "max_durability");
 

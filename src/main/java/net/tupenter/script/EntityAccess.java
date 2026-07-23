@@ -39,6 +39,11 @@ public interface EntityAccess {
         public Value slotField(String slot, String field) {
             throw new ExpressionException("slot(...) needs a live world");
         }
+
+        @Override
+        public List<String> nbtKeys(String selector, String path) {
+            throw new ExpressionException("keys(...) needs a live world");
+        }
     };
 
     /**
@@ -72,4 +77,17 @@ public interface EntityAccess {
 
     /** UUID of the nearest entity within {@code radius} blocks ({@code type} filter, null = any), or "miss". */
     String nearestUuid(double radius, String type);
+
+    /**
+     * The child ADDRESSES of an NBT node — a compound's keys, or a list's
+     * indices — so the rest of the list vocabulary (len, contains, nth,
+     * #foreach) reaches trees whose shape isn't known in advance: item
+     * components, enchantments, a mob's brain memories.
+     *
+     * <p>Addresses, not values: feed one back through {@link #entityField} to
+     * read it. An absent path yields an EMPTY list rather than throwing (an
+     * unenchanted item simply has no enchantments key), mirroring
+     * {@link #nearbyUuids} — so len/contains answer instead of aborting.
+     */
+    List<String> nbtKeys(String selector, String path);
 }

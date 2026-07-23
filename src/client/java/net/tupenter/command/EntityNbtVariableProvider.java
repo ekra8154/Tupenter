@@ -161,6 +161,50 @@ public final class EntityNbtVariableProvider implements VariableProvider {
         return toValue(walk(snapshot(entity), path, label), label);
     }
 
+    /**
+     * The child ADDRESSES of an NBT node: a compound's keys (sorted, canonical
+     * case) or a list's indices. Backs the {@code keys(selector, path)} function,
+     * which is how the list vocabulary — len, contains, nth, #foreach — reaches
+     * trees whose shape isn't known ahead of time (components, enchantments,
+     * Brain.memories).
+     *
+     * <p>An absent path or a scalar yields an EMPTY list rather than throwing:
+     * an unenchanted item genuinely has no minecraft:enchantments key, and the
+     * useful answer there is "nothing", not an aborted script. Same contract as
+     * the UUID finders.
+     */
+    public static List<String> childAddresses(Entity entity, String field) {
+        String key = field.trim();
+        String lower = key.toLowerCase(Locale.ROOT);
+        String path;
+        if (lower.equals("nbt")) {
+            path = ""; // the whole entity compound
+        } else if (lower.startsWith("nbt.")) {
+            path = key.substring("nbt.".length());
+        } else {
+            throw new ExpressionException("keys(...) reads the NBT tree — write the path as \"nbt.<path>\""
+                    + " (or \"nbt\" for the whole entity), e.g. keys(\"self\", \"nbt.equipment\")");
+        }
+
+        Tag tag;
+        try {
+            tag = walk(snapshot(entity), path, "keys(...)");
+        } catch (ExpressionException absent) {
+            return List.of(); // no such path — "nothing here", not a fault
+        }
+
+        List<String> out = new ArrayList<>();
+        if (tag instanceof CompoundTag compound) {
+            out.addAll(new java.util.TreeSet<>(compound.keySet()));
+        } else if (tag instanceof CollectionTag list) {
+            for (int i = 0; i < list.size(); i++) {
+                out.add(String.valueOf(i));
+            }
+        }
+        // a scalar has no children — an empty list, for the same reason
+        return List.copyOf(out);
+    }
+
     /** Walks dot-separated keys; numeric segments index into lists. */
     public static Tag walk(CompoundTag root, String path, String fullName) {
         Tag current = root;

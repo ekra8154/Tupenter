@@ -526,6 +526,7 @@ final class ExpressionEvaluator {
                 case "raycast" -> raycast(args);
                 case "raycast_block" -> raycastBlock(args);
                 case "entity" -> entityField(args);
+                case "keys" -> nbtKeys(args);
                 case "slot" -> slotField(args);
                 case "raycast_entity" -> entityRaycast(args);
                 case "entities" -> entitiesWithin(args);
@@ -1070,6 +1071,30 @@ final class ExpressionEvaluator {
                 }
             }
             return context.entities().entityField(selector, field);
+        }
+
+        /**
+         * keys(selector, path) — the child ADDRESSES of an NBT node: a compound's
+         * keys, a list's indices. The bridge from the NBT tree into the list
+         * vocabulary (len, contains, nth, #foreach), for compounds keyed by id
+         * whose members can't be known ahead of time — item components,
+         * enchantments, a mob's Brain.memories — and the only way to loop an NBT
+         * list at all.
+         *
+         * <p>Addresses, not values: feed one back through entity(...) to read it.
+         * Absent paths yield an empty list, so len/contains answer instead of
+         * aborting a tick script.
+         */
+        private Value nbtKeys(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("keys(selector, path) takes a selector (\"self\", \"target\", or a UUID) "
+                        + "and an NBT path, e.g. keys(\"self\", \"nbt.equipment.chest.components\")");
+            }
+            List<Value> out = new ArrayList<>();
+            for (String key : context.entities().nbtKeys(args.get(0).displayString(), args.get(1).displayString())) {
+                out.add(Value.of(key));
+            }
+            return new Value.ListValue(List.copyOf(out));
         }
 
         /**
