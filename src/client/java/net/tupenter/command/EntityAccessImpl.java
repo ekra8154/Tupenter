@@ -70,7 +70,7 @@ public final class EntityAccessImpl implements EntityAccess {
     public static net.minecraft.world.item.ItemStack stackAt(String slot) {
         LocalPlayer player = Minecraft.getInstance().player;
         if (player == null) {
-            throw new ExpressionException("slot_item(...) is only available in-game");
+            throw new ExpressionException("slot(...) is only available in-game");
         }
         int id;
         try {

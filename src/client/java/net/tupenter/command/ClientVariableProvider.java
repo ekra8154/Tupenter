@@ -47,7 +47,6 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.air", player -> Value.ofNumber(player.getAirSupply()));
         register("client.name", player -> Value.of(player.getName().getString()));
         register("client.dimension", player -> Value.of(player.level().dimension().location().toString()));
-        register("client.held_item", player -> Value.of(BuiltInRegistries.ITEM.getKey(player.getMainHandItem().getItem()).toString()));
 
         // movement + orientation
         register("client.speed", player -> {
@@ -116,8 +115,6 @@ public final class ClientVariableProvider implements VariableProvider {
         // "client.slot" read like a namespace root — that's now slot CONTENTS,
         // client.slot.<slot>.<field> (see SlotVariableProvider).
         register("client.selected_slot", player -> Value.ofNumber(player.getInventory().getSelectedSlot()));
-        register("client.offhand_item", player -> Value.of(
-                BuiltInRegistries.ITEM.getKey(player.getOffhandItem().getItem()).toString()));
 
         // connection/session
         register("client.gamemode", player -> Value.of(playerInfo(player).getGameMode().getName()));
@@ -148,27 +145,9 @@ public final class ClientVariableProvider implements VariableProvider {
 
         // riding
         register("client.riding", player -> Value.of(player.getVehicle() != null));
-        register("client.vehicle", player -> {
-            net.minecraft.world.entity.Entity vehicle = player.getVehicle();
-            if (vehicle == null) {
-                throw new MissingValueException("client.vehicle: not riding anything — check $client.riding$ first");
-            }
-            return Value.of(BuiltInRegistries.ENTITY_TYPE.getKey(vehicle.getType()).toString());
-        });
 
-        // held-item detail
-        register("client.held_count", player -> Value.ofNumber(player.getMainHandItem().getCount()));
-        register("client.offhand_count", player -> Value.ofNumber(player.getOffhandItem().getCount()));
         // 0 (not an error) for a non-damageable item — the same answer
         // client.slot.<slot>.durability gives, so the two never disagree.
-        register("client.held_durability", player -> {
-            net.minecraft.world.item.ItemStack stack = player.getMainHandItem();
-            return Value.ofNumber(stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : 0);
-        });
-        register("client.held_max_durability", player -> {
-            net.minecraft.world.item.ItemStack stack = player.getMainHandItem();
-            return Value.ofNumber(stack.isDamageableItem() ? stack.getMaxDamage() : 0);
-        });
     }
 
     private static double round2(double value) {

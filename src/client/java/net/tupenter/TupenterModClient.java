@@ -218,7 +218,7 @@ public class TupenterModClient implements ClientModInitializer {
         VARIABLE_REGISTRY.register(PLAYERS_VARIABLES);
         VARIABLE_REGISTRY.register(REAL_VARIABLES);
         VARIABLE_REGISTRY.register(new EntityNbtVariableProvider());
-        VARIABLE_REGISTRY.register(new net.tupenter.command.TargetVariableProvider());
+        VARIABLE_REGISTRY.register(new net.tupenter.command.EntitySubjectProvider());
         VARIABLE_REGISTRY.register(new net.tupenter.command.SlotVariableProvider());
     }
 
@@ -259,12 +259,15 @@ public class TupenterModClient implements ClientModInitializer {
         names.addAll(SESSION_VARIABLES.names());
         names.add("client.nbt.");
         names.add("client.target.");
+        names.add("client.vehicle.");
+        names.add("client.held.");
+        names.add("client.offhand.");
         names.add("client.slot.");
         // ...and once you're inside one, expand it: the live NBT tree one level
         // at a time, or the slot names / that slot's fields
         names.addAll(net.tupenter.command.EntityNbtVariableProvider.pathCompletions(typed));
         names.addAll(net.tupenter.command.SlotVariableProvider.completions(typed));
-        names.addAll(net.tupenter.command.TargetVariableProvider.completions(typed));
+        names.addAll(net.tupenter.command.EntitySubjectProvider.completions(typed));
         names.addAll(java.util.List.of(
                 "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
@@ -2266,16 +2269,18 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7On the right side§r you're already in expression world: #set x = x + 1 — bare names work; $x + 1$ works too ($...$ always evaluates its inside)",
                     "§7#setdefault x = 5§r sets x ONLY if it isn't already defined (session, saved, or live) — idempotent init, so a stateful custom command is a clean drop-in: #setdefault $frozen$ = false && #if $frozen$ (/tick unfreeze) #else (/tick freeze) && #set $frozen$ = !$frozen$",
                     "§7Persistent:§r /tupenter var save <name> keeps it forever (re-saving an unchanged value is a no-op) · /tupenter var delete <name> removes it · create-once-across-sessions: #setdefault $x$ = 0 && /tupenter var save $x$",
-                    "§7Built-in:§r $client.pos$ + $client.pos.x/y/z$ (precise) · $client.blockpos$ + .x/y/z (whole) · $client.health/held_item/target_block/target_hit...$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$ — target_hit = \"block\"/\"entity\"/\"miss\"; target_block errors on a miss (gate it with target_hit)",
+                    "§7Built-in:§r $client.pos$ + $client.pos.x/y/z$ (precise) · $client.blockpos$ + .x/y/z (whole) · $client.health$ · $client.held.id$ · $client.target.hit/type/blockpos$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$ — target.hit = \"block\"/\"entity\"/\"miss\"; the other target fields error on the wrong kind (gate with it)",
                     "§7Environment:§r $client.biome$ · $client.light / light_block / light_sky$ · $client.facing$ · $client.chunk_x/chunk_z$ · $world.spawn$ · $world.key$ (the per-world scripts id)",
                     "§7Movement:§r $client.speed$ (full 3D b/s) · $client.speed_xz$ (horizontal) · $client.motion$ (vec3 \"vx vy vz\" b/s) + $client.motion.x/y/z$ — motion.y is the signed vertical speed · booleans: on_ground, sneaking, sprinting, swimming, flying, gliding",
-                    "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · selected_slot (0-8, which hotbar slot is held), offhand_item, target_entity, target_uuid (the crosshair entity's UUID — an entity_nbt selector) · gamemode, ping, fps, uuid",
-                    "§7Hazards & held:§r in_water, underwater, in_lava, on_fire, fall_distance, eye_y · riding + vehicle · effects (a LIST — #foreach $e$ in client.effects works) · held_count, offhand_count, held_durability/held_max_durability (error on non-damageable — guard with held_item)",
+                    "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · selected_slot (0-8, which hotbar slot is held) · gamemode, ping, fps, uuid",
+                    "§7Hazards & effects:§r in_water, underwater, in_lava, on_fire, fall_distance · effects (a LIST — #foreach $e$ in client.effects works)",
+                    "§7Your hands:§r $client.held.<field>$ / $client.offhand.<field>$ — id, count, durability, max_durability. Named shorthands for client.slot.weapon.mainhand/offhand, same reader, so they can't disagree. Empty = \"empty\" and 0, never an error.",
+                    "§7What you're riding:§r $client.riding$ is the gate; $client.vehicle.<field>$ is the FULL entity vocabulary — type, uuid, name, health, pos, blockpos, nbt.<path> — the same fields client.target.* and entity(uuid, ...) use.",
                     "§7Keys (a script IS a keybind):§r $client.key.<name>$ = held now · $client.keypress.<name>$ = the tick it goes down. <name> is a bind (jump, sneak, attack, hotbar.1 — follows your controls + mods) OR a physical key (g, space, f6). Arrows are up_arrow/down_arrow/left_arrow/right_arrow (bare left/right = the strafe binds). All false while a screen is open. Pair with a tick script: restock = #if (client.keypress.g) (/tp @s $client.target_block$)",
                     "§7Everything else:§r $client.nbt.<any path>$ / $client.target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · TAB-COMPLETES the live tree one level at a time · browse with /tupenter dump",
-                    "§7Missing paths:§r NBT omits defaulted fields (an UNDAMAGED item has no minecraft:damage), so a plain read errors. Use the 3-arg form for a fallback: $entity_nbt(\"self\", \"equipment.chest.components.minecraft:damage\", 0)$ — also covers 'nothing equipped'.",
+                    "§7Missing paths:§r NBT omits defaulted fields (an UNDAMAGED item has no minecraft:damage), so a plain read errors. Use the 3-arg form for a fallback: $entity(\"self\", \"nbt.equipment.chest.components.minecraft:damage\", 0)$ — also covers 'nothing equipped'.",
                     "§7Your slots:§r $client.slot.<slot>.<field>$ — slot is an /item replace name (hotbar.0-8, inventory.0-26 where 0-8 is the TOP row, armor.head/chest/legs/feet, weapon.mainhand, weapon.offhand); field is id, count, durability, max_durability. Tab-completes both halves. e.g. $client.slot.inventory.8.id$ · $client.slot.armor.chest.durability$",
-                    "§7Dotted or function?§r Both read LIVE — the difference is the ADDRESS, not the value. Spell the address out and it's a dotted variable ($client.slot.inventory.8.id$); COMPUTE the address and it's a function (slot(\"inventory.\" + i, \"id\") inside a #for). Same split as $client.nbt.<path>$ vs entity_nbt(selector, path). Dotted forms are exactly the ones whose addresses can be enumerated — which is why they tab-complete and functions can't. Empty = \"empty\" and 0, never an error.",
+                    "§7Dotted or function?§r Both read LIVE — the difference is the ADDRESS, not the value. Spell the address out and it's a dotted variable ($client.slot.inventory.8.id$); COMPUTE the address and it's a function (slot(\"inventory.\" + i, \"id\") inside a #for). Same split as $client.<field>$ vs entity(selector, field). Dotted forms are exactly the ones whose addresses can be enumerated — which is why they tab-complete and functions can't. Empty = \"empty\" and 0, never an error.",
                     "§7Not client.nbt.Inventory:§r that's the SAVE format — a compacted list of non-empty stacks with a Slot field, so Inventory.0 is 'my first stack', not slot 0. Use the slot forms above.",
                     "§7One vocabulary, three subjects:§r the SAME fields work on you, your crosshair, and any entity — $client.health$ · $client.target.health$ · $entity(uuid, \"health\")$. Fields: type, uuid, name, health, pos, blockpos, nbt.<path>. Swapping subject changes only the subject.",
                     "§7Finding UUIDs:§r raycast_entity(dist) = UUID you're aiming at (or \"miss\") · entities(radius[, type]) = LIST of nearby UUIDs for #foreach · nearest_entity(radius[, type]) = closest UUID (or \"miss\") · $client.target.uuid$ = crosshair entity. Chain them: $entity(raycast_entity(30), \"health\")$",

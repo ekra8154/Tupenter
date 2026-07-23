@@ -155,7 +155,7 @@ public final class EntityNbtVariableProvider implements VariableProvider {
     /**
      * Read one NBT value out of a given entity — the shared path used by both the
      * client.nbt / client.target.nbt variables and the entity(...) function.
-     * {@code label} names the source in error messages (e.g. "entity_nbt").
+     * {@code label} names the source in error messages (e.g. "nbt.").
      */
     public static Value read(Entity entity, String path, String label) {
         return toValue(walk(snapshot(entity), path, label), label);

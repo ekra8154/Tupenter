@@ -2,6 +2,7 @@ package net.tupenter.command;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.tupenter.script.MissingValueException;
@@ -15,20 +16,26 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * {@code client.target.<field>} — what your crosshair found.
+ * Entity SUBJECTS picked by live state, each behind a gate:
  *
- * <p>ENTITY fields (type, uuid, name, health, pos, nbt.&lt;path&gt;) are the same
- * vocabulary as {@code client.<field>} and {@code entity(uuid, "<field>")}, and
- * route through {@link EntityFields} — so learning one subject teaches the rest
- * and the three spellings can't disagree.
+ * <ul>
+ *   <li>{@code client.target.<field>} — what your crosshair found ({@code client.target.hit})</li>
+ *   <li>{@code client.vehicle.<field>} — what you're riding ({@code client.riding})</li>
+ * </ul>
  *
- * <p>BLOCK fields are target-only and named for it: {@code block} (the id) and
- * {@code blockpos} (the position, + .x/.y/.z). {@code hit} says which kind you
- * actually found — "block", "entity", or "miss" — and the other fields error
- * when the hit is the wrong kind, so gate with it.
+ * <p>Both speak the shared field vocabulary via {@link EntityFields}, the same
+ * one {@code client.<field>} and {@code entity(uuid, "<field>")} use — so
+ * swapping subject changes only the subject. An absent subject raises
+ * {@link MissingValueException}, which an #if/#while condition reads as false,
+ * so a polling script skips quietly instead of erroring.
+ *
+ * <p>The target also has BLOCK fields, named for it: {@code block} (the id) and
+ * {@code blockpos} (the position, + .x/.y/.z). Those error on an entity hit, and
+ * the entity fields error on a block hit — {@code hit} says which you have.
  */
-public final class TargetVariableProvider implements VariableProvider {
-    private static final String PREFIX = "client.target.";
+public final class EntitySubjectProvider implements VariableProvider {
+    private static final String TARGET = "client.target.";
+    private static final String VEHICLE = "client.vehicle.";
 
     /** Fields only a targeted BLOCK has. */
     private static final List<String> BLOCK_FIELDS = List.of("hit", "block", "blockpos");
@@ -42,13 +49,20 @@ public final class TargetVariableProvider implements VariableProvider {
     public Optional<Value> resolve(String name) {
         String lower = name.toLowerCase(Locale.ROOT);
         if (lower.equals("client.target")) {
-            throw new MissingValueException("client.target needs a field — hit, type, uuid, name, health, pos, "
-                    + "block, blockpos, or nbt.<path> (e.g. $client.target.type$)");
+            throw new MissingValueException("client.target needs a field — hit, block, blockpos, type, uuid, "
+                    + "name, health, pos, or nbt.<path> (e.g. $client.target.type$)");
         }
-        if (!lower.startsWith(PREFIX)) {
+        if (lower.equals("client.vehicle")) {
+            throw new MissingValueException("client.vehicle needs a field — type, uuid, name, health, pos, "
+                    + "blockpos, or nbt.<path> (e.g. $client.vehicle.type$); check $client.riding$ first");
+        }
+        if (lower.startsWith(VEHICLE)) {
+            return Optional.of(EntityFields.read(vehicle(), name.substring(VEHICLE.length())));
+        }
+        if (!lower.startsWith(TARGET)) {
             return Optional.empty();
         }
-        String field = name.substring(PREFIX.length());
+        String field = name.substring(TARGET.length());
         return Optional.of(switch (field.toLowerCase(Locale.ROOT)) {
             case "hit" -> Value.of(hitKind());
             case "block" -> Value.of(blockIdAt(targetBlockPos()));
@@ -62,6 +76,16 @@ public final class TargetVariableProvider implements VariableProvider {
             // everything else is an ENTITY field — shared with client.* and entity(...)
             default -> EntityFields.read(EntityNbtVariableProvider.targetEntity(), field);
         });
+    }
+
+    /** The entity you're riding, or absent — {@code client.riding} is the gate. */
+    private static Entity vehicle() {
+        net.minecraft.client.player.LocalPlayer player = Minecraft.getInstance().player;
+        Entity vehicle = player == null ? null : player.getVehicle();
+        if (vehicle == null) {
+            throw new MissingValueException("client.vehicle: not riding anything — check $client.riding$ first");
+        }
+        return vehicle;
     }
 
     /** "block", "entity", or "miss" — what the crosshair ray actually found. */
@@ -89,17 +113,24 @@ public final class TargetVariableProvider implements VariableProvider {
                 .getKey(Minecraft.getInstance().level.getBlockState(pos).getBlock()).toString();
     }
 
-    /** Tab-completion for client.target.* — block fields plus the shared entity fields. */
+    /** Tab-completion for client.target.* / client.vehicle.* */
     public static List<String> completions(String prefix) {
-        if (!prefix.toLowerCase(Locale.ROOT).startsWith(PREFIX)) {
+        String lower = prefix.toLowerCase(Locale.ROOT);
+        List<String> out = new ArrayList<>();
+        if (lower.startsWith(VEHICLE)) {
+            for (String field : EntityFields.FIELDS) {
+                out.add(VEHICLE + field);
+            }
+            return out;
+        }
+        if (!lower.startsWith(TARGET)) {
             return List.of();
         }
-        List<String> out = new ArrayList<>();
         for (String field : BLOCK_FIELDS) {
-            out.add(PREFIX + field);
+            out.add(TARGET + field);
         }
         for (String field : EntityFields.FIELDS) {
-            out.add(PREFIX + field);
+            out.add(TARGET + field);
         }
         return out;
     }

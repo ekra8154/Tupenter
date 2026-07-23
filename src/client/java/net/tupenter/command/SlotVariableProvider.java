@@ -27,6 +27,16 @@ import java.util.Set;
 public final class SlotVariableProvider implements VariableProvider {
     private static final String PREFIX = "client.slot.";
 
+    /**
+     * Named shorthands for the two slots you reach for constantly. They resolve
+     * through the SAME reader as client.slot.weapon.*, so they're aliases in the
+     * literal sense — one implementation, nothing to drift. (client.held_item and
+     * friends used to be a second implementation, which is how held_durability
+     * and the slot form came to disagree on non-damageable items.)
+     */
+    private static final String HELD = "client.held.";
+    private static final String OFFHAND = "client.offhand.";
+
     private static final List<String> FIELDS = EntityAccessImpl.FIELDS;
 
     /** Slot names offered by tab-complete. SlotArgument stays the authority for what actually parses. */
@@ -46,6 +56,16 @@ public final class SlotVariableProvider implements VariableProvider {
             throw new ExpressionException("client.slot split in two: $client.selected_slot$ is which hotbar slot "
                     + "you have selected (0-8); slot CONTENTS are client.slot.<slot>.<field>, "
                     + "e.g. client.slot.inventory.8.id");
+        }
+        if (lower.equals("client.held") || lower.equals("client.offhand")) {
+            throw new ExpressionException(lower + " needs a field — " + String.join(", ", FIELDS)
+                    + " (e.g. $" + lower + ".id$)");
+        }
+        if (lower.startsWith(HELD)) {
+            return Optional.of(EntityAccessImpl.readField("weapon.mainhand", lower.substring(HELD.length())));
+        }
+        if (lower.startsWith(OFFHAND)) {
+            return Optional.of(EntityAccessImpl.readField("weapon.offhand", lower.substring(OFFHAND.length())));
         }
         if (!lower.startsWith(PREFIX)) {
             return Optional.empty();
@@ -69,6 +89,15 @@ public final class SlotVariableProvider implements VariableProvider {
      */
     public static List<String> completions(String prefix) {
         String lower = prefix.toLowerCase(Locale.ROOT);
+        for (String shorthand : new String[]{HELD, OFFHAND}) {
+            if (lower.startsWith(shorthand)) {
+                List<String> fields = new ArrayList<>();
+                for (String field : FIELDS) {
+                    fields.add(shorthand + field);
+                }
+                return fields;
+            }
+        }
         if (!lower.startsWith(PREFIX)) {
             return List.of();
         }
