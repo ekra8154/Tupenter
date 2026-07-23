@@ -27,7 +27,7 @@ public interface EntityAccess {
 
         @Override
         public String raycastUuid(double maxDist) {
-            throw new ExpressionException("entity_raycast(...) needs a live world");
+            throw new ExpressionException("raycast_entity(...) needs a live world");
         }
 
         @Override

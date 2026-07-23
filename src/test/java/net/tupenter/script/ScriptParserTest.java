@@ -360,13 +360,13 @@ class ScriptParserTest {
     }
 
     @Test
-    void posParamsResolveTildesAndBindComponents() {
+    void blockposParamsResolveTildesAndBindComponents() {
         SessionVariableStore store = new SessionVariableStore();
-        store.set("client.bx", Value.ofNumber(100));
-        store.set("client.by", Value.ofNumber(64));
-        store.set("client.bz", Value.ofNumber(-8));
+        store.set("client.blockpos.x", Value.ofNumber(100));
+        store.set("client.blockpos.y", Value.ofNumber(64));
+        store.set("client.blockpos.z", Value.ofNumber(-8));
         Map<String, String> aliases = Map.of("portal",
-                "<p:pos> <dim:to_overworld,to_nether> /say $dim$: $floor(dim == \"to_nether\" ? p.x/8 : p.x*8)$ $p.y$ at $p$");
+                "<p:blockpos> <dim:to_overworld,to_nether> /say $dim$: $floor(dim == \"to_nether\" ? p.x/8 : p.x*8)$ $p.y$ at $p$");
 
         ScriptParser.ParseResult absolute = ScriptParser.parse("portal 64 64 64 to_nether", options(aliases, store));
         assertNull(absolute.error());
@@ -378,9 +378,9 @@ class ScriptParserTest {
     }
 
     @Test
-    void posParamRejectsBadCoordinates() {
+    void blockposParamRejectsBadCoordinates() {
         SessionVariableStore store = new SessionVariableStore();
-        Map<String, String> aliases = Map.of("here", "<p:pos> /say $p$");
+        Map<String, String> aliases = Map.of("here", "<p:blockpos> /say $p$");
         assertNotNull(ScriptParser.parse("here 1 2", options(aliases, store)).error());
         assertNotNull(ScriptParser.parse("here ^ ^ ^", options(aliases, store)).error());
         assertNotNull(ScriptParser.parse("here a b c", options(aliases, store)).error());
@@ -391,9 +391,9 @@ class ScriptParserTest {
     @Test
     void vec3ParamKeepsDecimalsAndResolvesTildes() {
         SessionVariableStore store = new SessionVariableStore();
-        store.set("client.x", Value.ofNumber("100.5"));
-        store.set("client.y", Value.ofNumber(64));
-        store.set("client.z", Value.ofNumber("-8.25"));
+        store.set("client.pos.x", Value.ofNumber("100.5"));
+        store.set("client.pos.y", Value.ofNumber(64));
+        store.set("client.pos.z", Value.ofNumber("-8.25"));
         Map<String, String> aliases = Map.of("hop", "<p:vec3> /say tp $p$ mid $p.y + 0.5$");
 
         ScriptParser.ParseResult absolute = ScriptParser.parse("hop 1.5 70 -2", options(aliases, store));
@@ -403,6 +403,44 @@ class ScriptParserTest {
         ScriptParser.ParseResult relative = ScriptParser.parse("hop ~ ~0.5 ~-1", options(aliases, store));
         assertNull(relative.error());
         assertEquals(List.of("say tp 100.5 64.5 -9.25 mid 65"), contents(relative));
+    }
+
+    @Test
+    void posIsDecimalAndBlockposIsWhole() {
+        // the rename flipped what "pos" means — pos is now precise (Vec3Argument),
+        // blockpos is whole (BlockPosArgument), and each resolves ~ against its own
+        // base variable. Getting the base names wrong compiles fine and only fails
+        // here, which is exactly why this test exists.
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.pos.x", Value.ofNumber("100.5"));
+        store.set("client.pos.y", Value.ofNumber("64.25"));
+        store.set("client.pos.z", Value.ofNumber("-8.75"));
+        store.set("client.blockpos.x", Value.ofNumber(100));
+        store.set("client.blockpos.y", Value.ofNumber(64));
+        store.set("client.blockpos.z", Value.ofNumber(-9));
+        Map<String, String> aliases = Map.of(
+                "p", "<v:pos> /say $v$",
+                "b", "<v:blockpos> /say $v$");
+
+        // pos keeps decimals, and ~ resolves against the PRECISE position
+        assertEquals(List.of("say 1.5 2.25 3"), contents(ScriptParser.parse("p 1.5 2.25 3", options(aliases, store))));
+        assertEquals(List.of("say 100.5 64.25 -8.75"), contents(ScriptParser.parse("p ~ ~ ~", options(aliases, store))));
+
+        // blockpos requires whole numbers, and ~ resolves against the BLOCK position
+        assertEquals(List.of("say 1 2 3"), contents(ScriptParser.parse("b 1 2 3", options(aliases, store))));
+        assertEquals(List.of("say 100 64 -9"), contents(ScriptParser.parse("b ~ ~ ~", options(aliases, store))));
+        assertNotNull(ScriptParser.parse("b 1.5 2 3", options(aliases, store)).error(), "blockpos must reject decimals");
+    }
+
+    @Test
+    void vec3IsASynonymForPos() {
+        SessionVariableStore store = new SessionVariableStore();
+        assertEquals(AliasDefinition.ParamType.POS,
+                AliasDefinition.parse("<a:vec3> /say $a$").params().get(0).type());
+        assertEquals(AliasDefinition.ParamType.POS,
+                AliasDefinition.parse("<a:pos> /say $a$").params().get(0).type());
+        assertEquals(AliasDefinition.ParamType.BLOCKPOS,
+                AliasDefinition.parse("<a:blockpos> /say $a$").params().get(0).type());
     }
 
     @Test
@@ -425,8 +463,8 @@ class ScriptParserTest {
     @Test
     void columnPosParamBindsTwoWholeCoordinates() {
         SessionVariableStore store = new SessionVariableStore();
-        store.set("client.bx", Value.ofNumber(100));
-        store.set("client.bz", Value.ofNumber(-8));
+        store.set("client.blockpos.x", Value.ofNumber(100));
+        store.set("client.blockpos.z", Value.ofNumber(-8));
         Map<String, String> aliases = Map.of("chunkat", "<c:column_pos> /say column $c$ x $c.x$ z $c.z$");
 
         ScriptParser.ParseResult relative = ScriptParser.parse("chunkat ~4 ~", options(aliases, store));
@@ -594,7 +632,7 @@ class ScriptParserTest {
     }
 
     private static final String RANDOMFILL_BODY =
-            "<a:pos> <b:pos> <set:blockset> <filter:blockset=any> #silent #local choices = blockset(set) && "
+            "<a:blockpos> <b:blockpos> <set:blockset> <filter:blockset=any> #silent #local choices = blockset(set) && "
             + "#for $x$ in a.x..b.x (#for $y$ in a.y..b.y (#for $z$ in a.z..b.z "
             + "(#if (filter == \"any\") (/setblock $x$ $y$ $z$ $rand(choices)$) "
             + "#else (#if (contains(blockset(filter), block($x$, $y$, $z$))) (/setblock $x$ $y$ $z$ $rand(choices)$)))))";
@@ -639,7 +677,7 @@ class ScriptParserTest {
     // the player moves during lazy streaming. block-or-group random per spot,
     // optional replace filter — the same recipe as randomfill, on a disc.
     private static final String CIRCLE_BODY =
-            "<center:pos=~ ~ ~> <radius:int> <set:blockset> <replacing:blockset=any> "
+            "<center:blockpos=~ ~ ~> <radius:int> <set:blockset> <replacing:blockset=any> "
             + "#silent #local choices = blockset(set) && "
             + "#foreach $dx$ in range(-radius, radius) (#foreach $dz$ in range(-radius, radius) "
             + "(#if (dx*dx + dz*dz <= radius*radius) (#if (replacing == \"any\") "
@@ -669,12 +707,12 @@ class ScriptParserTest {
                 true, true, true, true, 100, 1000, new Random(42), store, store, circleTags(), blocks, FunctionResolver.NONE, false);
     }
 
-    /** Circle options whose ~ resolves to a fixed player block position (client.bx/by/bz). */
+    /** Circle options whose ~ resolves to a fixed player block position (client.blockpos.x/y/z). */
     private static ScriptParser.Options circleOptionsAnchored(BlockReader blocks, long bx, long by, long bz) {
         SessionVariableStore store = new SessionVariableStore();
-        store.set("client.bx", Value.ofNumber(bx));
-        store.set("client.by", Value.ofNumber(by));
-        store.set("client.bz", Value.ofNumber(bz));
+        store.set("client.blockpos.x", Value.ofNumber(bx));
+        store.set("client.blockpos.y", Value.ofNumber(by));
+        store.set("client.blockpos.z", Value.ofNumber(bz));
         return new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, aliasMap(Map.of("circle", CIRCLE_BODY)),
                 true, true, true, true, 100, 1000, new Random(42), store, store, circleTags(), blocks, FunctionResolver.NONE, false);
     }
@@ -779,12 +817,12 @@ class ScriptParserTest {
     @Test
     void optionalParamsUseDefaultsAndCanBeSkipped() {
         SessionVariableStore store = new SessionVariableStore();
-        store.set("client.bx", Value.ofNumber(100));
-        store.set("client.by", Value.ofNumber(64));
-        store.set("client.bz", Value.ofNumber(-8));
+        store.set("client.blockpos.x", Value.ofNumber(100));
+        store.set("client.blockpos.y", Value.ofNumber(64));
+        store.set("client.blockpos.z", Value.ofNumber(-8));
         store.set("client.dimension", Value.of("minecraft:overworld"));
         Map<String, String> aliases = Map.of("portal",
-                "<p:pos=~ ~ ~> <dim:to_overworld,to_nether=$client.dimension == \"minecraft:the_nether\" ? \"to_overworld\" : \"to_nether\"$> /say $dim$ $p$");
+                "<p:blockpos=~ ~ ~> <dim:to_overworld,to_nether=$client.dimension == \"minecraft:the_nether\" ? \"to_overworld\" : \"to_nether\"$> /say $dim$ $p$");
 
         // everything omitted: pos = where you stand, dim = the opposite dimension
         assertEquals(List.of("say to_nether 100 64 -8"), contents(ScriptParser.parse("portal", options(aliases, store))));

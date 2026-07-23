@@ -179,14 +179,14 @@ class ExpressionEvaluatorTest {
         assertEquals("minecraft:zombie", ExpressionEvaluator.evaluate("entity_type(\"target\")", ctx).displayString());
         // the exact "what am I aiming at" composition
         assertEquals("minecraft:zombie",
-                ExpressionEvaluator.evaluate("entity_type(entity_raycast(30))", ctx).displayString());
+                ExpressionEvaluator.evaluate("entity_type(raycast_entity(30))", ctx).displayString());
     }
 
     @Test
     void entityRaycastReturnsUuidOrMiss() {
         EvalContext ctx = entityCtx();
-        assertEquals("uuid-hit", ExpressionEvaluator.evaluate("entity_raycast(30)", ctx).displayString());
-        assertEquals("miss", ExpressionEvaluator.evaluate("entity_raycast(2)", ctx).displayString());
+        assertEquals("uuid-hit", ExpressionEvaluator.evaluate("raycast_entity(30)", ctx).displayString());
+        assertEquals("miss", ExpressionEvaluator.evaluate("raycast_entity(2)", ctx).displayString());
     }
 
     @Test
@@ -216,7 +216,7 @@ class ExpressionEvaluatorTest {
     void entityFunctionsWithoutAWorldError() {
         // the default EntityAccess.NONE (no live world) throws, not returns a bogus value
         assertThrows(ExpressionException.class, () -> eval("entity_nbt(\"self\", \"Health\")"));
-        assertThrows(ExpressionException.class, () -> eval("entity_raycast(10)"));
+        assertThrows(ExpressionException.class, () -> eval("raycast_entity(10)"));
         assertThrows(ExpressionException.class, () -> eval("entities(8)"));
     }
 

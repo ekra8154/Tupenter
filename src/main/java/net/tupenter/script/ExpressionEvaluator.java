@@ -503,7 +503,7 @@ final class ExpressionEvaluator {
                         single(args, "slot_count").displayString()));
                 case "slot_durability" -> Value.ofNumber(context.entities().slotDurability(
                         single(args, "slot_durability").displayString()));
-                case "entity_raycast" -> entityRaycast(args);
+                case "raycast_entity" -> entityRaycast(args);
                 case "entities" -> entitiesWithin(args);
                 case "nearest_entity" -> nearestEntity(args);
                 default -> {
@@ -1034,7 +1034,7 @@ final class ExpressionEvaluator {
          * a selector picks ("self", "target", or a UUID). The counterpart to
          * entity_nbt for the one field NBT can't give you: the client stores
          * entities without their "id" tag, so entity_nbt(uuid, "id") has nothing
-         * to read. entity_type(entity_raycast(100)) names what you're aiming at.
+         * to read. entity_type(raycast_entity(100)) names what you're aiming at.
          */
         private Value entityType(List<Value> args) {
             String selector = single(args, "entity_type").displayString();
@@ -1042,13 +1042,13 @@ final class ExpressionEvaluator {
         }
 
         /**
-         * entity_raycast(dist) — cast from the player's eyes along their look up
+         * raycast_entity(dist) — cast from the player's eyes along their look up
          * to dist blocks and yield the UUID of the first entity hit, or the
          * "miss" sentinel (so it gates with == "miss", like raycast). Feed the
-         * UUID straight to entity_nbt: entity_nbt(entity_raycast(30), "Health").
+         * UUID straight to entity_nbt: entity_nbt(raycast_entity(30), "Health").
          */
         private Value entityRaycast(List<Value> args) {
-            double dist = asNumber(single(args, "entity_raycast"), "entity_raycast(dist)").doubleValue();
+            double dist = asNumber(single(args, "raycast_entity"), "raycast_entity(dist)").doubleValue();
             return Value.of(context.entities().raycastUuid(dist));
         }
 

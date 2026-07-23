@@ -134,7 +134,7 @@ public final class UserFunctions {
     /** Binds one arg value to its param name. Tuple types (vec3/pos/...) also bind .x/.y/.z accessors. */
     private static void bindParam(AliasDefinition.Param param, Value arg, Map<String, Value> bindings) {
         switch (param.type()) {
-            case POS, VEC3 -> bindTuple(param.name(), arg, new String[]{"x", "y", "z"}, bindings);
+            case POS, BLOCKPOS -> bindTuple(param.name(), arg, new String[]{"x", "y", "z"}, bindings);
             case COLUMN_POS -> bindTuple(param.name(), arg, new String[]{"x", "z"}, bindings);
             case ROTATION -> bindTuple(param.name(), arg, new String[]{"yaw", "pitch"}, bindings);
             // everything else binds as-is; the body's expression coerces numbers/strings as needed

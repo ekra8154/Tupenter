@@ -48,8 +48,12 @@ public record AliasDefinition(String body, List<Param> params, String descriptio
         PLAYER,   // word + online-player suggestions in the command UI
         SELECTOR, // entity selector, validated + tab-completed, no quotes needed
         CHOICE,   // fixed set of options: <dim:to_overworld,to_nether>
-        POS,      // block position: three whole coords, ~ supported, targeted-block autocomplete
-        VEC3,     // precise position: three decimal coords, ~ supported
+        // "pos" is PRECISE and "blockpos" is WHOLE, matching Mojang
+        // (Entity.position() -> Vec3, Entity.blockPosition() -> BlockPos) and the
+        // client.pos / client.blockpos variables. "vec3" is a keyword synonym of
+        // pos — the honest word for a direction vector like client.look.
+        POS,      // precise position: three decimal coords, ~ supported
+        BLOCKPOS, // block position: three whole coords, ~ supported, targeted-block autocomplete
         COLUMN_POS, // x z column: two whole coords, ~ supported
         ROTATION, // yaw pitch: two decimal coords, ~ supported
         ANGLE,    // single yaw angle, ~ supported
@@ -73,8 +77,8 @@ public record AliasDefinition(String body, List<Param> params, String descriptio
                 case "text" -> TEXT;
                 case "player" -> PLAYER;
                 case "selector" -> SELECTOR;
-                case "pos" -> POS;
-                case "vec3" -> VEC3;
+                case "pos", "vec3" -> POS;
+                case "blockpos", "block_pos" -> BLOCKPOS;
                 case "column_pos", "column" -> COLUMN_POS;
                 case "rotation" -> ROTATION;
                 case "angle" -> ANGLE;
@@ -89,7 +93,7 @@ public record AliasDefinition(String body, List<Param> params, String descriptio
                 case "entity" -> ENTITY;
                 case "bool", "boolean" -> BOOL;
                 default -> throw new IllegalArgumentException("Unknown parameter type '" + keyword
-                        + "' — use int, float, string, word, text, player, selector, pos, vec3, column_pos, rotation, angle, time, dimension, color, id, item, block, itemset, blockset, entity, or bool");
+                        + "' — use int, float, string, word, text, player, selector, pos (decimal), blockpos (whole), vec3, column_pos, rotation, angle, time, dimension, color, id, item, block, itemset, blockset, entity, or bool");
             };
         }
     }

@@ -1077,17 +1077,23 @@ public final class ScriptParser {
         /** Binds one param from the front of {@code rest}; returns the remaining argument text. */
         private String bindOne(AliasDefinition.Param param, int index, String rest, Map<String, Value> bindings, String usage) {
             switch (param.type()) {
+                // NOTE: the ~ base coordinates are resolved BY NAME through the
+                // VariableProvider at runtime, so these strings must track the
+                // client.pos / client.blockpos variables — a mismatch compiles
+                // fine and only fails in-game as "Unknown variable".
                 case POS -> {
                     return bindCoordinateParam(param, index, rest, bindings, usage,
-                            new String[]{"x", "y", "z"}, new String[]{"client.bx", "client.by", "client.bz"}, true);
+                            new String[]{"x", "y", "z"},
+                            new String[]{"client.pos.x", "client.pos.y", "client.pos.z"}, false);
                 }
-                case VEC3 -> {
+                case BLOCKPOS -> {
                     return bindCoordinateParam(param, index, rest, bindings, usage,
-                            new String[]{"x", "y", "z"}, new String[]{"client.x", "client.y", "client.z"}, false);
+                            new String[]{"x", "y", "z"},
+                            new String[]{"client.blockpos.x", "client.blockpos.y", "client.blockpos.z"}, true);
                 }
                 case COLUMN_POS -> {
                     return bindCoordinateParam(param, index, rest, bindings, usage,
-                            new String[]{"x", "z"}, new String[]{"client.bx", "client.bz"}, true);
+                            new String[]{"x", "z"}, new String[]{"client.blockpos.x", "client.blockpos.z"}, true);
                 }
                 case ROTATION -> {
                     return bindCoordinateParam(param, index, rest, bindings, usage,

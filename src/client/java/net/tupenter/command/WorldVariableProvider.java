@@ -32,6 +32,9 @@ public final class WorldVariableProvider implements VariableProvider {
             net.minecraft.core.BlockPos pos = level.getLevelData().getRespawnData().pos();
             return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
         });
+        register("world.spawn.x", level -> Value.ofNumber(level.getLevelData().getRespawnData().pos().getX()));
+        register("world.spawn.y", level -> Value.ofNumber(level.getLevelData().getRespawnData().pos().getY()));
+        register("world.spawn.z", level -> Value.ofNumber(level.getLevelData().getRespawnData().pos().getZ()));
         register("world.time_total", level -> Value.ofNumber(level.getGameTime())); // total ticks, never wraps
         register("world.min_y", level -> Value.ofNumber(level.getMinY()));
         register("world.max_y", level -> Value.ofNumber(level.getMaxY()));

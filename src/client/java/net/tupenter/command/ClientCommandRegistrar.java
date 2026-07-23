@@ -134,7 +134,7 @@ public final class ClientCommandRegistrar {
             return strict; // greedy — already accepts $...$ arguments
         }
         int tokens = switch (type) {
-            case POS, VEC3 -> 3;
+            case POS, BLOCKPOS -> 3;
             case COLUMN_POS, ROTATION -> 2;
             default -> 1;
         };
@@ -151,8 +151,8 @@ public final class ClientCommandRegistrar {
             case TEXT -> StringArgumentType.greedyString();
             case WORD, PLAYER, CHOICE -> StringArgumentType.word();
             case SELECTOR -> EntityArgument.entities();
-            case POS -> BlockPosArgument.blockPos(); // ~ support + targeted-block suggestions
-            case VEC3 -> Vec3Argument.vec3();
+            case BLOCKPOS -> BlockPosArgument.blockPos(); // whole coords, ~ support + targeted-block suggestions
+            case POS -> Vec3Argument.vec3(); // decimal coords, ~ support
             case COLUMN_POS -> ColumnPosArgument.columnPos();
             case ROTATION -> RotationArgument.rotation();
             case ANGLE -> AngleArgument.angle();

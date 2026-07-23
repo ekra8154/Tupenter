@@ -25,12 +25,21 @@ public final class ClientVariableProvider implements VariableProvider {
     private final Map<String, Function<LocalPlayer, Value>> variables = new LinkedHashMap<>();
 
     public ClientVariableProvider() {
-        register("client.x", player -> Value.ofNumber(player.getX()));
-        register("client.y", player -> Value.ofNumber(player.getY()));
-        register("client.z", player -> Value.ofNumber(player.getZ()));
-        register("client.bx", player -> Value.ofNumber(player.blockPosition().getX()));
-        register("client.by", player -> Value.ofNumber(player.blockPosition().getY()));
-        register("client.bz", player -> Value.ofNumber(player.blockPosition().getZ()));
+        // Two coordinate SPACES, one shape each — matching Mojang's
+        // position() -> Vec3 (precise) and blockPosition() -> BlockPos (whole).
+        // Components hang off the vec, so there's no parallel scalar vocabulary.
+        register("client.pos", player -> Value.of(
+                round2(player.getX()) + " " + round2(player.getY()) + " " + round2(player.getZ())));
+        register("client.pos.x", player -> Value.ofNumber(player.getX()));
+        register("client.pos.y", player -> Value.ofNumber(player.getY()));
+        register("client.pos.z", player -> Value.ofNumber(player.getZ()));
+        register("client.blockpos", player -> {
+            BlockPos pos = player.blockPosition();
+            return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
+        });
+        register("client.blockpos.x", player -> Value.ofNumber(player.blockPosition().getX()));
+        register("client.blockpos.y", player -> Value.ofNumber(player.blockPosition().getY()));
+        register("client.blockpos.z", player -> Value.ofNumber(player.blockPosition().getZ()));
         register("client.yaw", player -> Value.ofNumber(player.getYRot()));
         register("client.pitch", player -> Value.ofNumber(player.getXRot()));
         register("client.health", player -> Value.ofNumber(player.getHealth()));
@@ -39,11 +48,10 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.name", player -> Value.of(player.getName().getString()));
         register("client.dimension", player -> Value.of(player.level().dimension().location().toString()));
         register("client.held_item", player -> Value.of(BuiltInRegistries.ITEM.getKey(player.getMainHandItem().getItem()).toString()));
-        register("client.pos", player -> {
-            BlockPos pos = player.blockPosition();
-            return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
-        });
         register("client.target_block", ClientVariableProvider::targetBlock);
+        register("client.target_block.x", player -> targetBlockComponent(0));
+        register("client.target_block.y", player -> targetBlockComponent(1));
+        register("client.target_block.z", player -> targetBlockComponent(2));
         register("client.target_hit", ClientVariableProvider::targetHit);
         register("client.target_entity", ClientVariableProvider::targetEntity);
         register("client.target_uuid", ClientVariableProvider::targetUuid);
@@ -57,11 +65,14 @@ public final class ClientVariableProvider implements VariableProvider {
             net.minecraft.world.phys.Vec3 v = player.getDeltaMovement();
             return Value.ofNumber(round2(Math.hypot(v.x, v.z) * 20)); // horizontal blocks/sec
         });
-        register("client.speed_y", player -> Value.ofNumber(round2(player.getDeltaMovement().y * 20))); // vertical, signed
+        // (no speed_y — that's motion.y)
         register("client.motion", player -> {
             net.minecraft.world.phys.Vec3 v = player.getDeltaMovement();
             return Value.of(round2(v.x * 20) + " " + round2(v.y * 20) + " " + round2(v.z * 20)); // vec3, blocks/sec
         });
+        register("client.motion.x", player -> Value.ofNumber(round2(player.getDeltaMovement().x * 20)));
+        register("client.motion.y", player -> Value.ofNumber(round2(player.getDeltaMovement().y * 20)));
+        register("client.motion.z", player -> Value.ofNumber(round2(player.getDeltaMovement().z * 20)));
         register("client.facing", player -> Value.of(player.getDirection().getName())); // north/south/east/west
         register("client.eye_pos", player -> {
             net.minecraft.world.phys.Vec3 e = player.getEyePosition();
@@ -132,7 +143,6 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.in_lava", player -> Value.of(player.isInLava()));
         register("client.on_fire", player -> Value.of(player.isOnFire()));
         register("client.fall_distance", player -> Value.ofNumber(round2(player.fallDistance)));
-        register("client.eye_y", player -> Value.ofNumber(round2(player.getEyeY())));
 
         // effects — a list, so len(), rand(), and #foreach all compose
         register("client.effects", player -> {
@@ -156,19 +166,15 @@ public final class ClientVariableProvider implements VariableProvider {
         // held-item detail
         register("client.held_count", player -> Value.ofNumber(player.getMainHandItem().getCount()));
         register("client.offhand_count", player -> Value.ofNumber(player.getOffhandItem().getCount()));
+        // 0 (not an error) for a non-damageable item — the same answer
+        // client.slot.<slot>.durability gives, so the two never disagree.
         register("client.held_durability", player -> {
             net.minecraft.world.item.ItemStack stack = player.getMainHandItem();
-            if (!stack.isDamageableItem()) {
-                throw new MissingValueException("client.held_durability: the held item has no durability");
-            }
-            return Value.ofNumber(stack.getMaxDamage() - stack.getDamageValue());
+            return Value.ofNumber(stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : 0);
         });
         register("client.held_max_durability", player -> {
             net.minecraft.world.item.ItemStack stack = player.getMainHandItem();
-            if (!stack.isDamageableItem()) {
-                throw new MissingValueException("client.held_max_durability: the held item has no durability");
-            }
-            return Value.ofNumber(stack.getMaxDamage());
+            return Value.ofNumber(stack.isDamageableItem() ? stack.getMaxDamage() : 0);
         });
     }
 
@@ -186,6 +192,20 @@ public final class ClientVariableProvider implements VariableProvider {
 
     private void register(String name, Function<LocalPlayer, Value> reader) {
         variables.put(name, reader);
+    }
+
+    /** One axis of the crosshair block — same miss handling as client.target_block. */
+    private static Value targetBlockComponent(int axis) {
+        if (Minecraft.getInstance().hitResult instanceof BlockHitResult hit
+                && hit.getType() != net.minecraft.world.phys.HitResult.Type.MISS) {
+            BlockPos pos = hit.getBlockPos();
+            return Value.ofNumber(switch (axis) {
+                case 0 -> pos.getX();
+                case 1 -> pos.getY();
+                default -> pos.getZ();
+            });
+        }
+        throw new MissingValueException("client.target_block: no block under the crosshair — check $client.target_hit$ first");
     }
 
     private static Value targetBlock(LocalPlayer player) {
