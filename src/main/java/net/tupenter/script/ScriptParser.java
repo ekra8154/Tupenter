@@ -65,11 +65,20 @@ public final class ScriptParser {
     /** Keywords whose presence at the head of a top-level segment marks a function body as a STATEMENT body. */
     private static final Set<String> FUNCTION_STATEMENT_KEYWORDS = Set.of(
             SET, LOCAL, SETDEFAULT, "#for", "#foreach", "#while", "#if", RETURN);
-    private static final Set<String> RESERVED_VARIABLE_NAMES = Set.of(
-            "rand", "randf", "pick", "int", "float", "range", "true", "false",
-            "sin", "cos", "tan", "sqrt", "abs", "floor", "ceil", "round", "min", "max", "len",
-            "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains", "indexof",
-            "trim", "upper", "lower", "substr", "replace");
+    /**
+     * #set/#local can't shadow builtin vocabulary. Derived from the
+     * BuiltinFunctions registry (this was a third hand-copied function list,
+     * already missing component/vec/slot/entity and friends) plus the boolean
+     * literals — the same reservation customfunction names live under.
+     */
+    private static final Set<String> RESERVED_VARIABLE_NAMES = buildReservedNames();
+
+    private static Set<String> buildReservedNames() {
+        Set<String> names = new java.util.HashSet<>(BuiltinFunctions.NAMES);
+        names.add("true");
+        names.add("false");
+        return Set.copyOf(names);
+    }
 
     private ScriptParser() {
     }
@@ -234,15 +243,28 @@ public final class ScriptParser {
         return trimmed.startsWith("#") && isKnownStatementWord(firstWord(trimmed).toLowerCase(Locale.ROOT));
     }
 
+    /**
+     * Every canonical directive word the PARSER recognizes (leading # included).
+     * Public so the parser's vocabulary is enumerable — DirectiveDocs documents
+     * against exactly this set, and DirectiveDocsTest holds the two together.
+     * (#stage/#unstage/#pid are client-side directives and deliberately absent;
+     * #elseif/#else are continuations of #if, not statement heads.)
+     */
+    public static java.util.Set<String> knownDirectiveWords() {
+        java.util.Set<String> words = new java.util.TreeSet<>();
+        words.addAll(STATEMENT_DIRECTIVES);
+        words.addAll(SCANNER_DIRECTIVES);
+        words.add(SILENT);
+        words.add(NORECORD);
+        words.add(RECORD);
+        words.add(CHAT);
+        words.add(RETURN); // reserved everywhere so its "function-only" error can surface
+        return words;
+    }
+
     private static boolean isKnownStatementWord(String word) {
         String canon = PREFIX_SHORTHANDS.getOrDefault(word, word);
-        return STATEMENT_DIRECTIVES.contains(canon)
-                || SCANNER_DIRECTIVES.contains(canon)
-                || canon.equals(SILENT)
-                || canon.equals(NORECORD)
-                || canon.equals(RECORD)
-                || canon.equals(CHAT)
-                || canon.equals(RETURN); // reserved everywhere so its "function-only" error can surface
+        return knownDirectiveWords().contains(canon);
     }
 
     /** Expands a leading run of shorthand prefix words (#s #nr #r) to canonical form; other text is untouched. */

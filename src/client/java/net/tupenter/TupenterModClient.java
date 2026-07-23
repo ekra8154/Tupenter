@@ -2198,10 +2198,13 @@ public class TupenterModClient implements ClientModInitializer {
         return 1;
     }
 
-    /** Everything /tupenter help <name> can resolve: built-ins, your functions, your commands. */
+    /** Everything /tupenter help <name> can resolve: built-ins, directives, your functions, your commands. */
     private static java.util.List<String> helpNameSuggestions() {
         java.util.List<String> names = new java.util.ArrayList<>();
         for (net.tupenter.script.BuiltinFunctions.Doc doc : net.tupenter.script.BuiltinFunctions.ALL) {
+            names.add(doc.name());
+        }
+        for (net.tupenter.script.DirectiveDocs.Doc doc : net.tupenter.script.DirectiveDocs.ALL) {
             names.add(doc.name());
         }
         names.addAll(CustomFunctionManager.getFunctionMap().keySet());
@@ -2343,6 +2346,10 @@ public class TupenterModClient implements ClientModInitializer {
         }
         if (java.util.Set.of("all", "tupenter", "customcommand", "customfunction", "echo", "echohud", "calc", "unroll").contains(name)) {
             return runCommandHelp(context, name);
+        }
+        net.tupenter.script.DirectiveDocs.Doc directive = net.tupenter.script.DirectiveDocs.find(name);
+        if (directive != null) {
+            return renderDirectivePage(context, directive);
         }
         if (CustomFunctionManager.hasFunction(name)) {
             return renderCustomFunctionPage(context, name);
@@ -2500,12 +2507,86 @@ public class TupenterModClient implements ClientModInitializer {
         return 1;
     }
 
+    /** /tupenter help flow — the concepts stay prose; each directive's row clicks through to its page. */
+    private static int runFlowHelp(CommandContext<FabricClientCommandSource> context) {
+        beginHelpPage();
+        helpLine("§bChains, loops & conditions:");
+        helpLine("§7Chain:§r /time set day && /weather clear — one line, sent in order. Each segment picks its form: /command, #directive, bare text = chat. A segment that is exactly one $expr$ runs its string result the same way ($cmd$ holding \"/tp ~ ~1 ~\" teleports).");
+        helpLine("§7Groups (...)§r nest and can hold chains. Parens elsewhere are literal text.");
+        for (net.tupenter.script.DirectiveDocs.Doc doc : net.tupenter.script.DirectiveDocs.ALL) {
+            switch (doc.group()) {
+                case LOOPS, CONDITIONS, TIMING ->
+                        helpLine(navRow(doc.signature(), doc.blurb(), "/tupenter help " + doc.name()));
+                default -> { }
+            }
+        }
+        helpLine("§7Variables have pages too:§r #set · #local · #setdefault — /tupenter help local is the one to read first");
+        helpLine("§7Overlap:§r re-running a line starts another concurrent instance (up to the concurrency cap) — they share the per-tick budget round-robin · /tupenter abort <id> stops one, /tupenter abort stops all");
+        helpLine("§7Loops that DO something run free:§r a loop that sends or #waits each iteration paces itself over ticks, however long it needs — Max Loop Iterations only caps a loop that spins WITHOUT sending or waiting (the runaway guard).");
+        helpLine(navRow("prefixes", "#silent, #stage, #chat and friends", "/tupenter help prefixes"));
+        helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
+        endHelpPage();
+        return 1;
+    }
+
+    /** /tupenter help prefixes — one clickable row per prefix, shorthands derived from the registry. */
+    private static int runPrefixesHelp(CommandContext<FabricClientCommandSource> context) {
+        beginHelpPage();
+        helpLine("§bLine prefixes & local output — click one for details:");
+        StringBuilder shorthands = new StringBuilder();
+        for (net.tupenter.script.DirectiveDocs.Doc doc : net.tupenter.script.DirectiveDocs.ALL) {
+            if (doc.group() != net.tupenter.script.DirectiveDocs.Group.PREFIXES) {
+                continue;
+            }
+            helpLine(navRow(doc.signature(), doc.blurb(), "/tupenter help " + doc.name()));
+            if (doc.shorthand() != null) {
+                if (shorthands.length() > 0) {
+                    shorthands.append(" · ");
+                }
+                shorthands.append(doc.shorthand()).append(" = ").append(doc.canonical());
+            }
+        }
+        helpLine(navRow("/echo <text>", "show text only to yourself — &-colors, evaluates $...$", "/tupenter help command echo"));
+        helpLine("§7Shorthands:§r " + shorthands + " · prefixes combine: #norecord #silent /say hi");
+        helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
+        endHelpPage();
+        return 1;
+    }
+
+    /** One directive in depth: blurb, details, two clickable examples, and the way back up its tree. */
+    private static int renderDirectivePage(CommandContext<FabricClientCommandSource> context, net.tupenter.script.DirectiveDocs.Doc doc) {
+        beginHelpPage();
+        helpLine("§b" + doc.signature() + "§r §7— " + doc.blurb());
+        if (doc.shorthand() != null) {
+            helpLine("§8Shorthand: " + doc.shorthand());
+        }
+        for (String line : doc.detail()) {
+            helpLine(line);
+        }
+        helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY).append(suggestLink(doc.exampleSimple(), doc.exampleSimple())));
+        helpLine(Component.literal("Then: ").withStyle(ChatFormatting.GRAY).append(suggestLink(doc.exampleComposed(), doc.exampleComposed())));
+        switch (doc.group()) {
+            case VARIABLES -> helpLine(runLink("« variables", ChatFormatting.DARK_GRAY, "/tupenter help variables"));
+            case FUNCTIONS -> helpLine(runLink("« custom functions guide", ChatFormatting.DARK_GRAY, "/customfunction help"));
+            case PREFIXES -> helpLine(runLink("« prefixes", ChatFormatting.DARK_GRAY, "/tupenter help prefixes"));
+            default -> helpLine(runLink("« flow", ChatFormatting.DARK_GRAY, "/tupenter help flow"));
+        }
+        endHelpPage();
+        return 1;
+    }
+
     private static int runHelpCommand(CommandContext<FabricClientCommandSource> context, String topic) {
         if (topic.equals("index")) {
             return runHelpIndex(context);
         }
         if (topic.equals("expressions")) {
             return runExpressionsOverview(context);
+        }
+        if (topic.equals("flow")) {
+            return runFlowHelp(context);
+        }
+        if (topic.equals("prefixes")) {
+            return runPrefixesHelp(context);
         }
         String[] lines = switch (topic) {
             case "variables" -> new String[]{
@@ -2533,33 +2614,6 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Missing fields:§r entity(selector, field, FALLBACK) yields the fallback instead of erroring — NBT omits defaulted values, so $entity(uuid, \"nbt.minecraft:damage\", 0)$ is how you read \"0 if undamaged\" without faulting a tick script.",
                     "§7Discover:§r /tupenter vars — groups overview · /tupenter vars <group> — live values",
                     "§7In custom commands:§r declared params bind as $name$ or $1$..$n$",
-            };
-            case "flow" -> new String[]{
-                    "§bChains, loops & conditions:",
-                    "§7Chain:§r /time set day && /weather clear — one line, sent in order. Each segment picks its form: /command, #directive, bare text = chat. A segment that is exactly one $expr$ runs its string result the same way ($cmd$ holding \"/tp ~ ~1 ~\" teleports).",
-                    "§7Repeat:§r #repeat 5 (/say Tick $i$!) — $i$ counts 1..5",
-                    "§7For:§r #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~) — inclusive, counts down automatically",
-                    "§7Foreach:§r #foreach $m$ in (zombie | skeleton) (/summon $m$) — or in range(1, 10)",
-                    "§7If:§r #if ($client.y$ > 60) (/say high) #elseif ($client.y$ > 30) (/say mid) #else (/say low)",
-                    "§7While:§r #while ($client.health$ < 20) (/effect give @s regeneration 1 1 && #wait 3s) — re-checks each iteration, stops when false. Runs across ticks; $i$ counts iterations.",
-                    "§7Wait:§r #wait 10t / 1.5s / 2m / 3d (ticks/seconds/minutes/days) — pause the script mid-line without freezing anything else. Scripts run LAZILY: $...$ evaluates when its statement runs, so /attribute ... && #wait 2t && /tp @s $client.target_block$ reads the target AFTER the boost landed. Works in chains, groups, loops, and custom command bodies. Max 72000t.",
-                    "§7Wait clock:§r default is §7gametime§r — WORLD ticks, so it speeds up under /tick sprint, halts under /tick freeze, and pauses when the world is paused (but /time set|add doesn't move it — that's only the day-time). Add §7realtime§r for wall-clock instead: #wait 5m realtime fires after 5 real minutes no matter the TPS.",
-                    "§7Overlap:§r re-running a line starts another concurrent instance (up to the concurrency cap) — two /randomfills at different spots both run · they share the per-tick budget round-robin · /tupenter abort <id> stops one, /tupenter abort stops all",
-                    "§7Groups (...) nest and can hold chains. Parens elsewhere are literal text.",
-                    "§7Loops that DO something run free:§r a loop that sends or #waits each iteration paces itself over ticks (Max Commands Per Tick), so a big /randomfill or a #while poll runs however long it needs — /tupenter running shows it, /tupenter abort stops it. Max Loop Iterations only caps a loop that spins WITHOUT sending or waiting (the runaway guard).",
-            };
-            case "prefixes" -> new String[]{
-                    "§bLine prefixes & local output:",
-                    "§7#silent§r — hide command feedback on your screen: whole line (#silent /time set day) or part of it (#silent (/give @s stick) && /say hi). Also mutes #set notices.",
-                    "§7#norecord§r — run the line but keep it out of resend history",
-                    "§7#record§r — the inverse: records even when message tracking is OFF (and bypasses the filter)",
-                    "§7#stage§r — put the line INTO resend history without running it — press R when you want it",
-                    "§7#unstage [n]§r — remove the newest n (default 1) entries from resend history; reports what the next resend is",
-                    "§7#pid N <line>§r — run <line> under a name you pick (its id in /tupenter running). Refuses if pid N is already live; add §7replace§r to restart it: #pid 3 replace /randomfill …. Stop or list with /tupenter abort N · /tupenter running.",
-                    "§7#chat§r — send a normal chat message that evaluates its $...$: #chat my coords are $client.pos$ → posts \"my coords are 100 64 -30\". (Plain chat leaves $...$ literal; this is the opt-in.)",
-                    "§7/echo§r — show text only to yourself, sends nothing: /echo y is $client.y$. Colors with &-codes: /echo &aall good &7($client.health$ hp) — \\& for a literal &",
-                    "§7Shorthands:§r #s #nr #r #st #ust #c for #silent #norecord #record #stage #unstage #chat",
-                    "§7Prefixes combine: #norecord #silent /say hi",
             };
             case "scripts" -> new String[]{
                     "§bTick scripts (Mod Menu → Tupenter → Scripts):",
