@@ -55,6 +55,12 @@ final class ExpressionEvaluator {
         private int index;
         /** When true, parse (advance index) but perform NO call/resolve/arithmetic — dry-parse a dead branch. */
         private boolean skipping;
+        /**
+         * How many ternary THEN-branches we're inside. ':' is an identifier
+         * character (namespaced NBT keys: components.minecraft:damage) — except
+         * here, where it's the separator waiting to close {@code cond ? a : b}.
+         */
+        private int ternaryThenDepth;
 
         private Parser(String input, EvalContext context) {
             this.input = input;
@@ -81,7 +87,13 @@ final class ExpressionEvaluator {
                 // dry-parsed so a recursive call there never fires and a guard
                 // like x != 0 ? 10/x : 0 doesn't divide by zero.
                 boolean takeTrue = !skipping && asBool(condition, "before '?'");
-                Value whenTrue = parseSkippable(!takeTrue, this::parseTernary);
+                Value whenTrue;
+                ternaryThenDepth++; // the ':' ahead closes this branch — not part of a name
+                try {
+                    whenTrue = parseSkippable(!takeTrue, this::parseTernary);
+                } finally {
+                    ternaryThenDepth--;
+                }
                 skipWhitespace();
                 if (atEnd() || peek() != ':') {
                     throw new ExpressionException("Expected ':' in condition ? a : b");
@@ -1182,7 +1194,17 @@ final class ExpressionEvaluator {
             return input.substring(start, index);
         }
 
-        private static boolean isIdentifierPart(char c) {
+        /**
+         * ':' belongs to a name because modern NBT keys are namespaced ids —
+         * client.nbt.equipment.chest.components.minecraft:enchantments.minecraft:mending
+         * is ONE address, and both the dump browser and tab-completion hand it to
+         * you spelled exactly like that. The sole competing use of ':' is the
+         * ternary separator, and the parser knows when it's expecting one.
+         */
+        private boolean isIdentifierPart(char c) {
+            if (c == ':') {
+                return ternaryThenDepth == 0;
+            }
             return Character.isLetterOrDigit(c) || c == '_' || c == '.';
         }
 

@@ -15,6 +15,38 @@ class ExpressionEvaluatorTest {
         return ExpressionEvaluator.evaluate(expression, new EvalContext(new Random(42))).displayString();
     }
 
+    /**
+     * Namespaced NBT keys (components.minecraft:damage) are ONE address, so ':'
+     * has to be part of a name — but it's also the ternary separator. The parser
+     * resolves that by context, and both directions are pinned here: the dump
+     * browser and tab-completion both hand out colon-bearing paths, and compact
+     * ternaries over bare identifiers must keep working.
+     */
+    @Test
+    void colonBelongsToNamespacedNamesButStillSeparatesTernaries() {
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("client.nbt.components.minecraft:damage", Value.ofNumber(42));
+        store.set("a", Value.ofNumber(1));
+        store.set("b", Value.ofNumber(2));
+        EvalContext ctx = new EvalContext(new Random(1), store);
+
+        // the whole namespaced path is one identifier
+        assertEquals("42", ExpressionEvaluator.evaluate(
+                "client.nbt.components.minecraft:damage", ctx).displayString());
+        assertEquals("43", ExpressionEvaluator.evaluate(
+                "client.nbt.components.minecraft:damage + 1", ctx).displayString());
+
+        // ternaries: spaced AND compact, with bare identifier branches
+        assertEquals("1", ExpressionEvaluator.evaluate("true ? a : b", ctx).displayString());
+        assertEquals("2", ExpressionEvaluator.evaluate("false ? a : b", ctx).displayString());
+        assertEquals("1", ExpressionEvaluator.evaluate("true ? a:b", ctx).displayString());
+        assertEquals("2", ExpressionEvaluator.evaluate("false ? a:b", ctx).displayString());
+        // nested, and a namespaced name is still reachable in the ELSE branch
+        assertEquals("42", ExpressionEvaluator.evaluate(
+                "false ? a : client.nbt.components.minecraft:damage", ctx).displayString());
+        assertEquals("2", ExpressionEvaluator.evaluate("true ? (false ? a : b) : a", ctx).displayString());
+    }
+
     @Test
     void powerOperator() {
         assertEquals("9", eval("3^2"));
