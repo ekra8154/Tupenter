@@ -40,6 +40,7 @@ import net.tupenter.command.TickScriptRunner;
 import net.tupenter.command.WorldVariableProvider;
 import net.tupenter.script.RealTimeVariableProvider;
 import net.tupenter.script.AliasDefinition;
+import net.tupenter.script.ParamTypeDocs;
 import net.tupenter.script.EvalContext;
 import net.tupenter.script.MathEvaluator;
 import net.tupenter.script.PersistentVariableStore;
@@ -1386,7 +1387,10 @@ public class TupenterModClient implements ClientModInitializer {
                                     .then(literal("verbose")
                                             .executes(context -> runAliasListCommand(context, true))))
                             .then(literal("help")
-                                    .executes(TupenterModClient::runCustomCommandHelp))
+                                    .executes(TupenterModClient::runCustomCommandHelp)
+                                    .then(argument("topic", StringArgumentType.word())
+                                            .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(customCommandHelpTopics(), b))
+                                            .executes(context -> runCustomCommandHelpTopic(context, StringArgumentType.getString(context, "topic")))))
                             .then(argument("name", StringArgumentType.word())
                                     .suggests((context, suggestionsBuilder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                                             CommandAliasManager.getAliasMap().keySet(), suggestionsBuilder))
@@ -2025,43 +2029,60 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static int runFunctionListCommand(CommandContext<FabricClientCommandSource> context) {
         java.util.Map<String, AliasDefinition> functions = CustomFunctionManager.getFunctionMap();
+        beginHelpPage();
         if (functions.isEmpty()) {
-            context.getSource().sendFeedback(Component.literal(
+            helpLine(Component.literal(
                     "No custom functions. Add one: /customfunction add lightlevel client.light — then use $lightlevel()$").withStyle(ChatFormatting.GRAY));
+            endHelpPage();
             return 1;
         }
-        context.getSource().sendFeedback(Component.literal("Custom functions (" + functions.size() + ") — call as $name(...)$ in expressions:").withStyle(ChatFormatting.AQUA));
+        helpLine(Component.literal("Custom functions (" + functions.size() + ") — call as $name(...)$ in expressions; click one for its page:").withStyle(ChatFormatting.AQUA));
         for (java.util.Map.Entry<String, AliasDefinition> entry : functions.entrySet()) {
             String decls = entry.getValue().declarationPrefix().trim();
             String sig = entry.getKey() + (decls.isEmpty() ? "()" : " " + decls);
-            net.minecraft.network.chat.MutableComponent row = Component.literal(
-                    " • §f" + sig + "§r §8= " + previewLine(entry.getValue().body())).withStyle(ChatFormatting.GRAY);
+            String page = "/tupenter help " + entry.getKey();
+            // the whole row navigates; the [edit] child keeps its own click event
+            net.minecraft.network.chat.MutableComponent row = Component.literal(" • ").withStyle(ChatFormatting.DARK_GRAY)
+                    .append(Component.literal(sig).withStyle(ChatFormatting.WHITE))
+                    .append(Component.literal(" = " + previewLine(entry.getValue().body())).withStyle(ChatFormatting.DARK_GRAY))
+                    .withStyle(style -> style
+                            .withClickEvent(new ClickEvent.RunCommand(page))
+                            .withHoverEvent(new HoverEvent.ShowText(Component.literal(page))));
             String stored = CustomFunctionManager.getStoredDefinition(entry.getKey());
             if (stored != null) {
                 row.append(" ").append(suggestLink("[edit]", "/customfunction update " + stored));
             }
-            context.getSource().sendFeedback(row);
+            helpLine(row);
         }
+        endHelpPage();
         return 1;
     }
 
-    /** /customfunction help — the full guide, including how to pass coordinates. */
+    /** /customfunction help — the guide, restyled as a navigable page with runnable examples. */
     private static int runCustomFunctionHelp(CommandContext<FabricClientCommandSource> context) {
-        String[] lines = {
-                "§bCustom functions — your own min()/sqrt()-style functions for $...$ expressions:",
-                "§7Create:§r /customfunction add <name> <params...> = <expression>  ·  Edit:§r update  ·  Remove:§r remove <name>  ·  List:§r list",
-                "§7The body returns a value§r — no commands or chat (that's /customcommand). Simplest is one EXPRESSION: /customfunction add dist <a:vec3> <b:vec3> = sqrt((a.x-b.x)^2 + (a.y-b.y)^2 + (a.z-b.z)^2)",
-                "§7It can also be a STATEMENT body§r for real algorithms: #set (function-local), #for/#foreach/#while, #if, and #return. The value is your #return, or the last expression if you don't. Loops are pure compute (no #wait, no commands), capped by Max Loop Iterations.",
-                "§7Raytrace example:§r /customfunction add rayhit <p:vec3> <d:vec3> <n:int> = #set $x$=p.x && #set $y$=p.y && #set $z$=p.z && #for $i$ in 1..n (#if (block(x,y,z) != \"minecraft:air\") (#return vec(x,y,z)) && #set $x$=x+d.x && #set $y$=y+d.y && #set $z$=z+d.z) && #return \"miss\"  —  then $rayhit(client.pos, \"0 -1 0\", 30)$",
-                "§7Note:§r a body is a statement block only if it uses one of those directives up top; otherwise it's a single expression, so a boolean like <s> x>=0 && x<=100 stays logical-AND. In a statement body, a trailing logical && must be parenthesized. #while already gives you $i$ as its counter — don't #set your own.",
-                "§7Call it with parens inside any expression§r, alongside min or sqrt: /echo $dist(client.pos, \"0 64 0\")$ — args are full expressions themselves, and tab-complete works.",
-                "§7Passing coordinates:§r \"0 64 0\" (or \"0,64,0\") is a LITERAL — everything inside quotes stays as-is, $ included. To COMPUTE components use vec(x, y, z): each slot is its own expression — $dist(vec(client.x/2, 39+12, 1), \"0 0 0\")$. A vec3 variable like client.pos passes straight through, no quotes needed.",
-                "§7Reading a vec back apart:§r component(v, \"x\"|\"y\"|\"z\") pulls one component out of ANY vec3 — a vec(...), a raycast, a function result: component(raycast(500), \"y\"). For a vec you can NAME, use the dotted form instead: $client.pos.y$. Exact precision, so the math stays sharp. On a miss (\"miss\") it errors — gate with == \"miss\" first.",
-                "§7Param types§r are the custom-command ones: <a:pos> (decimal) / <a:blockpos> (whole) bind $a$ plus a.x/a.y/a.z · <n:int>/<n:float> numbers · bare <s> a word or \"quoted text\". Inside the body params are just variables: a.x - b.x.",
-                "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing (so does [edit] in list).",
-                "§7Functions can call functions§r — including yours — with recursion capped at depth 32.",
-        };
-        return sendHelpPage(lines);
+        String distExample = "/customfunction add dist <a:vec3> <b:vec3> = sqrt((a.x-b.x)^2 + (a.y-b.y)^2 + (a.z-b.z)^2)";
+        String rayhitExample = "/customfunction add rayhit <p:vec3> <d:vec3> <n:int> = #set $x$=p.x && #set $y$=p.y && #set $z$=p.z && "
+                + "#for $i$ in 1..n (#if (block(x,y,z) != \"minecraft:air\") (#return vec(x,y,z)) && "
+                + "#set $x$=x+d.x && #set $y$=y+d.y && #set $z$=z+d.z) && #return \"miss\"";
+        beginHelpPage();
+        helpLine("§bCustom functions — your own min()/sqrt()-style functions for $...$ expressions:");
+        helpLine("§7Create:§r /customfunction add <name> <params...> = <expression> · §7edit:§r update · §7remove§r · §7list§r");
+        helpLine("§7The body returns a value§r — no commands or chat (that's /customcommand). Simplest is one expression:");
+        helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY).append(suggestLink(distExample, distExample))
+                .append(Component.literal(" — then /echo $dist(client.pos, \"0 64 0\")$").withStyle(ChatFormatting.DARK_GRAY)));
+        helpLine("§7Statement bodies§r do real algorithms: #set (function-local), #for/#foreach/#while, #if, #return — the value is your #return, or the last expression. Pure compute: no #wait, no commands; loops capped by Max Loop Iterations.");
+        helpLine(Component.literal("Then: ").withStyle(ChatFormatting.GRAY)
+                .append(suggestLink("a raytracer in one definition (click to load)", rayhitExample))
+                .append(Component.literal(" — then $rayhit(client.pos, \"0 -1 0\", 30)$").withStyle(ChatFormatting.DARK_GRAY)));
+        helpLine("§7Gotchas:§r a body is a statement block only if it STARTS with one of those directives — otherwise x>=0 && x<=100 stays logical-AND · a trailing logical && in a statement body needs parens · #while already provides $i$, don't #set your own.");
+        helpLine("§7Passing coordinates:§r \"0 64 0\" is a LITERAL (quotes keep everything, $ included); to COMPUTE components use vec(x, y, z) — each slot its own expression. A vec3 variable like client.pos passes straight through, no quotes.");
+        helpLine(navRow("param types", "the custom-command vocabulary — <a:pos> binds $a$ plus a.x/a.y/a.z", "/customcommand help types"));
+        helpLine(navRow("component(v, axis)", "read a computed vec3 back apart", "/tupenter help component"));
+        helpLine("§7Editing:§r add/update with a name and NO body puts the definition in your chat bar (so does [edit] in list) · your functions get pages too: /tupenter help <name>.");
+        helpLine("§7Functions can call functions§r — including themselves — recursion capped at depth 32.");
+        helpLine(runLink("« all built-in functions", ChatFormatting.DARK_GRAY, "/tupenter help functions"));
+        endHelpPage();
+        return 1;
     }
 
     private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestFunctionNames(
@@ -2244,6 +2265,19 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /**
+     * An index row: white head, gray description, the WHOLE line clickable
+     * through to {@code command}. Built from styled components, not §-codes —
+     * legacy codes reset the style mid-line and punch holes in the click region.
+     */
+    private static Component navRow(String head, String desc, String command) {
+        return Component.literal(" " + head).withStyle(ChatFormatting.WHITE)
+                .append(Component.literal(" — " + desc).withStyle(ChatFormatting.GRAY))
+                .withStyle(style -> style
+                        .withClickEvent(new ClickEvent.RunCommand(command))
+                        .withHoverEvent(new HoverEvent.ShowText(Component.literal(command))));
+    }
+
+    /**
      * /tupenter help functions — the index. One blurb line per built-in, grouped,
      * every line clickable through to its detail page. Rendered straight from the
      * BuiltinFunctions registry, so it cannot advertise a function that doesn't
@@ -2259,12 +2293,7 @@ public class TupenterModClient implements ClientModInitializer {
                 group = doc.group();
                 helpLine(Component.literal(group.label() + ":").withStyle(ChatFormatting.DARK_AQUA));
             }
-            String command = "/tupenter help " + doc.name();
-            MutableComponent line = Component.literal(" " + doc.signature()).withStyle(ChatFormatting.WHITE)
-                    .append(Component.literal(" — " + doc.blurb()).withStyle(ChatFormatting.GRAY));
-            helpLine(line.withStyle(style -> style
-                    .withClickEvent(new ClickEvent.RunCommand(command))
-                    .withHoverEvent(new HoverEvent.ShowText(Component.literal(command)))));
+            helpLine(navRow(doc.signature(), doc.blurb(), "/tupenter help " + doc.name()));
         }
         helpLine("§8Yours too: /customfunction list · /customcommand list — /tupenter help <name> opens those as well.");
         endHelpPage();
@@ -2629,23 +2658,26 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static int runAliasListCommand(CommandContext<FabricClientCommandSource> context, boolean verbose) {
         List<String> definitions = CommandAliasManager.getAliasDefinitions();
+        beginHelpPage();
         if (definitions.isEmpty()) {
-            context.getSource().sendFeedback(Component.literal("No custom commands saved. Try /customcommand help").withStyle(ChatFormatting.YELLOW));
+            helpLine(Component.literal("No custom commands saved. Try /customcommand help").withStyle(ChatFormatting.YELLOW));
+            endHelpPage();
             return 1;
         }
 
-        context.getSource().sendFeedback(Component.literal("Saved custom commands:").withStyle(ChatFormatting.AQUA));
+        helpLine(Component.literal("Saved custom commands — click one for its page:").withStyle(ChatFormatting.AQUA));
         for (String definition : definitions) {
             CommandAliasManager.ParsedAlias parsed = CommandAliasManager.parseDefinition(definition);
             if (parsed == null) {
-                context.getSource().sendFeedback(Component.literal(" - " + definition + " (invalid)").withStyle(ChatFormatting.RED));
+                helpLine(Component.literal(" - " + definition + " (invalid)").withStyle(ChatFormatting.RED));
                 continue;
             }
-            context.getSource().sendFeedback(aliasLine(parsed, verbose));
+            helpLine(aliasLine(parsed, verbose));
         }
         if (!verbose) {
-            context.getSource().sendFeedback(Component.literal("Full bodies: /customcommand list verbose · one command: /customcommand <name>").withStyle(ChatFormatting.DARK_GRAY));
+            helpLine(Component.literal("Full bodies: /customcommand list verbose · one command: /customcommand <name>").withStyle(ChatFormatting.DARK_GRAY));
         }
+        endHelpPage();
         return 1;
     }
 
@@ -2654,12 +2686,17 @@ public class TupenterModClient implements ClientModInitializer {
         if (!fullBody && body.length() > 40) {
             body = body.substring(0, 40) + "…";
         }
+        String page = "/customcommand " + parsed.name();
         return Component.literal(" /").withStyle(ChatFormatting.GRAY)
                 .append(Component.literal(parsed.name()).withStyle(ChatFormatting.AQUA))
                 .append(Component.literal(parsed.definition().params().isEmpty()
                         ? " " : " " + parsed.definition().declarationPrefix()).withStyle(ChatFormatting.YELLOW))
                 .append(Component.literal("→ ").withStyle(ChatFormatting.DARK_GRAY))
-                .append(Component.literal(body).withStyle(fullBody ? ChatFormatting.WHITE : ChatFormatting.GRAY));
+                .append(Component.literal(body).withStyle(fullBody ? ChatFormatting.WHITE : ChatFormatting.GRAY))
+                // the whole row navigates to the command's detail page
+                .withStyle(style -> style
+                        .withClickEvent(new ClickEvent.RunCommand(page))
+                        .withHoverEvent(new HoverEvent.ShowText(Component.literal(page))));
     }
 
     private static int runAliasDetailCommand(CommandContext<FabricClientCommandSource> context) {
@@ -2750,22 +2787,118 @@ public class TupenterModClient implements ClientModInitializer {
         return out.toString();
     }
 
+    /** /customcommand help — the overview; the deep topics are their own navigable pages. */
     private static int runCustomCommandHelp(CommandContext<FabricClientCommandSource> context) {
-        String[] lines = {
-                "§bCustom commands:",
-                "§7Create:§r /customcommand add <name> <body>  ·  Edit:§r /customcommand update <name> <body>  ·  Remove:§r /customcommand remove <name>  ·  List:§r /customcommand list",
-                "§7Bodies§r can hold commands, chat, && chains, $...$ expressions, directives (#repeat, #if, #silent, ...), and other custom commands. Commands need their /: sunny = /weather clear && Have fun!",
-                "§7Parameters§r go before the body: /customcommand add smite <target:player> /execute at $target$ run summon lightning_bolt — then /smite Steve. Use as $target$ or $1$.",
-                "§7Description:§r a \"quoted note\" right before a §c§lrequired =§r that begins the body. No params: /customcommand add tickfreeze \"toggles time\" = #if ($frozen$) (/tick unfreeze) #else (/tick freeze). With params: /customcommand add greet <who:player> \"wave at someone\" = /me waves at $who$. §cWithout the =§r those quotes are just body text. The note shows on missing args and in /customcommand <name>; &-colors like /echo.",
-                "§7Types:§r <name> or <name:string> = a word or \"anything quoted\" · <n:int> / <n:float> = numbers · <n:word> = one plain token (letters/digits/_-.+ only — no selectors!) · <n:selector> = @e[...] with tab-complete · <n:player> = player name · <n:text> = rest of the line (must be last) · <n:opt1,opt2,...> = one of a fixed list, tab-completed",
-                "§7Position types:§r <n:pos> = decimal x y z with ~ (alias: vec3) · <n:blockpos> = whole x y z with ~ and targeted-block tab-complete — pos is PRECISE and blockpos is WHOLE, matching client.pos / client.blockpos · <n:column_pos> = whole x z with ~ · <n:rotation> = yaw pitch with ~ · <n:angle> = one yaw with ~. Tuples bind $n$ = the joined coords plus $n.x$ $n.y$ $n.z$ (or $n.yaw$ $n.pitch$); angle binds a number.",
-                "§7More types:§r <n:time> = duration (10t / 1.5s / 2m / 3d), binds as ticks · <n:dimension> = dimension id, tab-completed · <n:color> = chat color, tab-completed · <n:id> = any namespaced id · <n:item> / <n:block> = item or block with full registry tab-complete (including [components] / [states]) · <n:itemset> / <n:blockset> = an item/block OR a #tag like #minecraft:logs, tab-completed · <n:entity> = entity type id with /summon-style tab-complete · <n:bool> = true/false, binds a boolean for #if/ternaries (a strictly-typed <g:bool=false> optional is skippable: /launch snowball true)",
-                "§7Optional params:§r add =default to make a param optional: <r:int=5>, <p:pos=~ ~ ~>. Defaults may hold $...$ expressions (evaluated when omitted, earlier params visible). Strictly-typed optionals can even be skipped mid-command — /portal to_nether works with <p:pos=~ ~ ~> <dim:...> because to_nether isn't a coordinate. Loose types (string/word/text) always grab the next arg, so put those last.",
-                "§7No natural default?§r Use a SENTINEL the body branches on: <filter:blockset=any> then #if ($filter$ == \"any\") (unfiltered...) #else (filtered...) — that's how an omitted param can mean 'do something else' rather than 'use this value'.",
-                "§7Selectors:§r use <name:selector>, or quote them into a plain <name>: /cmd \"@e[type=!player,limit=1]\"",
-                "§7Example:§r /customcommand add waves <count:int> <mob:word> #repeat $count$ (/summon $mob$ ~ ~ ~)  →  /waves 3 zombie",
-        };
-        return sendHelpPage(lines);
+        String wavesExample = "/customcommand add waves <count:int> <mob:entity> #repeat $count$ (/summon $mob$ ~ ~ ~)";
+        beginHelpPage();
+        helpLine("§bCustom commands — make your own /commands:");
+        helpLine("§7Create:§r /customcommand add <name> <params...> body · §7edit:§r update · §7remove§r · §7list§r");
+        helpLine("§7Bodies§r hold anything a chat line can: commands, chat, && chains, $...$ expressions, #directives, other custom commands. Commands need their /: sunny = /weather clear && Have fun!");
+        helpLine("§7Parameters§r go before the body and bind as $name$ or $1$..$n$: /customcommand add smite <target:player> /execute at $target$ run summon minecraft:lightning_bolt — then /smite Steve.");
+        helpLine(navRow("types", "all " + ParamTypeDocs.ALL.size() + " parameter types, each with its own page", "/customcommand help types"));
+        helpLine(navRow("optionals", "=defaults, mid-command skipping, the sentinel trick", "/customcommand help optionals"));
+        helpLine(navRow("descriptions", "the \"quoted note\" and the required =", "/customcommand help descriptions"));
+        helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY).append(suggestLink(wavesExample, wavesExample)));
+        helpLine("§8Then /waves 3 zombie · your saved commands: /customcommand list");
+        endHelpPage();
+        return 1;
+    }
+
+    /** Topics /customcommand help <topic> can open: the three fixed pages plus every type keyword. */
+    private static java.util.List<String> customCommandHelpTopics() {
+        java.util.List<String> topics = new ArrayList<>(java.util.List.of("types", "optionals", "descriptions"));
+        for (ParamTypeDocs.Doc doc : ParamTypeDocs.ALL) {
+            topics.add(doc.keyword());
+        }
+        return topics;
+    }
+
+    private static int runCustomCommandHelpTopic(CommandContext<FabricClientCommandSource> context, String rawTopic) {
+        String topic = rawTopic.toLowerCase(java.util.Locale.ROOT);
+        switch (topic) {
+            case "types" -> {
+                return runParamTypesIndex(context);
+            }
+            case "optionals" -> {
+                return runOptionalsHelp(context);
+            }
+            case "descriptions" -> {
+                return runDescriptionsHelp(context);
+            }
+            default -> {
+                ParamTypeDocs.Doc doc = ParamTypeDocs.find(topic);
+                if (doc != null) {
+                    return renderParamTypePage(context, doc);
+                }
+                context.getSource().sendError(Component.literal("No page '" + rawTopic
+                        + "' — topics: types, optionals, descriptions, or a type keyword (see /customcommand help types)"));
+                return 0;
+            }
+        }
+    }
+
+    /** /customcommand help types — the index, rendered from the ParamTypeDocs registry. */
+    private static int runParamTypesIndex(CommandContext<FabricClientCommandSource> context) {
+        beginHelpPage();
+        helpLine("§bParameter types — click one (or /customcommand help <type>) for details:");
+        String group = null;
+        for (ParamTypeDocs.Doc doc : ParamTypeDocs.ALL) {
+            if (!doc.group().equals(group)) {
+                group = doc.group();
+                helpLine(Component.literal(group + ":").withStyle(ChatFormatting.DARK_AQUA));
+            }
+            String shown = doc.type() == AliasDefinition.ParamType.CHOICE ? "<n:a,b,c>" : "<n:" + doc.keyword() + ">";
+            helpLine(navRow(shown, doc.blurb(), "/customcommand help " + doc.keyword()));
+        }
+        helpLine("§8Bare <name> is a string · strict types make optionals skippable — /customcommand help optionals");
+        helpLine(runLink("« custom commands guide", ChatFormatting.DARK_GRAY, "/customcommand help"));
+        endHelpPage();
+        return 1;
+    }
+
+    /** One parameter type in depth: blurb, details, a runnable example. */
+    private static int renderParamTypePage(CommandContext<FabricClientCommandSource> context, ParamTypeDocs.Doc doc) {
+        beginHelpPage();
+        String head = doc.type() == AliasDefinition.ParamType.CHOICE ? "<name:opt1,opt2,...>" : "<name:" + doc.keyword() + ">";
+        helpLine("§b" + head + "§r §7— " + doc.blurb());
+        if (!doc.synonyms().isEmpty()) {
+            helpLine("§8Also spelled: " + String.join(", ", doc.synonyms()));
+        }
+        for (String line : doc.detail()) {
+            helpLine(line);
+        }
+        helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY).append(suggestLink(doc.example(), doc.example())));
+        helpLine(runLink("« all types", ChatFormatting.DARK_GRAY, "/customcommand help types"));
+        endHelpPage();
+        return 1;
+    }
+
+    /** /customcommand help optionals — defaults, skipping, sentinels. */
+    private static int runOptionalsHelp(CommandContext<FabricClientCommandSource> context) {
+        beginHelpPage();
+        helpLine("§bOptional parameters — add =default:");
+        helpLine("§7<r:int=5>, <p:pos=~ ~ ~>§r — omitting the argument means the default. Defaults may hold $...$ expressions, evaluated when omitted, with earlier params visible.");
+        helpLine("§7Mid-command skipping:§r a STRICTLY-typed optional can be skipped — /portal to_nether works with <p:pos=~ ~ ~> <dim:to_overworld,to_nether> because to_nether isn't a coordinate, so the parser skips p.");
+        helpLine("§7Loose types grab greedily:§r string/word/text take whatever comes next — put those last.");
+        helpLine("§7No natural default?§r Use a SENTINEL the body branches on: <filter:blockset=any> then #if ($filter$ == \"any\") (unfiltered...) #else (filtered...) — an omitted param can mean \"do something else\", not just \"use this value\".");
+        helpLine(runLink("« custom commands guide", ChatFormatting.DARK_GRAY, "/customcommand help"));
+        endHelpPage();
+        return 1;
+    }
+
+    /** /customcommand help descriptions — the quoted note. */
+    private static int runDescriptionsHelp(CommandContext<FabricClientCommandSource> context) {
+        String plainExample = "/customcommand add tickfreeze \"toggles time\" = #if ($frozen$) (/tick unfreeze) #else (/tick freeze)";
+        String paramExample = "/customcommand add greet <who:player> \"wave at someone\" = /me waves at $who$";
+        beginHelpPage();
+        helpLine("§bDescriptions — a note on your command:");
+        helpLine("§7A \"quoted note\" right before a §c§lrequired =§r that begins the body. §cWithout the =§r those quotes are just body text.");
+        helpLine(Component.literal("No params: ").withStyle(ChatFormatting.GRAY).append(suggestLink(plainExample, plainExample)));
+        helpLine(Component.literal("With params: ").withStyle(ChatFormatting.GRAY).append(suggestLink(paramExample, paramExample)));
+        helpLine("§7Where it shows:§r on missing arguments and in /customcommand <name> · &-colors work, like /echo.");
+        helpLine(runLink("« custom commands guide", ChatFormatting.DARK_GRAY, "/customcommand help"));
+        endHelpPage();
+        return 1;
     }
 
     public static boolean handleLocalCalcAlias(String command) {

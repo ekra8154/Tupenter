@@ -92,8 +92,9 @@ public record AliasDefinition(String body, List<Param> params, String descriptio
                 case "blockset" -> BLOCKSET;
                 case "entity" -> ENTITY;
                 case "bool", "boolean" -> BOOL;
+                // the list derives from the ParamTypeDocs registry — it can't go stale
                 default -> throw new IllegalArgumentException("Unknown parameter type '" + keyword
-                        + "' — use int, float, string, word, text, player, selector, pos (decimal), blockpos (whole), vec3, column_pos, rotation, angle, time, dimension, color, id, item, block, itemset, blockset, entity, or bool");
+                        + "' — use " + ParamTypeDocs.keywordSummary() + " (/customcommand help types)");
             };
         }
     }
