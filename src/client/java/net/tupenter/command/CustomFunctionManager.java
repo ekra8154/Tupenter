@@ -21,14 +21,19 @@ import java.util.Set;
  * commands or chat — that's {@code /customcommand}.
  */
 public final class CustomFunctionManager {
-    /** Names owned by the expression evaluator — a function can't shadow these. */
-    private static final Set<String> BUILTINS = Set.of(
-            "int", "float", "abs", "floor", "ceil", "round", "min", "max", "len", "nth", "contains", "indexof",
-            "trim", "upper", "lower", "substr", "replace", "rand", "randf", "sin", "cos", "tan", "sqrt", "range",
-            "itemset", "blockset", "effectset", "entityset", "block", "pick", "vec", "component",
-            "raycast", "raycast_block", "entity", "raycast_entity", "entities", "nearest_entity",
-            "slot",
-            "true", "false");
+    /**
+     * Names owned by the expression evaluator — a function can't shadow these.
+     * Derived from the {@link net.tupenter.script.BuiltinFunctions} registry
+     * (so it can't drift from the real function set), plus the boolean literals.
+     */
+    private static final Set<String> BUILTINS = buildBuiltins();
+
+    private static Set<String> buildBuiltins() {
+        Set<String> names = new java.util.HashSet<>(net.tupenter.script.BuiltinFunctions.NAMES);
+        names.add("true");
+        names.add("false");
+        return Set.copyOf(names);
+    }
 
     /** Statement directives allowed as the head of a statement-body function. */
     private static final Set<String> STATEMENT_BODY_DIRECTIVES = Set.of(

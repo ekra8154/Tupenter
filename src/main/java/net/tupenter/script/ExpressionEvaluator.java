@@ -40,14 +40,11 @@ final class ExpressionEvaluator {
     /**
      * Every built-in function name. Used to decide {@code f(x)} (a call) versus
      * {@code v (x)} (implicit multiplication by a parenthesized group) — a
-     * builtin always wins, so this must stay in step with the dispatch switch.
+     * builtin always wins. Derived from the {@link BuiltinFunctions} registry,
+     * which must stay in step with the dispatch switch; BuiltinFunctionsTest
+     * asserts they agree.
      */
-    private static final java.util.Set<String> BUILTIN_FUNCTIONS = java.util.Set.of(
-            "int", "float", "abs", "floor", "ceil", "round", "min", "max", "len", "nth", "contains", "indexof",
-            "trim", "upper", "lower", "substr", "replace", "rand", "randf", "sin", "cos", "tan", "sqrt", "range",
-            "itemset", "blockset", "effectset", "entityset", "block", "pick", "vec", "component",
-            "raycast", "raycast_block", "entity", "raycast_entity", "entities", "nearest_entity",
-            "slot");
+    private static final java.util.Set<String> BUILTIN_FUNCTIONS = BuiltinFunctions.NAMES;
 
     private static final class Parser {
         /** A dead branch's stand-in: never inspected in skip mode, never leaks to eval mode. */
@@ -525,7 +522,7 @@ final class ExpressionEvaluator {
                     // not a built-in — try a user-defined /customfunction
                     Value userValue = context.functions().call(identifier, args, context);
                     if (userValue == null) {
-                        throw new ExpressionException("Unknown function: " + identifier);
+                        throw new ExpressionException(BuiltinFunctions.unknownFunctionMessage(identifier));
                     }
                     yield userValue;
                 }

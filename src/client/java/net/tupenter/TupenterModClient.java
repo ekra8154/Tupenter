@@ -1344,7 +1344,12 @@ public class TupenterModClient implements ClientModInitializer {
                                             .then(argument("name", StringArgumentType.word())
                                                     .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                                                             new String[]{"all", "tupenter", "customcommand", "echo", "echohud", "calc", "unroll"}, b))
-                                                    .executes(context -> runCommandHelp(context, StringArgumentType.getString(context, "name")))))));
+                                                    .executes(context -> runCommandHelp(context, StringArgumentType.getString(context, "name")))))
+                                    .then(literal("functions").executes(TupenterModClient::runFunctionsIndexCommand))
+                                    // any function or custom definition by name: /tupenter help blockset
+                                    .then(argument("name", StringArgumentType.word())
+                                            .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(helpNameSuggestions(), b))
+                                            .executes(context -> runNameHelpCommand(context, StringArgumentType.getString(context, "name"))))));
 
                     dispatcher.register(literal("echo")
                             .then(argument("message", StringArgumentType.greedyString())
@@ -2175,6 +2180,106 @@ public class TupenterModClient implements ClientModInitializer {
         return 1;
     }
 
+    /** Everything /tupenter help <name> can resolve: built-ins, your functions, your commands. */
+    private static java.util.List<String> helpNameSuggestions() {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (net.tupenter.script.BuiltinFunctions.Doc doc : net.tupenter.script.BuiltinFunctions.ALL) {
+            names.add(doc.name());
+        }
+        names.addAll(CustomFunctionManager.getFunctionMap().keySet());
+        names.addAll(CommandAliasManager.getAliasMap().keySet());
+        return names;
+    }
+
+    /** Clickable chat line that RUNS a (read-only, navigation-only) command; hover shows the command. */
+    private static Component runLink(String label, String command) {
+        return Component.literal(label).withStyle(style -> style
+                .withClickEvent(new ClickEvent.RunCommand(command))
+                .withHoverEvent(new HoverEvent.ShowText(Component.literal(command))));
+    }
+
+    /**
+     * /tupenter help functions — the index. One blurb line per built-in, grouped,
+     * every line clickable through to its detail page. Rendered straight from the
+     * BuiltinFunctions registry, so it cannot advertise a function that doesn't
+     * exist (or miss one that does).
+     */
+    private static int runFunctionsIndexCommand(CommandContext<FabricClientCommandSource> context) {
+        FabricClientCommandSource source = context.getSource();
+        source.sendFeedback(Component.literal("§bFunctions — click one (or /tupenter help <name>) for details and examples:"));
+        net.tupenter.script.BuiltinFunctions.Group group = null;
+        for (net.tupenter.script.BuiltinFunctions.Doc doc : net.tupenter.script.BuiltinFunctions.ALL) {
+            if (doc.group() != group) {
+                group = doc.group();
+                source.sendFeedback(Component.literal("§3" + group.label() + ":"));
+            }
+            source.sendFeedback(runLink(" §f" + doc.signature() + "§r §7— " + doc.blurb() + " §9→",
+                    "/tupenter help " + doc.name()));
+        }
+        source.sendFeedback(Component.literal("§8Yours too: /customfunction list · /customcommand list — /tupenter help <name> opens those as well."));
+        return 1;
+    }
+
+    /**
+     * /tupenter help <name> — one page for any single thing: a built-in function
+     * (from the registry), one of the mod's commands, or one of YOUR definitions
+     * (where the stored definition is the documentation).
+     */
+    private static int runNameHelpCommand(CommandContext<FabricClientCommandSource> context, String rawName) {
+        String name = rawName.toLowerCase(java.util.Locale.ROOT);
+        net.tupenter.script.BuiltinFunctions.Doc doc = net.tupenter.script.BuiltinFunctions.find(name);
+        if (doc != null) {
+            return renderFunctionPage(context, doc);
+        }
+        if (java.util.Set.of("all", "tupenter", "customcommand", "echo", "echohud", "calc", "unroll").contains(name)) {
+            return runCommandHelp(context, name);
+        }
+        if (CustomFunctionManager.hasFunction(name)) {
+            return renderCustomFunctionPage(context, name);
+        }
+        if (CommandAliasManager.getAliasMap().containsKey(CommandAliasManager.normalizeName(name))) {
+            return runAliasDetailCommand(context); // reads the same "name" argument
+        }
+        String near = net.tupenter.script.BuiltinFunctions.nearest(name);
+        context.getSource().sendError(Component.literal("No help page for '" + rawName + "'"
+                + (near != null ? " — did you mean '" + near + "'?" : "")
+                + " · /tupenter help functions lists every function, /tupenter help the topics"));
+        return 0;
+    }
+
+    /** One built-in function in depth: blurb, the details, and two clickable examples. */
+    private static int renderFunctionPage(CommandContext<FabricClientCommandSource> context, net.tupenter.script.BuiltinFunctions.Doc doc) {
+        FabricClientCommandSource source = context.getSource();
+        source.sendFeedback(Component.literal("§b" + doc.signature() + "§r §7— " + doc.blurb()));
+        for (String line : doc.detail()) {
+            source.sendFeedback(Component.literal(line));
+        }
+        source.sendFeedback(Component.literal("§7Try: ").append(suggestLink(doc.exampleSimple(), doc.exampleSimple())));
+        source.sendFeedback(Component.literal("§7Then: ").append(suggestLink(doc.exampleComposed(), doc.exampleComposed())));
+        source.sendFeedback(runLink("§8Every function: /tupenter help functions §9→", "/tupenter help functions"));
+        return 1;
+    }
+
+    /** /tupenter help <your function> — auto-generated: the definition IS the documentation. */
+    private static int renderCustomFunctionPage(CommandContext<FabricClientCommandSource> context, String rawName) {
+        String name = CommandAliasManager.normalizeName(rawName);
+        AliasDefinition definition = CustomFunctionManager.getFunctionMap().get(name);
+        if (definition == null) {
+            context.getSource().sendError(Component.literal("No custom function '" + name + "' — see /customfunction list"));
+            return 0;
+        }
+        FabricClientCommandSource source = context.getSource();
+        String decls = definition.declarationPrefix().trim();
+        source.sendFeedback(Component.literal("§b" + name + (decls.isEmpty() ? "()" : " " + decls)
+                + "§r §7— your custom function (call it in any $...$)"));
+        source.sendFeedback(Component.literal(" §8= §f" + definition.body()));
+        String stored = CustomFunctionManager.getStoredDefinition(name);
+        if (stored != null) {
+            source.sendFeedback(Component.literal(" ").append(suggestLink("[edit]", "/customfunction update " + stored)));
+        }
+        return 1;
+    }
+
     /** /tupenter help expressions <topic> — deep pages, divided by what you're trying to do. */
     private static int runExpressionsHelp(CommandContext<FabricClientCommandSource> context, String topic) {
         String[] lines = switch (topic.toLowerCase(java.util.Locale.ROOT)) {
@@ -2211,7 +2316,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7rand(min, max)§r — whole number, INCLUSIVE both ends: $rand(1, 64)$",
                     "§7randf(min, max)§r — decimal in [min, max)",
                     "§7rand(list)§r — one element of any list: $rand(effectset())$, $rand(range(0, 100, 10))$",
-                    "§7pick(a | b | c)§r — one OPTION, where options are full expressions and nest: pick(rand(1,5) | client.y). Quote literal text: pick(\"say hi\" | \"say nah\") — a single | separates options, || is still boolean-or.",
+                    "§7pick(a | b | c)§r — one OPTION you wrote, chosen at random; options are full expressions and nest — /tupenter help pick",
                     "§7pick vs rand:§r pick chooses between things YOU wrote; rand samples a range or list",
                     "§7Re-rolls:§r resend history keeps the original line, so every resend rolls fresh",
             };
@@ -2220,11 +2325,9 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7range(start, stop[, step])§r — inclusive whole numbers: range(1, 10), range(10, 0, -2)",
                     "§7len(x)§r — list length (or text length) · §7nth(list, i)§r — element i, 0-based · §7indexof(list, v)§r — position of v (or -1) · §7contains(list, v)§r — membership test",
                     "§7Cycling:§r nth(list, $i$ % len(list)) walks a list forever — with a #set counter, one step per run: #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset(\"#minecraft:wool\"), i % 16)$",
-                    "§7Registry sets:§r blockset(#minecraft:logs) / itemset(#c:ores) / effectset(#...) / entityset(#minecraft:skeletons) = a TAG's members as a list — no quotes needed, and typing # inside the parens TAB-COMPLETES the tags. A CONCRETE id makes a one-element set: blockset(\"stone\") — so block-or-blockset params feed the same functions. NO argument = the whole registry. Needs a live world.",
-                    "§7Build your own set:§r pass SEVERAL members — tags and/or concrete ids — and they union (dedup, first-seen order): blockset(\"oak_planks\", \"oak_log\", #minecraft:wool) · entityset(\"minecraft:skeleton\", \"minecraft:zombie\"). Feed it to rand/#foreach/contains like a tag set.",
-                    "§7Pass a set to a custom command:§r wrap it in $...$ like any expression — /sphere ~ ~ ~ 5 $blockset(\"minecraft:stone\", #wool)$. A list ARGUMENT flattens to one comma-joined token, and blockset/itemset read that back as the set, so params after it still parse. One string is also a set: blockset(\"oak_log stone #minecraft:wool\") — spaces or commas, [states] kept intact.",
+                    "§7Registry sets:§r blockset / itemset / effectset / entityset — a TAG's members as a list (typing # inside the parens tab-completes). Tags and concrete ids mix and UNION; no argument = the whole registry — /tupenter help blockset",
+                    "§7Pass a set to a custom command:§r wrap it in $...$ — /sphere ~ ~ ~ 5 $blockset(\"stone\", #wool)$. A list ARGUMENT flattens to one token and the set functions read it back — details on the set pages.",
                     "§7Use them:§r rand(list) picks one: /effect give @s $rand(effectset())$ 30 1 · #foreach loops: #foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)",
-                    "§7Item tags exist too:§r #minecraft:planks, #minecraft:logs, #c:ores, ... — type itemset(# and browse",
                     "§7Also a list:§r $client.effects$ — your active effect ids",
             };
             case "world" -> new String[]{
@@ -2232,7 +2335,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7block(x, y, z)§r or block(\"x y z\") — the block id at a position: $block(0, 64, 0)$ → minecraft:stone",
                     "§7No round trip:§r reads come from YOUR client's synced world copy, so #if handles them instantly — this is /execute if block folded into the expression world, with a real #else.",
                     "§7Crosshair:§r $client.target.hit$ = \"block\"/\"entity\"/\"miss\" — gate with it · BLOCK fields: $client.target.blockpos$ (+ .x/.y/.z), $client.target.block$ (the id) · ENTITY fields: $client.target.type$, .uuid, .name, .health, .pos, .nbt.<path>",
-                    "§7raycast(dist)§r or raycast(origin, dir, dist) — casts like your crosshair (hits collidable blocks): returns \"x y z\" or \"miss\". raycast_block(dist) returns the block id, or \"miss\". $client.eye_pos$ = your eye vec3 (a ray origin), $client.look$ = your unit look vec3 (a ray dir) — so raycast(client.eye_pos, client.look, 60) is the long-hand of raycast(60).",
+                    "§7raycast(dist)§r or raycast(origin, dir, dist) — where your look (or any ray) hits: \"x y z\" or \"miss\" · raycast_block(dist) — WHAT it hits instead of where — /tupenter help raycast",
                     "§7Pattern:§r #if (client.target.hit == \"block\" && client.target.block == \"minecraft:diamond_ore\") (/echo &bfound it) — a condition is already an expression, so $ $ around names is optional",
                     "§7Limits:§r loaded chunks only (unloaded = loud error, never a guess) · states/NBT not included, just the id",
                     "§7Tick state:§r $world.tickrate$ (from /tick rate, ~20) · $world.frozen$ (is /tick freeze on) · $world.stepping$ (mid /tick step) — exact, synced from the server. So a freeze toggle is just: #if $world.frozen$ (/tick unfreeze) #else (/tick freeze)",
@@ -2330,6 +2433,7 @@ public class TupenterModClient implements ClientModInitializer {
             default -> new String[]{
                     "§bTupenter help — pick a topic:",
                     "§7/tupenter help expressions [topic]§r — the $...$ language: math, text, logic, random, lists, world",
+                    "§7/tupenter help functions§r — every function at a glance · /tupenter help <name> — any one in depth (help blockset)",
                     "§7/tupenter help variables§r — #set, #local, client.*/world.*/nbt paths, groups",
                     "§7/tupenter help flow§r — && chains, #repeat, #for, #foreach, #if/#elseif, #while",
                     "§7/tupenter help prefixes§r — #silent, #norecord, #stage, /echo",
@@ -2371,7 +2475,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7vars [group]§r — variables overview, or one group with live values",
                     "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
                     "§7dump [client|target] [path]§r — browse entity NBT (the data behind client.nbt.* / client.target.nbt.*)",
-                    "§7help <topic>§r — topics: expressions [math|text|logic|random|lists|world], variables, flow, prefixes, scripts, command [name]",
+                    "§7help <topic>§r — topics: expressions [math|text|logic|random|lists|world], variables, flow, prefixes, scripts, functions, command [name] — or any FUNCTION name: help blockset",
             };
             case "customcommand" -> new String[]{
                     "§b/customcommand — make your own commands:",
