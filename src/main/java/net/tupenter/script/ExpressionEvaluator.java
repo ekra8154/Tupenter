@@ -497,6 +497,12 @@ final class ExpressionEvaluator {
                 case "raycast_block" -> raycastBlock(args);
                 case "entity_nbt" -> entityNbt(args);
                 case "entity_type" -> entityType(args);
+                case "slot_item" -> Value.of(context.entities().slotItem(
+                        single(args, "slot_item").displayString()));
+                case "slot_count" -> Value.ofNumber(context.entities().slotCount(
+                        single(args, "slot_count").displayString()));
+                case "slot_durability" -> Value.ofNumber(context.entities().slotDurability(
+                        single(args, "slot_durability").displayString()));
                 case "entity_raycast" -> entityRaycast(args);
                 case "entities" -> entitiesWithin(args);
                 case "nearest_entity" -> nearestEntity(args);

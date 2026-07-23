@@ -264,7 +264,8 @@ public class TupenterModClient implements ClientModInitializer {
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
                 "trim", "upper", "lower", "substr", "replace", "vec", "x", "y", "z", "raycast", "raycast_block",
-                "entity_nbt", "entity_type", "entity_raycast", "entities", "nearest_entity"));
+                "entity_nbt", "entity_type", "entity_raycast", "entities", "nearest_entity",
+                "slot_item", "slot_count", "slot_durability"));
         names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too
         return new java.util.ArrayList<>(names);
     }
@@ -2267,6 +2268,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Keys (a script IS a keybind):§r $client.key.<name>$ = held now · $client.keypress.<name>$ = the tick it goes down. <name> is a bind (jump, sneak, attack, hotbar.1 — follows your controls + mods) OR a physical key (g, space, f6). Arrows are up_arrow/down_arrow/left_arrow/right_arrow (bare left/right = the strafe binds). All false while a screen is open. Pair with a tick script: restock = #if (client.keypress.g) (/tp @s $client.target_block$)",
                     "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · TAB-COMPLETES the live tree one level at a time · browse with /tupenter dump",
                     "§7Missing paths:§r NBT omits defaulted fields (an UNDAMAGED item has no minecraft:damage), so a plain read errors. Use the 3-arg form for a fallback: $entity_nbt(\"self\", \"equipment.chest.components.minecraft:damage\", 0)$ — also covers 'nothing equipped'.",
+                    "§7Your slots, by name:§r slot_item(s) / slot_count(s) / slot_durability(s) take /item replace slot names — hotbar.0-8, inventory.0-26 (0-8 = top row), armor.head/chest/legs/feet, weapon.mainhand, weapon.offhand. Empty = \"empty\" and 0, never an error. Use these instead of client.nbt.Inventory, whose list is COMPACTED (empty slots omitted) so indices don't match slots.",
                     "§7Any entity by UUID:§r $entity_nbt(uuid, \"path\")$ reads the same NBT for ANY loaded entity, not just self/target — entity_nbt(\"self\"|\"target\"|<uuid>, \"Health\") · e.g. $entity_nbt(client.uuid, \"Pos.1\")$. Client-synced only (~render distance); an out-of-range UUID errors.",
                     "§7Finding UUIDs:§r entity_raycast(dist) = UUID you're aiming at (or \"miss\") · entities(radius[, type]) = LIST of nearby UUIDs for #foreach · nearest_entity(radius[, type]) = closest UUID (or \"miss\") · client.target_uuid = crosshair entity. Chain them: $entity_nbt(entity_raycast(30), \"Health\")$ · #foreach $e$ in entities(8, \"minecraft:zombie\") (...)",
                     "§7Entity type from a UUID:§r entity_type(selector) = the type id (\"minecraft:zombie\") — entity_nbt can't (entities are stored without their id tag). Name what you're aiming at: /echo This is a $entity_type(entity_raycast(100))$",

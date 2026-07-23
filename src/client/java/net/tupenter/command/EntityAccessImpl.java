@@ -38,6 +38,45 @@ public final class EntityAccessImpl implements EntityAccess {
         return BuiltInRegistries.ENTITY_TYPE.getKey(resolveEntity(selector).getType()).toString();
     }
 
+    @Override
+    public String slotItem(String slot) {
+        net.minecraft.world.item.ItemStack stack = stackAt(slot);
+        return stack.isEmpty() ? "empty" : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+    }
+
+    @Override
+    public int slotCount(String slot) {
+        return stackAt(slot).getCount();
+    }
+
+    @Override
+    public int slotDurability(String slot) {
+        net.minecraft.world.item.ItemStack stack = stackAt(slot);
+        return stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : 0;
+    }
+
+    /**
+     * The live stack in one of the player's slots, addressed by /item replace
+     * name. Parsed with vanilla's own SlotArgument so the vocabulary is exactly
+     * the one those commands accept, then read through Entity.getSlot — which
+     * reaches armor and offhand too, not just the inventory array.
+     */
+    private static net.minecraft.world.item.ItemStack stackAt(String slot) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) {
+            throw new ExpressionException("slot_item(...) is only available in-game");
+        }
+        int id;
+        try {
+            id = new net.minecraft.commands.arguments.SlotArgument()
+                    .parse(new com.mojang.brigadier.StringReader(slot.trim()));
+        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException ex) {
+            throw new ExpressionException("unknown slot '" + slot + "' — use /item replace names: "
+                    + "hotbar.0-8, inventory.0-26, armor.head/chest/legs/feet, weapon.mainhand, weapon.offhand");
+        }
+        return player.getSlot(id).get();
+    }
+
     /** "self" / "target" / a UUID → the entity, or a clear error. */
     private static Entity resolveEntity(String selector) {
         String key = selector.trim();

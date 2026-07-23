@@ -109,6 +109,26 @@ class ExpressionEvaluatorTest {
             public String nearestUuid(double radius, String type) {
                 return radius >= 3 ? "uuid-near" : "miss";
             }
+
+            // a stub loadout: an elytra at 32/432 in the chest, 12 dirt top-right
+            @Override
+            public String slotItem(String slot) {
+                return switch (slot) {
+                    case "armor.chest" -> "minecraft:elytra";
+                    case "inventory.8" -> "minecraft:dirt";
+                    default -> "empty";
+                };
+            }
+
+            @Override
+            public int slotCount(String slot) {
+                return slot.equals("inventory.8") ? 12 : slot.equals("armor.chest") ? 1 : 0;
+            }
+
+            @Override
+            public int slotDurability(String slot) {
+                return slot.equals("armor.chest") ? 32 : 0; // dirt has no durability
+            }
         };
         return new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE,
                 BlockReader.NONE, FunctionResolver.NONE, Raycaster.NONE, access);
@@ -133,6 +153,24 @@ class ExpressionEvaluatorTest {
         // and without a fallback it still errors
         assertThrows(ExpressionException.class,
                 () -> ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Nope\")", ctx));
+    }
+
+    @Test
+    void slotFunctionsAddressSlotsByName() {
+        EvalContext ctx = entityCtx();
+        // addressed by /item replace name — no compacted-list index games
+        assertEquals("minecraft:dirt", ExpressionEvaluator.evaluate("slot_item(\"inventory.8\")", ctx).displayString());
+        assertEquals("12", ExpressionEvaluator.evaluate("slot_count(\"inventory.8\")", ctx).displayString());
+        // an empty slot is the "empty" sentinel with count 0, never an error
+        assertEquals("empty", ExpressionEvaluator.evaluate("slot_item(\"inventory.0\")", ctx).displayString());
+        assertEquals("0", ExpressionEvaluator.evaluate("slot_count(\"inventory.0\")", ctx).displayString());
+        // durability is what's LEFT; a non-damageable item reports 0
+        assertEquals("32", ExpressionEvaluator.evaluate("slot_durability(\"armor.chest\")", ctx).displayString());
+        assertEquals("0", ExpressionEvaluator.evaluate("slot_durability(\"inventory.8\")", ctx).displayString());
+        // the whole elytra-warning condition, end to end
+        assertEquals("true", ExpressionEvaluator.evaluate(
+                "slot_item(\"armor.chest\") == \"minecraft:elytra\" && slot_durability(\"armor.chest\") <= 50", ctx)
+                .displayString());
     }
 
     @Test

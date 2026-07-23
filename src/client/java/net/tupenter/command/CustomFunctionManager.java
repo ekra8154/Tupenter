@@ -27,6 +27,7 @@ public final class CustomFunctionManager {
             "trim", "upper", "lower", "substr", "replace", "rand", "randf", "sin", "cos", "tan", "sqrt", "range",
             "itemset", "blockset", "effectset", "entityset", "block", "pick", "vec", "x", "y", "z",
             "raycast", "raycast_block", "entity_nbt", "entity_type", "entity_raycast", "entities", "nearest_entity",
+            "slot_item", "slot_count", "slot_durability",
             "true", "false");
 
     /** Statement directives allowed as the head of a statement-body function. */

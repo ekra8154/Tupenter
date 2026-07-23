@@ -39,6 +39,21 @@ public interface EntityAccess {
         public String nearestUuid(double radius, String type) {
             throw new ExpressionException("nearest_entity(...) needs a live world");
         }
+
+        @Override
+        public String slotItem(String slot) {
+            throw new ExpressionException("slot_item(...) needs a live world");
+        }
+
+        @Override
+        public int slotCount(String slot) {
+            throw new ExpressionException("slot_count(...) needs a live world");
+        }
+
+        @Override
+        public int slotDurability(String slot) {
+            throw new ExpressionException("slot_durability(...) needs a live world");
+        }
     };
 
     /** The scalar NBT value at {@code path} for the entity {@code selector} ("self"/"target"/UUID) picks, or throws. */
@@ -46,6 +61,21 @@ public interface EntityAccess {
 
     /** The entity type id (e.g. "minecraft:zombie") of the entity {@code selector} picks, or throws. */
     String typeId(String selector);
+
+    /**
+     * Item id in one of YOUR slots, or "empty". {@code slot} uses the same names
+     * as /item replace — "hotbar.0"-"hotbar.8", "inventory.0"-"inventory.26"
+     * (0-8 is the top row), "armor.head/chest/legs/feet", "weapon.mainhand",
+     * "weapon.offhand". Reads the live slot directly, unlike the NBT view, whose
+     * Inventory list is COMPACTED (empty slots omitted) so indices don't line up.
+     */
+    String slotItem(String slot);
+
+    /** Stack size in that slot; 0 when empty. */
+    int slotCount(String slot);
+
+    /** Durability REMAINING in that slot; 0 when empty or the item has no durability. */
+    int slotDurability(String slot);
 
     /** UUID of the entity under a ray from the eyes along look up to {@code maxDist} blocks, or "miss". */
     String raycastUuid(double maxDist);
