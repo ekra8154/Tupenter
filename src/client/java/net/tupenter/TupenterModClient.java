@@ -1349,7 +1349,7 @@ public class TupenterModClient implements ClientModInitializer {
                                     .then(literal("functions").executes(TupenterModClient::runFunctionsIndexCommand))
                                     // any function or custom definition by name: /tupenter help blockset
                                     .then(argument("name", StringArgumentType.word())
-                                            .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(helpNameSuggestions(), b))
+                                            .suggests(TupenterModClient::suggestHelpNames)
                                             .executes(context -> runNameHelpCommand(context, StringArgumentType.getString(context, "name"))))));
 
                     dispatcher.register(literal("echo")
@@ -2213,7 +2213,26 @@ public class TupenterModClient implements ClientModInitializer {
         return 1;
     }
 
-    /** Everything /tupenter help <name> can resolve: built-ins, directives, your functions, your commands. */
+    /**
+     * Autocomplete for /tupenter help &lt;name&gt;. Two rules keep it from burying
+     * the front door: (1) it stays SILENT on an empty prefix — the ~9 topic
+     * literals (expressions, variables, functions, ...) carry the bare
+     * /tupenter help&#32; and this catch-all only speaks once you start typing;
+     * (2) it offers the 12 SUBJECT roots, not the ~75 individual dotted
+     * variables — you browse to client.health from the clickable client page,
+     * and typing the full name still resolves. So the flat vocabulary here is
+     * functions + directives + subjects + your own definitions, matched by
+     * whatever you've typed.
+     */
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestHelpNames(
+            CommandContext<FabricClientCommandSource> context, com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        if (builder.getRemaining().isEmpty()) {
+            return builder.buildFuture(); // let the topic literals stand alone
+        }
+        return net.minecraft.commands.SharedSuggestionProvider.suggest(helpNameSuggestions(), builder);
+    }
+
+    /** Everything /tupenter help &lt;name&gt; can resolve by NAME (variables collapsed to subject roots). */
     private static java.util.List<String> helpNameSuggestions() {
         java.util.List<String> names = new java.util.ArrayList<>();
         for (net.tupenter.script.BuiltinFunctions.Doc doc : net.tupenter.script.BuiltinFunctions.ALL) {
@@ -2223,9 +2242,8 @@ public class TupenterModClient implements ClientModInitializer {
             names.add(doc.name());
         }
         for (net.tupenter.script.SubjectDocs.Subject subject : net.tupenter.script.SubjectDocs.ALL) {
-            names.add(subject.name());
+            names.add(subject.name()); // the subject page is where individual vars are browsed
         }
-        names.addAll(knownDottedVariableNames());
         names.addAll(CustomFunctionManager.getFunctionMap().keySet());
         names.addAll(CommandAliasManager.getAliasMap().keySet());
         return names;
