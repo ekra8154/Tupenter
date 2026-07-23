@@ -2241,9 +2241,36 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine(Component.literal(line));
     }
 
-    /** Snap chat to the bottom — a page you navigated to should be LOOKED AT, not appended out of view. */
+    /**
+     * Close the page: if anything on it is clickable, say so — nothing marks a
+     * clickable line visually, so the page teaches its own interactivity. Then
+     * snap chat to the bottom: a page you navigated to should be LOOKED AT,
+     * not appended out of view.
+     */
     private static void endHelpPage() {
+        boolean clickable = false;
+        for (Component line : HELP_PAGE_LINES) {
+            if (hasClick(line)) {
+                clickable = true;
+                break;
+            }
+        }
+        if (clickable) {
+            helpLine("§8§oHover a line to see what clicking it does.");
+        }
         Minecraft.getInstance().gui.getChat().resetChatScroll();
+    }
+
+    private static boolean hasClick(Component component) {
+        if (component.getStyle().getClickEvent() != null) {
+            return true;
+        }
+        for (Component sibling : component.getSiblings()) {
+            if (hasClick(sibling)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** A whole page of plain §-styled lines, replacing the previous page. */
