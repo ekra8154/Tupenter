@@ -27,7 +27,7 @@ import java.util.Set;
 public final class SlotVariableProvider implements VariableProvider {
     private static final String PREFIX = "client.slot.";
 
-    private static final List<String> FIELDS = List.of("id", "count", "durability", "max_durability");
+    private static final List<String> FIELDS = EntityAccessImpl.FIELDS;
 
     /** Slot names offered by tab-complete. SlotArgument stays the authority for what actually parses. */
     private static final List<String> SLOT_NAMES = buildSlotNames();
@@ -58,17 +58,9 @@ public final class SlotVariableProvider implements VariableProvider {
         }
         String slot = rest.substring(0, lastDot);
         String field = rest.substring(lastDot + 1);
-        ItemStack stack = EntityAccessImpl.stackAt(slot); // throws with the valid slot names
-        return Optional.of(switch (field) {
-            case "id" -> Value.of(stack.isEmpty() ? "empty"
-                    : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
-            case "count" -> Value.ofNumber(stack.getCount());
-            case "durability" -> Value.ofNumber(
-                    stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : 0);
-            case "max_durability" -> Value.ofNumber(stack.isDamageableItem() ? stack.getMaxDamage() : 0);
-            default -> throw new ExpressionException("client.slot." + slot + "." + field
-                    + ": unknown field '" + field + "' — use " + String.join(", ", FIELDS));
-        });
+        // same reader the slot(slot, field) function uses — one implementation,
+        // so the two spellings can never disagree
+        return Optional.of(EntityAccessImpl.readField(slot, field));
     }
 
     /**

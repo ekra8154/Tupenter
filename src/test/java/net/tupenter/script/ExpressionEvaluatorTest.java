@@ -112,22 +112,19 @@ class ExpressionEvaluatorTest {
 
             // a stub loadout: an elytra at 32/432 in the chest, 12 dirt top-right
             @Override
-            public String slotItem(String slot) {
-                return switch (slot) {
-                    case "armor.chest" -> "minecraft:elytra";
-                    case "inventory.8" -> "minecraft:dirt";
-                    default -> "empty";
+            public Value slotField(String slot, String field) {
+                return switch (field) {
+                    case "id" -> Value.of(switch (slot) {
+                        case "armor.chest" -> "minecraft:elytra";
+                        case "inventory.8" -> "minecraft:dirt";
+                        default -> "empty";
+                    });
+                    case "count" -> Value.ofNumber(
+                            slot.equals("inventory.8") ? 12 : slot.equals("armor.chest") ? 1 : 0);
+                    case "durability" -> Value.ofNumber(slot.equals("armor.chest") ? 32 : 0);
+                    case "max_durability" -> Value.ofNumber(slot.equals("armor.chest") ? 432 : 0);
+                    default -> throw new ExpressionException("unknown slot field: " + field);
                 };
-            }
-
-            @Override
-            public int slotCount(String slot) {
-                return slot.equals("inventory.8") ? 12 : slot.equals("armor.chest") ? 1 : 0;
-            }
-
-            @Override
-            public int slotDurability(String slot) {
-                return slot.equals("armor.chest") ? 32 : 0; // dirt has no durability
             }
         };
         return new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE,
@@ -156,21 +153,38 @@ class ExpressionEvaluatorTest {
     }
 
     @Test
-    void slotFunctionsAddressSlotsByName() {
+    void slotFunctionTakesSlotAndField() {
         EvalContext ctx = entityCtx();
         // addressed by /item replace name — no compacted-list index games
-        assertEquals("minecraft:dirt", ExpressionEvaluator.evaluate("slot_item(\"inventory.8\")", ctx).displayString());
-        assertEquals("12", ExpressionEvaluator.evaluate("slot_count(\"inventory.8\")", ctx).displayString());
+        assertEquals("minecraft:dirt", ExpressionEvaluator.evaluate("slot(\"inventory.8\", \"id\")", ctx).displayString());
+        assertEquals("12", ExpressionEvaluator.evaluate("slot(\"inventory.8\", \"count\")", ctx).displayString());
         // an empty slot is the "empty" sentinel with count 0, never an error
-        assertEquals("empty", ExpressionEvaluator.evaluate("slot_item(\"inventory.0\")", ctx).displayString());
-        assertEquals("0", ExpressionEvaluator.evaluate("slot_count(\"inventory.0\")", ctx).displayString());
+        assertEquals("empty", ExpressionEvaluator.evaluate("slot(\"inventory.0\", \"id\")", ctx).displayString());
+        assertEquals("0", ExpressionEvaluator.evaluate("slot(\"inventory.0\", \"count\")", ctx).displayString());
         // durability is what's LEFT; a non-damageable item reports 0
-        assertEquals("32", ExpressionEvaluator.evaluate("slot_durability(\"armor.chest\")", ctx).displayString());
-        assertEquals("0", ExpressionEvaluator.evaluate("slot_durability(\"inventory.8\")", ctx).displayString());
-        // the whole elytra-warning condition, end to end
-        assertEquals("true", ExpressionEvaluator.evaluate(
-                "slot_item(\"armor.chest\") == \"minecraft:elytra\" && slot_durability(\"armor.chest\") <= 50", ctx)
-                .displayString());
+        assertEquals("32", ExpressionEvaluator.evaluate("slot(\"armor.chest\", \"durability\")", ctx).displayString());
+        assertEquals("0", ExpressionEvaluator.evaluate("slot(\"inventory.8\", \"durability\")", ctx).displayString());
+        assertEquals("432", ExpressionEvaluator.evaluate("slot(\"armor.chest\", \"max_durability\")", ctx).displayString());
+    }
+
+    @Test
+    void slotAddressCanBeComputed() {
+        // the whole reason the function form exists: a slot built at run time,
+        // which the dotted client.slot.<slot>.<field> variable can't express
+        EvalContext ctx = entityCtx();
+        assertEquals("minecraft:dirt",
+                ExpressionEvaluator.evaluate("slot(\"inventory.\" + 8, \"id\")", ctx).displayString());
+        assertEquals("12",
+                ExpressionEvaluator.evaluate("slot(\"inventory.\" + (4 + 4), \"count\")", ctx).displayString());
+    }
+
+    @Test
+    void slotValidatesArityAndField() {
+        EvalContext ctx = entityCtx();
+        assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("slot(\"armor.chest\")", ctx));
+        assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("slot(\"armor.chest\", \"nope\")", ctx));
     }
 
     @Test

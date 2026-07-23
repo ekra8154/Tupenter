@@ -41,18 +41,8 @@ public interface EntityAccess {
         }
 
         @Override
-        public String slotItem(String slot) {
-            throw new ExpressionException("slot_item(...) needs a live world");
-        }
-
-        @Override
-        public int slotCount(String slot) {
-            throw new ExpressionException("slot_count(...) needs a live world");
-        }
-
-        @Override
-        public int slotDurability(String slot) {
-            throw new ExpressionException("slot_durability(...) needs a live world");
+        public Value slotField(String slot, String field) {
+            throw new ExpressionException("slot(...) needs a live world");
         }
     };
 
@@ -63,19 +53,18 @@ public interface EntityAccess {
     String typeId(String selector);
 
     /**
-     * Item id in one of YOUR slots, or "empty". {@code slot} uses the same names
-     * as /item replace — "hotbar.0"-"hotbar.8", "inventory.0"-"inventory.26"
-     * (0-8 is the top row), "armor.head/chest/legs/feet", "weapon.mainhand",
-     * "weapon.offhand". Reads the live slot directly, unlike the NBT view, whose
-     * Inventory list is COMPACTED (empty slots omitted) so indices don't line up.
+     * One field of one of YOUR slots — the computed-address counterpart to the
+     * {@code client.slot.<slot>.<field>} variable, exactly as
+     * {@link #readNbt} is to {@code client.nbt.<path>}. Both halves are
+     * arguments so a slot can be built at run time: {@code slot("inventory." + i, "id")}.
+     *
+     * <p>{@code slot} uses /item replace names — "hotbar.0"-"hotbar.8",
+     * "inventory.0"-"inventory.26" (0-8 is the top row), "armor.head/chest/legs/feet",
+     * "weapon.mainhand", "weapon.offhand". Reads the live slot directly, unlike the
+     * NBT view, whose Inventory list is COMPACTED (empty slots omitted) so indices
+     * don't line up. An empty slot yields "empty"/0 rather than an error.
      */
-    String slotItem(String slot);
-
-    /** Stack size in that slot; 0 when empty. */
-    int slotCount(String slot);
-
-    /** Durability REMAINING in that slot; 0 when empty or the item has no durability. */
-    int slotDurability(String slot);
+    Value slotField(String slot, String field);
 
     /** UUID of the entity under a ray from the eyes along look up to {@code maxDist} blocks, or "miss". */
     String raycastUuid(double maxDist);

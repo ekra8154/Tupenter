@@ -497,12 +497,7 @@ final class ExpressionEvaluator {
                 case "raycast_block" -> raycastBlock(args);
                 case "entity_nbt" -> entityNbt(args);
                 case "entity_type" -> entityType(args);
-                case "slot_item" -> Value.of(context.entities().slotItem(
-                        single(args, "slot_item").displayString()));
-                case "slot_count" -> Value.ofNumber(context.entities().slotCount(
-                        single(args, "slot_count").displayString()));
-                case "slot_durability" -> Value.ofNumber(context.entities().slotDurability(
-                        single(args, "slot_durability").displayString()));
+                case "slot" -> slotField(args);
                 case "raycast_entity" -> entityRaycast(args);
                 case "entities" -> entitiesWithin(args);
                 case "nearest_entity" -> nearestEntity(args);
@@ -1027,6 +1022,20 @@ final class ExpressionEvaluator {
                 }
             }
             return context.entities().readNbt(selector, path);
+        }
+
+        /**
+         * slot(slot, field) — one field of one of your slots, with BOTH halves as
+         * arguments so the slot can be computed: slot("inventory." + i, "id").
+         * The spelled-out counterpart is the variable client.slot.&lt;slot&gt;.&lt;field&gt;
+         * — same split as client.nbt.&lt;path&gt; vs entity_nbt(selector, path).
+         */
+        private Value slotField(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("slot(slot, field) takes an /item replace slot name and a field — "
+                        + "e.g. slot(\"armor.chest\", \"durability\") or slot(\"inventory.\" + i, \"id\")");
+            }
+            return context.entities().slotField(args.get(0).displayString(), args.get(1).displayString());
         }
 
         /**

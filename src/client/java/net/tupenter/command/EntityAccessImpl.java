@@ -38,21 +38,32 @@ public final class EntityAccessImpl implements EntityAccess {
         return BuiltInRegistries.ENTITY_TYPE.getKey(resolveEntity(selector).getType()).toString();
     }
 
-    @Override
-    public String slotItem(String slot) {
-        net.minecraft.world.item.ItemStack stack = stackAt(slot);
-        return stack.isEmpty() ? "empty" : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-    }
+    /** The readable fields of a slot — shared with the client.slot.&lt;slot&gt;.&lt;field&gt; variable form. */
+    public static final List<String> FIELDS = List.of("id", "count", "durability", "max_durability");
 
     @Override
-    public int slotCount(String slot) {
-        return stackAt(slot).getCount();
+    public Value slotField(String slot, String field) {
+        return readField(slot, field);
     }
 
-    @Override
-    public int slotDurability(String slot) {
+    /**
+     * THE slot field reader. Both spellings — the client.slot.&lt;slot&gt;.&lt;field&gt;
+     * variable and the slot(slot, field) function — route here, so they cannot
+     * drift apart (an earlier split between client.held_durability and the slot
+     * form disagreed on non-damageable items; one implementation prevents that).
+     */
+    public static Value readField(String slot, String field) {
         net.minecraft.world.item.ItemStack stack = stackAt(slot);
-        return stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : 0;
+        return switch (field.toLowerCase(Locale.ROOT)) {
+            case "id" -> Value.of(stack.isEmpty() ? "empty"
+                    : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+            case "count" -> Value.ofNumber(stack.getCount());
+            case "durability" -> Value.ofNumber(
+                    stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : 0);
+            case "max_durability" -> Value.ofNumber(stack.isDamageableItem() ? stack.getMaxDamage() : 0);
+            default -> throw new ExpressionException("unknown slot field '" + field + "' — use "
+                    + String.join(", ", FIELDS));
+        };
     }
 
     /**
