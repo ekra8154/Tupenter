@@ -1389,7 +1389,7 @@ public class TupenterModClient implements ClientModInitializer {
                             .then(literal("help")
                                     .executes(TupenterModClient::runCustomCommandHelp)
                                     .then(argument("topic", StringArgumentType.word())
-                                            .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(customCommandHelpTopics(), b))
+                                            .suggests(TupenterModClient::suggestCustomCommandHelpTopics)
                                             .executes(context -> runCustomCommandHelpTopic(context, StringArgumentType.getString(context, "topic")))))
                             .then(argument("name", StringArgumentType.word())
                                     .suggests((context, suggestionsBuilder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
@@ -3037,12 +3037,27 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /** Topics /customcommand help <topic> can open: the three fixed pages plus every type keyword. */
+    /** The three real topic pages — the ONLY thing shown at an empty prefix so the 23 type keywords don't bury them. */
+    private static final java.util.List<String> CUSTOM_COMMAND_HELP_TOPICS = java.util.List.of("types", "optionals", "descriptions");
+
     private static java.util.List<String> customCommandHelpTopics() {
-        java.util.List<String> topics = new ArrayList<>(java.util.List.of("types", "optionals", "descriptions"));
+        java.util.List<String> topics = new ArrayList<>(CUSTOM_COMMAND_HELP_TOPICS);
         for (ParamTypeDocs.Doc doc : ParamTypeDocs.ALL) {
             topics.add(doc.keyword());
         }
         return topics;
+    }
+
+    /**
+     * Same decongestion as /tupenter help: this argument has no literal siblings
+     * to fall back on, so an empty prefix shows the three real topic pages
+     * (types is the clickable index into the 23 type keywords); once you start
+     * typing, the type keywords join in so /customcommand help block completes.
+     */
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestCustomCommandHelpTopics(
+            CommandContext<FabricClientCommandSource> context, com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        java.util.List<String> pool = builder.getRemaining().isEmpty() ? CUSTOM_COMMAND_HELP_TOPICS : customCommandHelpTopics();
+        return net.minecraft.commands.SharedSuggestionProvider.suggest(pool, builder);
     }
 
     private static int runCustomCommandHelpTopic(CommandContext<FabricClientCommandSource> context, String rawTopic) {
