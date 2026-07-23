@@ -7,6 +7,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.tupenter.script.ExpressionException;
+import net.tupenter.script.MissingValueException;
 import net.tupenter.script.Value;
 
 import java.util.List;
@@ -61,7 +62,8 @@ public final class EntityFields {
         ClientLevel level = Minecraft.getInstance().level;
         Entity entity = level == null ? null : level.getEntity(uuid);
         if (entity == null) {
-            throw new ExpressionException("no entity with UUID " + uuid
+            // out of range is transient too — a scan over UUIDs shouldn't abort
+            throw new MissingValueException("no entity with UUID " + uuid
                     + " is loaded on the client (out of range, or not synced)");
         }
         return entity;
@@ -80,8 +82,10 @@ public final class EntityFields {
             case "name" -> Value.of(entity.getName().getString());
             case "health" -> {
                 if (!(entity instanceof LivingEntity living)) {
-                    throw new ExpressionException("health: " + BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType())
-                            + " isn't a living entity");
+                    // transient: what you happen to be aiming at is world state,
+                    // so a condition reads false rather than aborting the script
+                    throw new MissingValueException("health: "
+                            + BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()) + " isn't a living entity");
                 }
                 yield Value.ofNumber(living.getHealth());
             }

@@ -59,7 +59,12 @@ public final class EntityNbtVariableProvider implements VariableProvider {
         if (Minecraft.getInstance().hitResult instanceof EntityHitResult hit) {
             return hit.getEntity();
         }
-        throw new ExpressionException("client.target: no entity under the crosshair");
+        // MissingValueException, not ExpressionException: "nothing under the
+        // crosshair" is transient world state, so an #if/#while condition reads
+        // FALSE instead of aborting — that's what lets a scanning tick script
+        // poll client.target.health without spamming errors.
+        throw new net.tupenter.script.MissingValueException(
+                "client.target: no entity under the crosshair — check $client.target.hit$ first");
     }
 
     public static CompoundTag snapshot(Entity entity) {
