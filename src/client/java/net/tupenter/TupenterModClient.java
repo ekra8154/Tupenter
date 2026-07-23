@@ -2610,7 +2610,8 @@ public class TupenterModClient implements ClientModInitializer {
     /** /tupenter help variables — the concepts stay prose; every subject is a clickable row. */
     private static int runVariablesHelp(CommandContext<FabricClientCommandSource> context) {
         beginHelpPage();
-        helpLine("§bVariables — live state as $names$:");
+        helpLine("§bVariables — the name IS the variable:");
+        helpLine("§7Bare name is normal:§r #set x = 5, then x in expression world — #if (x > 3), x + 1, a function arg. $x$ is the SAME name with explicit wrapping; you only need it as the door into command/chat text, where /give @s stick $x$ substitutes but plain x is the letter.");
         helpLine(navRow("#set · #local · #setdefault", "YOUR variables — session, line-local, init-once (each has a page)", "/tupenter help local"));
         helpLine("§7Persistent:§r /tupenter var save <name> keeps a #set forever · var delete <name> removes it · create-once-across-sessions: #setdefault $x$ = 0 && /tupenter var save $x$");
         helpLine("§7Dotted or function?§r Both read LIVE — the difference is the ADDRESS, not the value. Spell the address out and it's a dotted variable (tab-completes); COMPUTE it and it's a function: client.slot.inventory.8.id vs slot(\"inventory.\" + i, \"id\").");
