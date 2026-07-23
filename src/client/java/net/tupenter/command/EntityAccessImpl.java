@@ -61,7 +61,7 @@ public final class EntityAccessImpl implements EntityAccess {
      * the one those commands accept, then read through Entity.getSlot — which
      * reaches armor and offhand too, not just the inventory array.
      */
-    private static net.minecraft.world.item.ItemStack stackAt(String slot) {
+    public static net.minecraft.world.item.ItemStack stackAt(String slot) {
         LocalPlayer player = Minecraft.getInstance().player;
         if (player == null) {
             throw new ExpressionException("slot_item(...) is only available in-game");

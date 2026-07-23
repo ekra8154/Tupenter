@@ -218,6 +218,7 @@ public class TupenterModClient implements ClientModInitializer {
         VARIABLE_REGISTRY.register(PLAYERS_VARIABLES);
         VARIABLE_REGISTRY.register(REAL_VARIABLES);
         VARIABLE_REGISTRY.register(new EntityNbtVariableProvider());
+        VARIABLE_REGISTRY.register(new net.tupenter.command.SlotVariableProvider());
     }
 
     private static final TickScriptRunner TICK_SCRIPTS = new TickScriptRunner();
@@ -257,8 +258,11 @@ public class TupenterModClient implements ClientModInitializer {
         names.addAll(SESSION_VARIABLES.names());
         names.add("client.nbt.");
         names.add("target.nbt.");
-        // ...and once you're inside one, the live tree one level at a time
+        names.add("client.slot.");
+        // ...and once you're inside one, expand it: the live NBT tree one level
+        // at a time, or the slot names / that slot's fields
         names.addAll(net.tupenter.command.EntityNbtVariableProvider.pathCompletions(typed));
+        names.addAll(net.tupenter.command.SlotVariableProvider.completions(typed));
         names.addAll(java.util.List.of(
                 "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
@@ -2263,12 +2267,14 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Built-in:§r $client.x/y/z/health/held_item/target_block/target_hit...$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$ — target_hit = \"block\"/\"entity\"/\"miss\"; target_block errors on a miss (gate it with target_hit)",
                     "§7Environment:§r $client.biome$ · $client.light / light_block / light_sky$ · $client.facing$ · $client.chunk_x/chunk_z$ · $world.spawn$ · $world.key$ (the per-world scripts id)",
                     "§7Movement:§r $client.speed$ (full 3D b/s) · $client.speed_xz$ (horizontal) · $client.speed_y$ (vertical, signed) · $client.motion$ (vec3 \"vx vy vz\" b/s) · booleans: on_ground, sneaking, sprinting, swimming, flying, gliding",
-                    "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · slot (0-8), offhand_item, target_entity, target_uuid (the crosshair entity's UUID — an entity_nbt selector) · gamemode, ping, fps, uuid",
+                    "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · selected_slot (0-8, which hotbar slot is held), offhand_item, target_entity, target_uuid (the crosshair entity's UUID — an entity_nbt selector) · gamemode, ping, fps, uuid",
                     "§7Hazards & held:§r in_water, underwater, in_lava, on_fire, fall_distance, eye_y · riding + vehicle · effects (a LIST — #foreach $e$ in client.effects works) · held_count, offhand_count, held_durability/held_max_durability (error on non-damageable — guard with held_item)",
                     "§7Keys (a script IS a keybind):§r $client.key.<name>$ = held now · $client.keypress.<name>$ = the tick it goes down. <name> is a bind (jump, sneak, attack, hotbar.1 — follows your controls + mods) OR a physical key (g, space, f6). Arrows are up_arrow/down_arrow/left_arrow/right_arrow (bare left/right = the strafe binds). All false while a screen is open. Pair with a tick script: restock = #if (client.keypress.g) (/tp @s $client.target_block$)",
                     "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · TAB-COMPLETES the live tree one level at a time · browse with /tupenter dump",
                     "§7Missing paths:§r NBT omits defaulted fields (an UNDAMAGED item has no minecraft:damage), so a plain read errors. Use the 3-arg form for a fallback: $entity_nbt(\"self\", \"equipment.chest.components.minecraft:damage\", 0)$ — also covers 'nothing equipped'.",
-                    "§7Your slots, by name:§r slot_item(s) / slot_count(s) / slot_durability(s) take /item replace slot names — hotbar.0-8, inventory.0-26 (0-8 = top row), armor.head/chest/legs/feet, weapon.mainhand, weapon.offhand. Empty = \"empty\" and 0, never an error. Use these instead of client.nbt.Inventory, whose list is COMPACTED (empty slots omitted) so indices don't match slots.",
+                    "§7Your slots:§r $client.slot.<slot>.<field>$ — slot is an /item replace name (hotbar.0-8, inventory.0-26 where 0-8 is the TOP row, armor.head/chest/legs/feet, weapon.mainhand, weapon.offhand); field is id, count, durability, max_durability. Tab-completes both halves. e.g. $client.slot.inventory.8.id$ · $client.slot.armor.chest.durability$",
+                    "§7Same pairing as NBT:§r the dotted VARIABLE is for a slot you know while writing (reads well, tab-completes); the FUNCTIONS slot_item(s)/slot_count(s)/slot_durability(s) are for a slot you COMPUTE, e.g. #for $i$ in 0..26 (... slot_item(\"inventory.\" + i) ...). Empty = \"empty\" and 0, never an error.",
+                    "§7Not client.nbt.Inventory:§r that's the SAVE format — a compacted list of non-empty stacks with a Slot field, so Inventory.0 is 'my first stack', not slot 0. Use the slot forms above.",
                     "§7Any entity by UUID:§r $entity_nbt(uuid, \"path\")$ reads the same NBT for ANY loaded entity, not just self/target — entity_nbt(\"self\"|\"target\"|<uuid>, \"Health\") · e.g. $entity_nbt(client.uuid, \"Pos.1\")$. Client-synced only (~render distance); an out-of-range UUID errors.",
                     "§7Finding UUIDs:§r entity_raycast(dist) = UUID you're aiming at (or \"miss\") · entities(radius[, type]) = LIST of nearby UUIDs for #foreach · nearest_entity(radius[, type]) = closest UUID (or \"miss\") · client.target_uuid = crosshair entity. Chain them: $entity_nbt(entity_raycast(30), \"Health\")$ · #foreach $e$ in entities(8, \"minecraft:zombie\") (...)",
                     "§7Entity type from a UUID:§r entity_type(selector) = the type id (\"minecraft:zombie\") — entity_nbt can't (entities are stored without their id tag). Name what you're aiming at: /echo This is a $entity_type(entity_raycast(100))$",

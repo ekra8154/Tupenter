@@ -108,7 +108,10 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.xp_progress", player -> Value.ofNumber(round2(player.experienceProgress))); // 0..1
 
         // inventory
-        register("client.slot", player -> Value.ofNumber(player.getInventory().getSelectedSlot())); // 0-8, /item-compatible
+        // which hotbar slot is SELECTED (0-8). Named ...selected_slot because a bare
+        // "client.slot" read like a namespace root — that's now slot CONTENTS,
+        // client.slot.<slot>.<field> (see SlotVariableProvider).
+        register("client.selected_slot", player -> Value.ofNumber(player.getInventory().getSelectedSlot()));
         register("client.offhand_item", player -> Value.of(
                 BuiltInRegistries.ITEM.getKey(player.getOffhandItem().getItem()).toString()));
 
