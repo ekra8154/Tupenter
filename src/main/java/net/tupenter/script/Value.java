@@ -32,6 +32,18 @@ public sealed interface Value {
         return substitutionString();
     }
 
+    /**
+     * Text when the value is a custom command's ARGUMENT (not free command text).
+     * Same as {@link #substitutionString()} except a list flattens to its members
+     * space-separated instead of erroring: a set-valued argument then round-trips,
+     * because blockset/itemset/... read a space-separated string as a whole set —
+     * /sphere ~ ~ ~ 5 $blockset("minecraft:stone", #wool)$. Free command text keeps
+     * the strict behavior, so /give @s $blockset(#logs)$ still errors helpfully.
+     */
+    default String argumentString() {
+        return substitutionString();
+    }
+
     record NumberValue(Rational value) implements Value {
         @Override
         public String substitutionString() {
@@ -63,6 +75,23 @@ public sealed interface Value {
         @Override
         public String substitutionString() {
             throw new ExpressionException("A list can't be inserted into a command — loop over it with #foreach");
+        }
+
+        /**
+         * As a command ARGUMENT a list flattens to its members joined by commas —
+         * comma, not space, so the whole set stays ONE argument token and the
+         * params after it still parse. blockset/itemset/... split it back apart.
+         */
+        @Override
+        public String argumentString() {
+            StringBuilder builder = new StringBuilder();
+            for (Value value : values) {
+                if (builder.length() > 0) {
+                    builder.append(',');
+                }
+                builder.append(value.argumentString());
+            }
+            return builder.toString();
         }
 
         @Override

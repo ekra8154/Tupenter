@@ -22,6 +22,15 @@ public final class MathEvaluator {
     }
 
     public static String applyNumberMath(String command, NumberMathMode mode, EvalContext context) {
+        return applyNumberMath(command, mode, context, false);
+    }
+
+    /**
+     * {@code asArguments} = the text is a custom command's argument list, where a
+     * list-valued marker flattens to space-separated members instead of erroring
+     * (see {@link Value#argumentString()}). Free command text passes false.
+     */
+    public static String applyNumberMath(String command, NumberMathMode mode, EvalContext context, boolean asArguments) {
         if (mode == NumberMathMode.DISABLED) {
             return command;
         }
@@ -46,7 +55,7 @@ public final class MathEvaluator {
 
             String markedSegment = command.substring(start, end + 1);
             String expression = command.substring(start + 1, end);
-            result.append(evaluateMarkedSegment(markedSegment, expression, context));
+            result.append(evaluateMarkedSegment(markedSegment, expression, context, asArguments));
 
             index = end + 1;
         }
@@ -126,7 +135,8 @@ public final class MathEvaluator {
         return text.replace("\\$", "$");
     }
 
-    private static String evaluateMarkedSegment(String originalSegment, String expression, EvalContext context) {
+    private static String evaluateMarkedSegment(String originalSegment, String expression, EvalContext context,
+            boolean asArguments) {
         try {
             // "$1$" style positional parameters: pure-digit content is a
             // variable reference when one is bound, else a number literal
@@ -134,14 +144,18 @@ public final class MathEvaluator {
             if (!trimmed.isEmpty() && trimmed.chars().allMatch(Character::isDigit)) {
                 var bound = context.variables().resolve(trimmed);
                 if (bound.isPresent()) {
-                    return bound.get().substitutionString();
+                    return stringify(bound.get(), asArguments);
                 }
             }
-            return ExpressionEvaluator.evaluate(expression, context).substitutionString();
+            return stringify(ExpressionEvaluator.evaluate(expression, context), asArguments);
         } catch (IllegalArgumentException ex) {
             throw new ExpressionException("Invalid expression " + originalSegment + " — " + ex.getMessage()
                     + " (write \\$ for a literal dollar sign)");
         }
+    }
+
+    private static String stringify(Value value, boolean asArguments) {
+        return asArguments ? value.argumentString() : value.substitutionString();
     }
 
     /** Legacy numeric-only evaluation, used by the auto-detect path. */

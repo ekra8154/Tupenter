@@ -427,6 +427,33 @@ class ExpressionEvaluatorTest {
                 "len(blockset(\"stone #minecraft:logs\"))", tagContext()).displayString()); // stone + 2 logs
         // extra whitespace is harmless; dedup still applies
         assertEquals("1", ExpressionEvaluator.evaluate("len(blockset(\"  stone   stone \"))", tagContext()).displayString());
+        // commas separate too — the form a flattened list argument arrives in
+        assertEquals("2", ExpressionEvaluator.evaluate("len(blockset(\"stone,ice\"))", tagContext()).displayString());
+        assertEquals("2", ExpressionEvaluator.evaluate("len(blockset(\"stone, ice\"))", tagContext()).displayString());
+    }
+
+    @Test
+    void aListArgumentFlattensToOneCommaJoinedToken() {
+        // the /sphere path: $blockset(...)$ as a command ARGUMENT flattens to one
+        // token, which blockset() then reads back as the same set
+        Value set = ExpressionEvaluator.evaluate("blockset(\"stone\", \"ice\")", tagContext());
+        assertEquals("minecraft:stone,minecraft:ice", set.argumentString());
+        assertTrue(!set.argumentString().contains(" "), "must stay ONE argument token");
+        // and it round-trips
+        assertEquals("2", ExpressionEvaluator.evaluate(
+                "len(blockset(\"" + set.argumentString() + "\"))", tagContext()).displayString());
+        // free command text still refuses a list (the helpful guardrail)
+        assertThrows(ExpressionException.class, set::substitutionString);
+    }
+
+    @Test
+    void memberSplitIgnoresSeparatorsInsideBlockStates() {
+        // a multi-property state carries commas — they must NOT split the member apart.
+        // The unknown-member error names the token, so it proves what the splitter produced:
+        // split correctly it reports the whole "nope[a=1,b=2]", not a torn "nope[a=1".
+        ExpressionException ex = assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("blockset(\"nope[a=1,b=2]\")", tagContext()));
+        assertTrue(ex.getMessage().contains("nope[a=1,b=2]"), ex.getMessage());
     }
 
     @Test

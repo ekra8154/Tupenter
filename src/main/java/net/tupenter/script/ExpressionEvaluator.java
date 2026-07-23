@@ -788,20 +788,50 @@ final class ExpressionEvaluator {
                     throw new ExpressionException(name + "(...) takes #tags and/or concrete ids — "
                             + name + "(\"oak_planks\", \"#minecraft:logs\") — or no argument for the whole registry");
                 }
-                // each argument may itself be a space-separated list of members, so a
-                // SINGLE scalar string carries a whole set — blockset("oak_log #wool").
-                // (Ids/tags/[states] never contain spaces, so this split is safe.) This
-                // is what lets a custom command's <set:blockset> param hold more than one:
-                // /sphere ... $"oak_planks oak_log #minecraft:wool"$
+                // each argument may itself be a list of members separated by spaces or
+                // commas, so a SINGLE scalar string carries a whole set. That's what
+                // lets a custom command's <set:blockset> param hold more than one:
+                // /sphere ~ ~ ~ 5 $blockset("minecraft:stone", #wool)$ — the list
+                // flattens to "a,b,c" as one argument token and splits back here.
                 String trimmed = string.value().trim();
                 if (trimmed.isEmpty()) {
                     throw new ExpressionException(name + "(...) needs a tag or id, e.g. " + name + "(#minecraft:logs)");
                 }
-                for (String token : trimmed.split("\\s+")) {
+                for (String token : splitMembers(trimmed)) {
                     union.addAll(resolveMember(name, kind, token));
                 }
             }
             return idListValue(union);
+        }
+
+        /**
+         * Splits a set string into members on spaces and/or commas, ignoring
+         * separators inside [block states] and {nbt} so
+         * "oak_log[axis=y],stone" stays two members, not four.
+         */
+        private static List<String> splitMembers(String text) {
+            List<String> out = new ArrayList<>();
+            StringBuilder current = new StringBuilder();
+            int depth = 0;
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c == '[' || c == '{') {
+                    depth++;
+                } else if (c == ']' || c == '}') {
+                    depth--;
+                } else if (depth <= 0 && (Character.isWhitespace(c) || c == ',')) {
+                    if (current.length() > 0) {
+                        out.add(current.toString());
+                        current.setLength(0);
+                    }
+                    continue;
+                }
+                current.append(c);
+            }
+            if (current.length() > 0) {
+                out.add(current.toString());
+            }
+            return out;
         }
 
         /** One {@code blockset}/etc. member — a "#tag" expands to its members, a bare/concrete id resolves to itself. */

@@ -1031,7 +1031,10 @@ public final class ScriptParser {
             // feed an int param and outer-scope variables can pass through
             String rest;
             try {
-                rest = MathEvaluator.applyNumberMath(remainder, NumberMathMode.EXPLICIT_ONLY, context);
+                // asArguments: a list-valued argument flattens to space-separated
+                // members, so $blockset("minecraft:stone", #wool)$ can feed a
+                // <set:blockset> param (blockset() reads that back as a set)
+                rest = MathEvaluator.applyNumberMath(remainder, NumberMathMode.EXPLICIT_ONLY, context, true);
             } catch (IllegalArgumentException ex) {
                 throw new ParseAbort("/" + aliasName + " arguments: " + ex.getMessage());
             }
