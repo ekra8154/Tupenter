@@ -24,7 +24,7 @@ class AliasDefinitionTest {
 
     @Test
     void bareParamDefaultsToQuotableString() {
-        AliasDefinition def = AliasDefinition.parse("<target> /execute at $target$ run summon lightning_bolt");
+        AliasDefinition def = AliasDefinition.parse("<target> = /execute at $target$ run summon lightning_bolt");
         assertEquals(1, def.params().size());
         assertEquals("target", def.params().get(0).name());
         assertEquals(AliasDefinition.ParamType.STRING, def.params().get(0).type());
@@ -55,15 +55,31 @@ class AliasDefinitionTest {
     }
 
     @Test
+    void equalsIsRequiredBeforeTheBody() {
+        // no '=' is now an error — the separator is mandatory, matching the stored form
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> AliasDefinition.parse("/weather clear && Have fun!"));
+        assertTrue(ex.getMessage().contains("="));
+    }
+
+    @Test
+    void quotedNoteWithoutEqualsIsAnError() {
+        // a leading "quote" no longer silently becomes body text — without '=' it's an error
+        assertThrows(IllegalArgumentException.class,
+                () -> AliasDefinition.parse("<n:int> \"just a note\" /say $n$"));
+    }
+
+    @Test
     void equalsInsideBodyIsNotASeparator() {
-        AliasDefinition def = AliasDefinition.parse("/scoreboard players set @s obj a=b");
+        // the leading '=' is the separator; the a=b inside the body is left alone
+        AliasDefinition def = AliasDefinition.parse("= /scoreboard players set @s obj a=b");
         assertEquals("", def.description());
         assertEquals("/scoreboard players set @s obj a=b", def.body());
     }
 
     @Test
     void stringIsNotGreedySoItCanBeFollowed() {
-        AliasDefinition def = AliasDefinition.parse("<target> <count:int> /say $target$ $count$");
+        AliasDefinition def = AliasDefinition.parse("<target> <count:int> = /say $target$ $count$");
         assertEquals(2, def.params().size());
         assertEquals(AliasDefinition.ParamType.STRING, def.params().get(0).type());
         assertEquals(AliasDefinition.ParamType.INT, def.params().get(1).type());
@@ -71,7 +87,7 @@ class AliasDefinitionTest {
 
     @Test
     void typedDeclarationsParse() {
-        AliasDefinition def = AliasDefinition.parse("<a:int> <b:float> <c:word> <d:player> <e:selector> <f:text> /say hi");
+        AliasDefinition def = AliasDefinition.parse("<a:int> <b:float> <c:word> <d:player> <e:selector> <f:text> = /say hi");
         assertEquals(AliasDefinition.ParamType.INT, def.params().get(0).type());
         assertEquals(AliasDefinition.ParamType.FLOAT, def.params().get(1).type());
         assertEquals(AliasDefinition.ParamType.WORD, def.params().get(2).type());
@@ -103,22 +119,22 @@ class AliasDefinitionTest {
 
     @Test
     void declarationPrefixOmitsStringType() {
-        AliasDefinition def = AliasDefinition.parse("<target> <count:int> /say hi");
+        AliasDefinition def = AliasDefinition.parse("<target> <count:int> = /say hi");
         assertEquals("<target> <count:int> ", def.declarationPrefix());
     }
 
     @Test
     void choiceDeclarationsParse() {
-        AliasDefinition def = AliasDefinition.parse("<dim:to_overworld,to_nether> /say $dim$");
+        AliasDefinition def = AliasDefinition.parse("<dim:to_overworld,to_nether> = /say $dim$");
         assertEquals(AliasDefinition.ParamType.CHOICE, def.params().get(0).type());
         assertEquals(java.util.List.of("to_overworld", "to_nether"), def.params().get(0).options());
         assertEquals("<dim:to_overworld,to_nether> ", def.declarationPrefix());
-        assertThrows(IllegalArgumentException.class, () -> AliasDefinition.parse("<dim:a,,b> /say hi"));
+        assertThrows(IllegalArgumentException.class, () -> AliasDefinition.parse("<dim:a,,b> = /say hi"));
     }
 
     @Test
     void defaultsMakeParamsOptional() {
-        AliasDefinition def = AliasDefinition.parse("<r:int=5> <p:pos=~ ~ ~> <msg=hi> /say $r$ $p$ $msg$");
+        AliasDefinition def = AliasDefinition.parse("<r:int=5> <p:pos=~ ~ ~> <msg=hi> = /say $r$ $p$ $msg$");
         assertEquals("5", def.params().get(0).defaultValue());
         assertTrue(def.params().get(0).optional());
         assertEquals("~ ~ ~", def.params().get(1).defaultValue());
@@ -132,7 +148,7 @@ class AliasDefinitionTest {
     void defaultExpressionsMayContainDeclarationCharacters() {
         // = > : , inside $...$ belong to the expression, not the declaration
         AliasDefinition def = AliasDefinition.parse(
-                "<dim:to_overworld,to_nether=$client.y > 0 ? \"to_nether\" : \"to_overworld\"$> /say $dim$");
+                "<dim:to_overworld,to_nether=$client.y > 0 ? \"to_nether\" : \"to_overworld\"$> = /say $dim$");
         assertEquals(AliasDefinition.ParamType.CHOICE, def.params().get(0).type());
         assertEquals(java.util.List.of("to_overworld", "to_nether"), def.params().get(0).options());
         assertEquals("$client.y > 0 ? \"to_nether\" : \"to_overworld\"$", def.params().get(0).defaultValue());
@@ -140,8 +156,8 @@ class AliasDefinitionTest {
     }
 
     @Test
-    void noParamsIsJustABody() {
-        AliasDefinition def = AliasDefinition.parse("/weather clear && Have fun!");
+    void noParamsWithSeparatorIsJustABody() {
+        AliasDefinition def = AliasDefinition.parse("= /weather clear && Have fun!");
         assertTrue(def.params().isEmpty());
         assertEquals("/weather clear && Have fun!", def.body());
     }

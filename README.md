@@ -191,13 +191,13 @@ and inside custom command bodies.
 ### Custom commands
 
 ```
-/customcommand add sunny /time set day && /weather clear
+/customcommand add sunny = /time set day && /weather clear
 /sunny
 
-/customcommand add smite <target:player> /execute at $target$ run summon lightning_bolt
+/customcommand add smite <target:player> = /execute at $target$ run summon lightning_bolt
 /smite Steve
 
-/customcommand add waves <count:int> <mob:word> #repeat $count$ (/summon $mob$ ~ ~ ~)
+/customcommand add waves <count:int> <mob:word> = #repeat $count$ (/summon $mob$ ~ ~ ~)
 /waves 3 zombie
 ```
 

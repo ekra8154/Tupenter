@@ -1900,9 +1900,9 @@ public class TupenterModClient implements ClientModInitializer {
         String raw = CommandAliasManager.getRawCommand(normalized);
         if (raw == null) {
             if (fromAdd) {
-                context.getSource().sendError(Component.literal("/customcommand add needs a body: /customcommand add " + normalized + " <body> — see /customcommand help"));
+                context.getSource().sendError(Component.literal("/customcommand add needs a body: /customcommand add " + normalized + " = <body> — see /customcommand help"));
             } else {
-                context.getSource().sendError(Component.literal("/" + normalized + " doesn't exist — create it with /customcommand add " + normalized + " <body>"));
+                context.getSource().sendError(Component.literal("/" + normalized + " doesn't exist — create it with /customcommand add " + normalized + " = <body>"));
             }
             return 0;
         }
@@ -2032,7 +2032,7 @@ public class TupenterModClient implements ClientModInitializer {
         beginHelpPage();
         if (functions.isEmpty()) {
             helpLine(Component.literal(
-                    "No custom functions. Add one: /customfunction add lightlevel client.light — then use $lightlevel()$").withStyle(ChatFormatting.GRAY));
+                    "No custom functions. Add one: /customfunction add lightlevel = client.light — then use $lightlevel()$").withStyle(ChatFormatting.GRAY));
             endHelpPage();
             return 1;
         }
@@ -2789,8 +2789,8 @@ public class TupenterModClient implements ClientModInitializer {
             };
             case "customcommand" -> new String[]{
                     "§b/customcommand — make your own commands:",
-                    "§7add <name> <body>§r — create · §7update <name> <body>§r — edit · §7remove <name>§r — delete",
-                    "§7Description:§r a \"quoted note\" goes right before a §c§lrequired =§r that starts the body: /customcommand add tickfreeze \"toggles time\" = #if ($frozen$) (/tick unfreeze) #else (/tick freeze). §cWithout the =§r, those quotes are just body text (why it stays white). Shows on missing args + in /customcommand <name>; &-colors like /echo.",
+                    "§7add <name> [params] = <body>§r — create · §7update§r — edit · §7remove <name>§r — delete",
+                    "§7Always signature = body§r — the = separates them (the same form it's stored in). An optional \"quoted note\" goes last before the =: /customcommand add tickfreeze \"toggles time\" = #if ($frozen$) (/tick unfreeze) #else (/tick freeze). The note shows on missing args + in /customcommand <name>; &-colors like /echo.",
                     "§7list [verbose]§r — signatures (verbose: full bodies) · §7/customcommand <name>§r — one command + [edit] link",
                     "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing",
                     "§7Full guide§r (typed params, defaults, examples): /customcommand help",
@@ -3021,15 +3021,16 @@ public class TupenterModClient implements ClientModInitializer {
 
     /** /customcommand help — the overview; the deep topics are their own navigable pages. */
     private static int runCustomCommandHelp(CommandContext<FabricClientCommandSource> context) {
-        String wavesExample = "/customcommand add waves <count:int> <mob:entity> #repeat $count$ (/summon $mob$ ~ ~ ~)";
+        String wavesExample = "/customcommand add waves <count:int> <mob:entity> = #repeat $count$ (/summon $mob$ ~ ~ ~)";
         beginHelpPage();
         helpLine("§bCustom commands — make your own /commands:");
-        helpLine("§7Create:§r /customcommand add <name> <params...> body · §7edit:§r update · §7remove§r · §7list§r");
-        helpLine("§7Bodies§r hold anything a chat line can: commands, chat, && chains, $...$ expressions, #directives, other custom commands. Commands need their /: sunny = /weather clear && Have fun!");
-        helpLine("§7Parameters§r go before the body and bind as $name$ or $1$..$n$: /customcommand add smite <target:player> /execute at $target$ run summon minecraft:lightning_bolt — then /smite Steve.");
+        helpLine("§7Create:§r /customcommand add <name> [params] = <body> · §7edit:§r update · §7remove§r · §7list§r");
+        helpLine("§7The shape is always signature = body§r — the = separates them, exactly how the command is stored. Simplest: sunny = /weather clear && Have fun!");
+        helpLine("§7Bodies§r hold anything a chat line can: commands, chat, && chains, $...$ expressions, #directives, other custom commands. Commands keep their /.");
+        helpLine("§7Parameters§r go before the = and bind as $name$ or $1$..$n$: /customcommand add smite <target:player> = /execute at $target$ run summon minecraft:lightning_bolt — then /smite Steve.");
         helpLine(navRow("types", "all " + ParamTypeDocs.ALL.size() + " parameter types, each with its own page", "/customcommand help types"));
         helpLine(navRow("optionals", "=defaults, mid-command skipping, the sentinel trick", "/customcommand help optionals"));
-        helpLine(navRow("descriptions", "the \"quoted note\" and the required =", "/customcommand help descriptions"));
+        helpLine(navRow("descriptions", "the optional \"quoted note\" before the =", "/customcommand help descriptions"));
         helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY).append(suggestLink(wavesExample, wavesExample)));
         helpLine("§8Then /waves 3 zombie · your saved commands: /customcommand list");
         endHelpPage();
@@ -3139,9 +3140,10 @@ public class TupenterModClient implements ClientModInitializer {
         String paramExample = "/customcommand add greet <who:player> \"wave at someone\" = /me waves at $who$";
         beginHelpPage();
         helpLine("§bDescriptions — a note on your command:");
-        helpLine("§7A \"quoted note\" right before a §c§lrequired =§r that begins the body. §cWithout the =§r those quotes are just body text.");
+        helpLine("§7An optional \"quoted note\" is the last thing before the = : §fname [params] \"note\" = body§r. That's all there is to it — the = is always there, so the note is never mistaken for body text.");
         helpLine(Component.literal("No params: ").withStyle(ChatFormatting.GRAY).append(suggestLink(plainExample, plainExample)));
         helpLine(Component.literal("With params: ").withStyle(ChatFormatting.GRAY).append(suggestLink(paramExample, paramExample)));
+        helpLine("§7A quoted body still works§r — quotes AFTER the = are body text: greet = \"hello there\" chats it.");
         helpLine("§7Where it shows:§r on missing arguments and in /customcommand <name> · &-colors work, like /echo.");
         helpLine(runLink("« custom commands guide", ChatFormatting.DARK_GRAY, "/customcommand help"));
         endHelpPage();

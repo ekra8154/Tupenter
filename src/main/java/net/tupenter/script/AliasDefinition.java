@@ -7,8 +7,9 @@ import java.util.Locale;
 /**
  * A custom command body plus its declared parameters
  * (docs/SCRIPTING_DESIGN.md §7), e.g. for
- * {@code /customcommand add smite <target:player> /execute at $target$ ...}
- * the body is "/execute at $target$ ..." and params is [target:PLAYER].
+ * {@code /customcommand add smite <target:player> = /execute at $target$ ...}
+ * the body is "/execute at $target$ ..." and params is [target:PLAYER]. The
+ * {@code =} between the signature and the body is required.
  *
  * Params bind as script-scope variables during expansion: by name
  * ({@code $target$}) and by position ({@code $1$}..{@code $n$}).
@@ -165,11 +166,14 @@ public record AliasDefinition(String body, List<Param> params, String descriptio
             rest = rest.substring(close + 1).trim();
         }
 
-        // Optional description + explicit "= body" separator. A description is a
-        // quoted string RIGHT BEFORE the '=' — that positional rule keeps it
-        // distinct from a body that merely contains '=' (/say a=b) or starts
-        // with a quote (announce "Server up"), both of which stay bodies.
+        // The signature and body are ALWAYS separated by '=' (matching the stored
+        // form, name <params> = body). An optional description is a quoted note
+        // sitting right before that '='. Requiring '=' unconditionally is what
+        // lets the body hold anything — /say a=b, "quoted chat" — with no
+        // ambiguity, and it retires the old trap where a leading "quote" was a
+        // description only when followed by '=' and plain body text otherwise.
         String description = "";
+        boolean separated = false;
         if (rest.startsWith("\"")) {
             int endQuote = closingQuote(rest);
             if (endQuote > 0) {
@@ -177,14 +181,21 @@ public record AliasDefinition(String body, List<Param> params, String descriptio
                 if (afterQuote.startsWith("=")) {
                     description = rest.substring(1, endQuote).replace("\\\"", "\"");
                     rest = afterQuote.substring(1).trim();
+                    separated = true;
                 }
             }
-        } else if (rest.startsWith("=")) {
-            rest = rest.substring(1).trim(); // signature = body, no description
+        }
+        if (!separated) {
+            if (!rest.startsWith("=")) {
+                throw new IllegalArgumentException(
+                        "Missing '=' before the body — write <name> [params] [\"note\"] = <body>, "
+                        + "e.g. sunny = /weather clear. The '=' always separates the signature from the body.");
+            }
+            rest = rest.substring(1).trim();
         }
 
         if (rest.isEmpty()) {
-            throw new IllegalArgumentException("Custom command body cannot be empty");
+            throw new IllegalArgumentException("The body after '=' cannot be empty");
         }
         return new AliasDefinition(rest, List.copyOf(params), description);
     }

@@ -212,21 +212,21 @@ class ScriptParserTest {
 
     @Test
     void aliasExpandsToItsBody() {
-        ScriptParser.ParseResult result = parse("sunny", Map.of("sunny", "/time set day && /weather clear"));
+        ScriptParser.ParseResult result = parse("sunny", Map.of("sunny", "= /time set day && /weather clear"));
         assertTrue(result.changed());
         assertEquals(List.of("time set day", "weather clear"), contents(result));
     }
 
     @Test
     void aliasArgsAreAppended() {
-        ScriptParser.ParseResult result = parse("g stick 5", Map.of("g", "/give @s"));
+        ScriptParser.ParseResult result = parse("g stick 5", Map.of("g", "= /give @s"));
         assertTrue(result.changed());
         assertEquals(List.of("give @s stick 5"), contents(result));
     }
 
     @Test
     void aliasBodyMayContainChatMessages() {
-        ScriptParser.ParseResult result = parse("greet", Map.of("greet", "/time set day && Have fun!"));
+        ScriptParser.ParseResult result = parse("greet", Map.of("greet", "= /time set day && Have fun!"));
         assertTrue(result.changed());
         Script.SendStatement chat = result.script().statements().get(1);
         assertFalse(chat.isCommand());
@@ -236,8 +236,8 @@ class ScriptParserTest {
     @Test
     void nestedAliasesExpand() {
         ScriptParser.ParseResult result = parse("outer", Map.of(
-                "outer", "/say start && /inner",
-                "inner", "/say end"
+                "outer", "= /say start && /inner",
+                "inner", "= /say end"
         ));
         assertTrue(result.changed());
         assertEquals(List.of("say start", "say end"), contents(result));
@@ -245,14 +245,14 @@ class ScriptParserTest {
 
     @Test
     void aliasNamesAreCaseInsensitive() {
-        ScriptParser.ParseResult result = parse("SUNNY", Map.of("sunny", "/time set day"));
+        ScriptParser.ParseResult result = parse("SUNNY", Map.of("sunny", "= /time set day"));
         assertTrue(result.changed());
         assertEquals(List.of("time set day"), contents(result));
     }
 
     @Test
     void recursiveAliasHitsExpansionLimit() {
-        ScriptParser.ParseResult result = parse("loop", Map.of("loop", "/loop"));
+        ScriptParser.ParseResult result = parse("loop", Map.of("loop", "= /loop"));
         assertNotNull(result.error());
         assertTrue(result.error().contains(String.valueOf(ScriptParser.MAX_ALIAS_EXPANSIONS)));
         assertFalse(result.changed());
@@ -260,7 +260,7 @@ class ScriptParserTest {
 
     @Test
     void aliasMathAndChainingCompose() {
-        ScriptParser.ParseResult result = parse("stacks", Map.of("stacks", "/give @s stone $2s$ && /give @s dirt 3s"));
+        ScriptParser.ParseResult result = parse("stacks", Map.of("stacks", "= /give @s stone $2s$ && /give @s dirt 3s"));
         assertTrue(result.changed());
         assertEquals(List.of("give @s stone 128", "give @s dirt 192"), contents(result));
     }
@@ -275,7 +275,7 @@ class ScriptParserTest {
 
     @Test
     void typedParamsBindByNameAndPosition() {
-        Map<String, String> aliases = Map.of("panic", "<level:int> <type:word> /say Level $level$ ($1$) type $type$");
+        Map<String, String> aliases = Map.of("panic", "<level:int> <type:word> = /say Level $level$ ($1$) type $type$");
         ScriptParser.ParseResult result = parse("panic 4 storm", aliases);
         assertNull(result.error());
         assertEquals(List.of("say Level 4 (4) type storm"), contents(result));
@@ -283,14 +283,14 @@ class ScriptParserTest {
 
     @Test
     void textParamIsGreedy() {
-        Map<String, String> aliases = Map.of("shout", "<msg:text> /say $msg$!");
+        Map<String, String> aliases = Map.of("shout", "<msg:text> = /say $msg$!");
         ScriptParser.ParseResult result = parse("shout hello there world", aliases);
         assertEquals(List.of("say hello there world!"), contents(result));
     }
 
     @Test
     void paramTypeMismatchIsAnError() {
-        Map<String, String> aliases = Map.of("panic", "<level:int> /say $level$");
+        Map<String, String> aliases = Map.of("panic", "<level:int> = /say $level$");
         ScriptParser.ParseResult result = parse("panic notanumber", aliases);
         assertNotNull(result.error());
         assertTrue(result.error().contains("whole number"));
@@ -298,14 +298,14 @@ class ScriptParserTest {
 
     @Test
     void missingAndExtraParamsAreErrors() {
-        Map<String, String> aliases = Map.of("panic", "<level:int> /say $level$");
+        Map<String, String> aliases = Map.of("panic", "<level:int> = /say $level$");
         assertNotNull(parse("panic", aliases).error());
         assertNotNull(parse("panic 1 2", aliases).error());
     }
 
     @Test
     void quotedStringArgBindsSelectors() {
-        Map<String, String> aliases = Map.of("lightning", "<target> /execute at $target$ run summon lightning_bolt");
+        Map<String, String> aliases = Map.of("lightning", "<target> = /execute at $target$ run summon lightning_bolt");
         ScriptParser.ParseResult result = parse("lightning \"@e[type=!player,limit=1,sort=nearest]\"", aliases);
         assertNull(result.error());
         assertEquals(List.of("execute at @e[type=!player,limit=1,sort=nearest] run summon lightning_bolt"), contents(result));
@@ -313,7 +313,7 @@ class ScriptParserTest {
 
     @Test
     void quotedStringWithSpacesFollowedByMoreArgs() {
-        Map<String, String> aliases = Map.of("t", "<msg> <n:int> /say $n$: $msg$");
+        Map<String, String> aliases = Map.of("t", "<msg> <n:int> = /say $n$: $msg$");
         ScriptParser.ParseResult result = parse("t \"hello world\" 3", aliases);
         assertNull(result.error());
         assertEquals(List.of("say 3: hello world"), contents(result));
@@ -321,7 +321,7 @@ class ScriptParserTest {
 
     @Test
     void quotedStringEscapesQuotes() {
-        Map<String, String> aliases = Map.of("t", "<msg> /say $msg$");
+        Map<String, String> aliases = Map.of("t", "<msg> = /say $msg$");
         ScriptParser.ParseResult result = parse("t \"he said \\\"hi\\\"\"", aliases);
         assertNull(result.error());
         assertEquals(List.of("say he said \"hi\""), contents(result));
@@ -329,7 +329,7 @@ class ScriptParserTest {
 
     @Test
     void unquotedSelectorWithBracketedSpacesIsOneToken() {
-        Map<String, String> aliases = Map.of("l", "<target:selector> <n:int> /say $n$ $target$");
+        Map<String, String> aliases = Map.of("l", "<target:selector> <n:int> = /say $n$ $target$");
         ScriptParser.ParseResult result = parse("l @e[name=\"a b\"] 2", aliases);
         assertNull(result.error());
         assertEquals(List.of("say 2 @e[name=\"a b\"]"), contents(result));
@@ -337,7 +337,7 @@ class ScriptParserTest {
 
     @Test
     void unclosedQuoteIsAnError() {
-        Map<String, String> aliases = Map.of("t", "<msg> /say $msg$");
+        Map<String, String> aliases = Map.of("t", "<msg> = /say $msg$");
         ScriptParser.ParseResult result = parse("t \"oops", aliases);
         assertNotNull(result.error());
         assertTrue(result.error().contains("quote"));
@@ -345,7 +345,7 @@ class ScriptParserTest {
 
     @Test
     void choiceParamsBindAndValidate() {
-        Map<String, String> aliases = Map.of("portal", "<dim:to_overworld,to_nether> /say heading $dim$");
+        Map<String, String> aliases = Map.of("portal", "<dim:to_overworld,to_nether> = /say heading $dim$");
         ScriptParser.ParseResult ok = parse("portal to_nether", aliases);
         assertNull(ok.error());
         assertEquals(List.of("say heading to_nether"), contents(ok));
@@ -366,7 +366,7 @@ class ScriptParserTest {
         store.set("client.blockpos.y", Value.ofNumber(64));
         store.set("client.blockpos.z", Value.ofNumber(-8));
         Map<String, String> aliases = Map.of("portal",
-                "<p:blockpos> <dim:to_overworld,to_nether> /say $dim$: $floor(dim == \"to_nether\" ? p.x/8 : p.x*8)$ $p.y$ at $p$");
+                "<p:blockpos> <dim:to_overworld,to_nether> = /say $dim$: $floor(dim == \"to_nether\" ? p.x/8 : p.x*8)$ $p.y$ at $p$");
 
         ScriptParser.ParseResult absolute = ScriptParser.parse("portal 64 64 64 to_nether", options(aliases, store));
         assertNull(absolute.error());
@@ -380,7 +380,7 @@ class ScriptParserTest {
     @Test
     void blockposParamRejectsBadCoordinates() {
         SessionVariableStore store = new SessionVariableStore();
-        Map<String, String> aliases = Map.of("here", "<p:blockpos> /say $p$");
+        Map<String, String> aliases = Map.of("here", "<p:blockpos> = /say $p$");
         assertNotNull(ScriptParser.parse("here 1 2", options(aliases, store)).error());
         assertNotNull(ScriptParser.parse("here ^ ^ ^", options(aliases, store)).error());
         assertNotNull(ScriptParser.parse("here a b c", options(aliases, store)).error());
@@ -394,7 +394,7 @@ class ScriptParserTest {
         store.set("client.pos.x", Value.ofNumber("100.5"));
         store.set("client.pos.y", Value.ofNumber(64));
         store.set("client.pos.z", Value.ofNumber("-8.25"));
-        Map<String, String> aliases = Map.of("hop", "<p:vec3> /say tp $p$ mid $p.y + 0.5$");
+        Map<String, String> aliases = Map.of("hop", "<p:vec3> = /say tp $p$ mid $p.y + 0.5$");
 
         ScriptParser.ParseResult absolute = ScriptParser.parse("hop 1.5 70 -2", options(aliases, store));
         assertNull(absolute.error());
@@ -419,8 +419,8 @@ class ScriptParserTest {
         store.set("client.blockpos.y", Value.ofNumber(64));
         store.set("client.blockpos.z", Value.ofNumber(-9));
         Map<String, String> aliases = Map.of(
-                "p", "<v:pos> /say $v$",
-                "b", "<v:blockpos> /say $v$");
+                "p", "<v:pos> = /say $v$",
+                "b", "<v:blockpos> = /say $v$");
 
         // pos keeps decimals, and ~ resolves against the PRECISE position
         assertEquals(List.of("say 1.5 2.25 3"), contents(ScriptParser.parse("p 1.5 2.25 3", options(aliases, store))));
@@ -436,11 +436,11 @@ class ScriptParserTest {
     void vec3IsASynonymForPos() {
         SessionVariableStore store = new SessionVariableStore();
         assertEquals(AliasDefinition.ParamType.POS,
-                AliasDefinition.parse("<a:vec3> /say $a$").params().get(0).type());
+                AliasDefinition.parse("<a:vec3> = /say $a$").params().get(0).type());
         assertEquals(AliasDefinition.ParamType.POS,
-                AliasDefinition.parse("<a:pos> /say $a$").params().get(0).type());
+                AliasDefinition.parse("<a:pos> = /say $a$").params().get(0).type());
         assertEquals(AliasDefinition.ParamType.BLOCKPOS,
-                AliasDefinition.parse("<a:blockpos> /say $a$").params().get(0).type());
+                AliasDefinition.parse("<a:blockpos> = /say $a$").params().get(0).type());
     }
 
     @Test
@@ -449,8 +449,8 @@ class ScriptParserTest {
         store.set("client.yaw", Value.ofNumber("-73.5"));
         store.set("client.pitch", Value.ofNumber(12));
         Map<String, String> aliases = Map.of(
-                "face", "<r:rotation> /say rotate $r$ yaw $r.yaw$",
-                "spin", "<a:angle> /say turn $a + 90$");
+                "face", "<r:rotation> = /say rotate $r$ yaw $r.yaw$",
+                "spin", "<a:angle> = /say turn $a + 90$");
 
         assertEquals(List.of("say rotate 90 -45.5 yaw 90"),
                 contents(ScriptParser.parse("face 90 -45.5", options(aliases, store))));
@@ -465,7 +465,7 @@ class ScriptParserTest {
         SessionVariableStore store = new SessionVariableStore();
         store.set("client.blockpos.x", Value.ofNumber(100));
         store.set("client.blockpos.z", Value.ofNumber(-8));
-        Map<String, String> aliases = Map.of("chunkat", "<c:column_pos> /say column $c$ x $c.x$ z $c.z$");
+        Map<String, String> aliases = Map.of("chunkat", "<c:column_pos> = /say column $c$ x $c.x$ z $c.z$");
 
         ScriptParser.ParseResult relative = ScriptParser.parse("chunkat ~4 ~", options(aliases, store));
         assertNull(relative.error());
@@ -477,7 +477,7 @@ class ScriptParserTest {
 
     @Test
     void timeParamConvertsToTicks() {
-        Map<String, String> aliases = Map.of("delay", "<t:time> /say $t$ ticks");
+        Map<String, String> aliases = Map.of("delay", "<t:time> = /say $t$ ticks");
         assertEquals(List.of("say 30 ticks"), contents(parse("delay 1.5s", aliases)));
         assertEquals(List.of("say 24000 ticks"), contents(parse("delay 1d", aliases)));
         assertEquals(List.of("say 10 ticks"), contents(parse("delay 10t", aliases)));
@@ -488,7 +488,7 @@ class ScriptParserTest {
 
     @Test
     void colorDimensionAndIdParamsBind() {
-        Map<String, String> aliases = Map.of("theme", "<c:color> <d:dimension> <i:id> /say $c$ $d$ $i$");
+        Map<String, String> aliases = Map.of("theme", "<c:color> <d:dimension> <i:id> = /say $c$ $d$ $i$");
         ScriptParser.ParseResult result = parse("theme GOLD minecraft:the_nether tupenter:thing", aliases);
         assertNull(result.error());
         assertEquals(List.of("say gold minecraft:the_nether tupenter:thing"), contents(result));
@@ -498,7 +498,7 @@ class ScriptParserTest {
 
     @Test
     void itemAndBlockParamsBindVerbatim() {
-        Map<String, String> aliases = Map.of("giveme", "<thing:item> <n:int> /give @s $thing$ $n$");
+        Map<String, String> aliases = Map.of("giveme", "<thing:item> <n:int> = /give @s $thing$ $n$");
         ScriptParser.ParseResult result = parse("giveme minecraft:stone[custom_name='\"hi there\"'] 3", aliases);
         assertNull(result.error());
         assertEquals(List.of("give @s minecraft:stone[custom_name='\"hi there\"'] 3"), contents(result));
@@ -555,7 +555,7 @@ class ScriptParserTest {
     }
 
     private static final String LAUNCH_BODY =
-            "<e:entity> <s:float=1.5> "
+            "<e:entity> <s:float=1.5> = "
             + "#local h = cos(client.pitch) && "
             + "#local x = -sin(client.yaw) * h && "
             + "#local y = -sin(client.pitch) && "
@@ -585,7 +585,7 @@ class ScriptParserTest {
     }
 
     private static final String LAUNCH2_BODY =
-            "<e:entity> <s:float=1.5> <g:bool=false> "
+            "<e:entity> <s:float=1.5> <g:bool=false> = "
             + "#local h = cos(client.pitch) && "
             + "#local x = -sin(client.yaw) * h && "
             + "#local y = -sin(client.pitch) && "
@@ -632,7 +632,7 @@ class ScriptParserTest {
     }
 
     private static final String RANDOMFILL_BODY =
-            "<a:blockpos> <b:blockpos> <set:blockset> <filter:blockset=any> #silent #local choices = blockset(set) && "
+            "<a:blockpos> <b:blockpos> <set:blockset> <filter:blockset=any> = #silent #local choices = blockset(set) && "
             + "#for $x$ in a.x..b.x (#for $y$ in a.y..b.y (#for $z$ in a.z..b.z "
             + "(#if (filter == \"any\") (/setblock $x$ $y$ $z$ $rand(choices)$) "
             + "#else (#if (contains(blockset(filter), block($x$, $y$, $z$))) (/setblock $x$ $y$ $z$ $rand(choices)$)))))";
@@ -677,7 +677,7 @@ class ScriptParserTest {
     // the player moves during lazy streaming. block-or-group random per spot,
     // optional replace filter — the same recipe as randomfill, on a disc.
     private static final String CIRCLE_BODY =
-            "<center:blockpos=~ ~ ~> <radius:int> <set:blockset> <replacing:blockset=any> "
+            "<center:blockpos=~ ~ ~> <radius:int> <set:blockset> <replacing:blockset=any> = "
             + "#silent #local choices = blockset(set) && "
             + "#foreach $dx$ in range(-radius, radius) (#foreach $dz$ in range(-radius, radius) "
             + "(#if (dx*dx + dz*dz <= radius*radius) (#if (replacing == \"any\") "
@@ -765,7 +765,7 @@ class ScriptParserTest {
 
     @Test
     void concreteResourceParamsDefaultBareIdsToMinecraftButSetsStayVerbatim() {
-        Map<String, String> aliases = Map.of("swap", "<from:blockset> <to:block> /fill ~ ~ ~ ~ ~ ~ $to$ replace $from$");
+        Map<String, String> aliases = Map.of("swap", "<from:blockset> <to:block> = /fill ~ ~ ~ ~ ~ ~ $to$ replace $from$");
         // <to:block> is concrete: a bare id gains minecraft: (the fireball fix).
         // <from:blockset> is a set/predicate: left verbatim so #tags and "any"
         // sentinels survive (blockset() canonicalizes concrete ids itself).
@@ -780,7 +780,7 @@ class ScriptParserTest {
     void bareEntityIdComparesEqualToTheNamespacedForm() {
         // the exact /launch shape: a bare entity id must satisfy e == "minecraft:fireball"
         Map<String, String> aliases = Map.of("kind",
-                "<e:entity> /echo $e == \"minecraft:fireball\" ? \"boom\" : \"plain\"$");
+                "<e:entity> = /echo $e == \"minecraft:fireball\" ? \"boom\" : \"plain\"$");
         assertEquals(List.of("echo boom"), contents(parse("kind fireball", aliases)));
         assertEquals(List.of("echo boom"), contents(parse("kind minecraft:fireball", aliases)));
         assertEquals(List.of("echo plain"), contents(parse("kind ender_pearl", aliases)));
@@ -791,7 +791,7 @@ class ScriptParserTest {
         // the /launch chain bug: split on && FIRST, so the alias binds its
         // omitted optional param instead of a downstream parser choking on &&
         Map<String, String> aliases = Map.of("launch",
-                "<e:entity> <speed:float=5> <ng:bool=false> /summon $e$ ~ ~ ~ {NoGravity:$ng ? 1 : 0$b}");
+                "<e:entity> <speed:float=5> <ng:bool=false> = /summon $e$ ~ ~ ~ {NoGravity:$ng ? 1 : 0$b}");
         // optional ng omitted, mid-chain
         assertEquals(List.of("summon minecraft:pig ~ ~ ~ {NoGravity:0b}", "say done"),
                 contents(parse("launch pig 10 && /say done", aliases)));
@@ -805,7 +805,7 @@ class ScriptParserTest {
         // a mod id already carries a namespace (a colon), so the minecraft:
         // default never touches it — exactly like vanilla, where a bare id
         // means minecraft: and a mod entity must be spelled namespace:path
-        Map<String, String> aliases = Map.of("echoid", "<e:entity> /echo $e$");
+        Map<String, String> aliases = Map.of("echoid", "<e:entity> = /echo $e$");
         assertEquals(List.of("echo alexsmobs:grizzly_bear"),
                 contents(parse("echoid alexsmobs:grizzly_bear", aliases)));
         assertEquals(List.of("echo create:contraption"),
@@ -822,7 +822,7 @@ class ScriptParserTest {
         store.set("client.blockpos.z", Value.ofNumber(-8));
         store.set("client.dimension", Value.of("minecraft:overworld"));
         Map<String, String> aliases = Map.of("portal",
-                "<p:blockpos=~ ~ ~> <dim:to_overworld,to_nether=$client.dimension == \"minecraft:the_nether\" ? \"to_overworld\" : \"to_nether\"$> /say $dim$ $p$");
+                "<p:blockpos=~ ~ ~> <dim:to_overworld,to_nether=$client.dimension == \"minecraft:the_nether\" ? \"to_overworld\" : \"to_nether\"$> = /say $dim$ $p$");
 
         // everything omitted: pos = where you stand, dim = the opposite dimension
         assertEquals(List.of("say to_nether 100 64 -8"), contents(ScriptParser.parse("portal", options(aliases, store))));
@@ -836,7 +836,7 @@ class ScriptParserTest {
 
     @Test
     void optionalDefaultsCanReferenceEarlierParams() {
-        Map<String, String> aliases = Map.of("greet", "<who:player> <msg:text=hello $who$> /say $msg$");
+        Map<String, String> aliases = Map.of("greet", "<who:player> <msg:text=hello $who$> = /say $msg$");
         assertEquals(List.of("say hello Steve"), contents(parse("greet Steve", aliases)));
         assertEquals(List.of("say yo"), contents(parse("greet Steve yo", aliases)));
     }
@@ -844,8 +844,8 @@ class ScriptParserTest {
     @Test
     void optionalParamEdgeCases() {
         Map<String, String> aliases = Map.of(
-                "radius", "<r:int=5> /say r=$r$",
-                "need", "<n:int> /say $n$");
+                "radius", "<r:int=5> = /say r=$r$",
+                "need", "<n:int> = /say $n$");
         assertEquals(List.of("say r=5"), contents(parse("radius", aliases)));
         assertEquals(List.of("say r=9"), contents(parse("radius 9", aliases)));
         // junk that isn't an int falls through, and nothing else claims it
@@ -857,8 +857,8 @@ class ScriptParserTest {
     @Test
     void argumentsEvaluateBeforeBinding() {
         Map<String, String> aliases = Map.of(
-                "cube", "<r:int> /say r=$r$",
-                "wrap", "<n:int> /cube $n * 2$");
+                "cube", "<r:int> = /say r=$r$",
+                "wrap", "<n:int> = /cube $n * 2$");
         // an expression argument feeds a typed param
         assertEquals(List.of("say r=6"), contents(parse("cube $2+4$", aliases)));
         assertNull(parse("cube $rand(1,15)$", aliases).error());
@@ -893,7 +893,7 @@ class ScriptParserTest {
 
     @Test
     void paramsCanDriveLoops() {
-        Map<String, String> aliases = Map.of("spam", "<count:int> #repeat $count$ (/say hi $i$)");
+        Map<String, String> aliases = Map.of("spam", "<count:int> = #repeat $count$ (/say hi $i$)");
         ScriptParser.ParseResult result = parse("spam 3", aliases);
         assertNull(result.error());
         assertEquals(List.of("say hi 1", "say hi 2", "say hi 3"), contents(result));
@@ -1342,14 +1342,14 @@ class ScriptParserTest {
 
     @Test
     void aliasBodyMayCarrySilentPrefix() {
-        ScriptParser.ParseResult result = parse("sshh", Map.of("sshh", "#silent /time set day && /weather clear"));
+        ScriptParser.ParseResult result = parse("sshh", Map.of("sshh", "= #silent /time set day && /weather clear"));
         assertTrue(result.script().statements().stream().allMatch(Script.SendStatement::silent));
         assertEquals(List.of("time set day", "weather clear"), contents(result));
     }
 
     @Test
     void aliasBodyMayContainDirectives() {
-        ScriptParser.ParseResult result = parse("waves", Map.of("waves", "#repeat 2 (/summon zombie) && /say done"));
+        ScriptParser.ParseResult result = parse("waves", Map.of("waves", "= #repeat 2 (/summon zombie) && /say done"));
         assertNull(result.error());
         assertEquals(List.of("summon zombie", "summon zombie", "say done"), contents(result));
     }
@@ -1360,7 +1360,7 @@ class ScriptParserTest {
         store.set("client.yaw", Value.ofNumber(0));   // facing south (+Z)
         store.set("client.pitch", Value.ofNumber(0)); // level
         Map<String, String> aliases = Map.of("fireball",
-                "<power:int> <speed:float> "
+                "<power:int> <speed:float> = "
                         + "#local $dx$ = -sin(client.yaw) * cos(client.pitch) && "
                         + "#local $dy$ = -sin(client.pitch) && "
                         + "#local $dz$ = cos(client.yaw) * cos(client.pitch) && "

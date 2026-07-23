@@ -373,8 +373,8 @@ The interpreter architecture supports adding it later if a real use case shows u
 ## 7. Parameterized custom commands
 
 ```
-/customcommand add smite <target:player> /execute at $target$ run summon lightning_bolt
-/customcommand add panic <level:int> <type:word> #repeat $level$ (/summon $type$ ~ ~ ~)
+/customcommand add smite <target:player> = /execute at $target$ run summon lightning_bolt
+/customcommand add panic <level:int> <type:word> = #repeat $level$ (/summon $type$ ~ ~ ~)
 ```
 
 - Types: `int`, `float`, `string` (default — word or quoted), `word`, `text`
