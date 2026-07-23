@@ -20,6 +20,23 @@ import java.util.Set;
 public final class PlayersVariableProvider implements VariableProvider {
     private static final Set<String> NAMES = Set.of("players.count", "players.list");
 
+    /** Small enough to document in place — the players subject page renders from this. */
+    public List<net.tupenter.script.VarDoc> docs() {
+        return List.of(
+                new net.tupenter.script.VarDoc("players.count", "Players", "how many players are online"),
+                new net.tupenter.script.VarDoc("players.list", "Players", "their names — a LIST for #foreach"));
+    }
+
+    @Override
+    public String describe(String name) {
+        for (net.tupenter.script.VarDoc doc : docs()) {
+            if (doc.name().equalsIgnoreCase(name)) {
+                return doc.blurb();
+            }
+        }
+        return null;
+    }
+
     @Override
     public Set<String> names() {
         return NAMES;

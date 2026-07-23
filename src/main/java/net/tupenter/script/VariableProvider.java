@@ -28,4 +28,13 @@ public interface VariableProvider {
 
     /** Case-insensitive lookup. Called lazily, at evaluation time. */
     Optional<Value> resolve(String name);
+
+    /**
+     * One-line documentation for a name this provider registered, or null when
+     * it doesn't document that name (dynamic providers resolve paths they can't
+     * enumerate — their docs live at the SUBJECT level, in SubjectDocs).
+     */
+    default String describe(String name) {
+        return null;
+    }
 }

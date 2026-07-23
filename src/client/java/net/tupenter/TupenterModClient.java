@@ -2105,6 +2105,12 @@ public class TupenterModClient implements ClientModInitializer {
         return groups;
     }
 
+    /**
+     * The live INSPECTOR — current values, where the help pages hold meaning.
+     * The two cross-link: every row here clicks through to its help page, and
+     * subject help pages link back to their live group. Vars pages are pager
+     * pages too, so inspecting doesn't pile up in chat.
+     */
     private static int runVarsCommand(CommandContext<FabricClientCommandSource> context, String group) {
         if (group != null) {
             String prefix = group.toLowerCase(java.util.Locale.ROOT) + ".";
@@ -2117,7 +2123,8 @@ public class TupenterModClient implements ClientModInitializer {
                 context.getSource().sendError(Component.literal("No variables in group '" + group + "'. Groups: " + String.join(", ", variableGroups())));
                 return 0;
             }
-            context.getSource().sendFeedback(Component.literal("$" + group + ".*$ variables:").withStyle(ChatFormatting.AQUA));
+            beginHelpPage();
+            helpLine(Component.literal("$" + group + ".*$ right now — click a name for its meaning:").withStyle(ChatFormatting.AQUA));
             for (String name : names) {
                 String value;
                 try {
@@ -2125,35 +2132,43 @@ public class TupenterModClient implements ClientModInitializer {
                 } catch (IllegalArgumentException ex) {
                     value = "—";
                 }
-                context.getSource().sendFeedback(Component.literal(" $" + name + "$ = " + value));
+                String page = "/tupenter help " + name;
+                helpLine(Component.literal(" $" + name + "$").withStyle(ChatFormatting.WHITE)
+                        .append(Component.literal(" = " + value).withStyle(ChatFormatting.GRAY))
+                        .withStyle(style -> style
+                                .withClickEvent(new ClickEvent.RunCommand(page))
+                                .withHoverEvent(new HoverEvent.ShowText(Component.literal(page)))));
             }
+            endHelpPage();
             return 1;
         }
 
+        beginHelpPage();
         Map<String, Value> vars = SESSION_VARIABLES.snapshot();
         if (vars.isEmpty()) {
-            context.getSource().sendFeedback(Component.literal("No session variables set. Use #set $name$ = value.").withStyle(ChatFormatting.YELLOW));
+            helpLine(Component.literal("No session variables set. Use #set $name$ = value.").withStyle(ChatFormatting.YELLOW));
         } else {
-            context.getSource().sendFeedback(Component.literal("Session variables:").withStyle(ChatFormatting.AQUA));
+            helpLine(Component.literal("Session variables:").withStyle(ChatFormatting.AQUA));
             vars.forEach((name, value) ->
-                    context.getSource().sendFeedback(Component.literal(" $" + name + "$ = " + value.displayString())));
+                    helpLine(Component.literal(" $" + name + "$ = " + value.displayString())));
         }
         Map<String, Value> persistent = PERSISTENT_VARIABLES.snapshot();
         if (!persistent.isEmpty()) {
-            context.getSource().sendFeedback(Component.literal("Persistent variables:").withStyle(ChatFormatting.AQUA));
+            helpLine(Component.literal("Persistent variables:").withStyle(ChatFormatting.AQUA));
             persistent.forEach((name, value) ->
-                    context.getSource().sendFeedback(Component.literal(" $" + name + "$ = " + value.displayString())));
+                    helpLine(Component.literal(" $" + name + "$ = " + value.displayString())));
         }
 
         java.util.Map<String, Integer> groupCounts = new java.util.TreeMap<>();
         for (String name : knownDottedVariableNames()) {
             groupCounts.merge(name.substring(0, name.indexOf('.')), 1, Integer::sum);
         }
-        StringBuilder summary = new StringBuilder("Built-in groups: ");
-        groupCounts.forEach((g, count) -> summary.append("$").append(g).append(".*$ (").append(count).append(") · "));
-        summary.append("$client.nbt.*$ / $client.target.nbt.*$ (browse: /tupenter dump)");
-        context.getSource().sendFeedback(Component.literal(summary.toString()).withStyle(ChatFormatting.GRAY));
-        context.getSource().sendFeedback(Component.literal("Details: /tupenter vars <group>").withStyle(ChatFormatting.DARK_GRAY));
+        helpLine(Component.literal("Built-in groups — click one for live values:").withStyle(ChatFormatting.AQUA));
+        groupCounts.forEach((g, count) ->
+                helpLine(navRow("$" + g + ".*$", count + " variables", "/tupenter vars " + g)));
+        helpLine("§7Dynamic trees:§r $client.nbt.*$ / $client.target.nbt.*$ — browse with /tupenter dump");
+        helpLine(runLink("what they mean: /tupenter help variables", ChatFormatting.DARK_GRAY, "/tupenter help variables"));
+        endHelpPage();
         return 1;
     }
 
@@ -2207,6 +2222,10 @@ public class TupenterModClient implements ClientModInitializer {
         for (net.tupenter.script.DirectiveDocs.Doc doc : net.tupenter.script.DirectiveDocs.ALL) {
             names.add(doc.name());
         }
+        for (net.tupenter.script.SubjectDocs.Subject subject : net.tupenter.script.SubjectDocs.ALL) {
+            names.add(subject.name());
+        }
+        names.addAll(knownDottedVariableNames());
         names.addAll(CustomFunctionManager.getFunctionMap().keySet());
         names.addAll(CommandAliasManager.getAliasMap().keySet());
         return names;
@@ -2350,6 +2369,19 @@ public class TupenterModClient implements ClientModInitializer {
         net.tupenter.script.DirectiveDocs.Doc directive = net.tupenter.script.DirectiveDocs.find(name);
         if (directive != null) {
             return renderDirectivePage(context, directive);
+        }
+        net.tupenter.script.SubjectDocs.Subject subjectDoc = net.tupenter.script.SubjectDocs.find(name);
+        if (subjectDoc != null) {
+            return renderSubjectPage(context, subjectDoc);
+        }
+        String varBlurb = VARIABLE_REGISTRY.describe(name);
+        if (varBlurb != null) {
+            return renderVariableMiniPage(context, name, varBlurb);
+        }
+        // a dotted name inside a dynamic namespace lands on its subject's page
+        net.tupenter.script.SubjectDocs.Subject bySegment = net.tupenter.script.SubjectDocs.findByPrefix(name);
+        if (bySegment != null) {
+            return renderSubjectPage(context, bySegment);
         }
         if (CustomFunctionManager.hasFunction(name)) {
             return renderCustomFunctionPage(context, name);
@@ -2575,9 +2607,104 @@ public class TupenterModClient implements ClientModInitializer {
         return 1;
     }
 
+    /** /tupenter help variables — the concepts stay prose; every subject is a clickable row. */
+    private static int runVariablesHelp(CommandContext<FabricClientCommandSource> context) {
+        beginHelpPage();
+        helpLine("§bVariables — live state as $names$:");
+        helpLine(navRow("#set · #local · #setdefault", "YOUR variables — session, line-local, init-once (each has a page)", "/tupenter help local"));
+        helpLine("§7Persistent:§r /tupenter var save <name> keeps a #set forever · var delete <name> removes it · create-once-across-sessions: #setdefault $x$ = 0 && /tupenter var save $x$");
+        helpLine("§7Dotted or function?§r Both read LIVE — the difference is the ADDRESS, not the value. Spell the address out and it's a dotted variable (tab-completes); COMPUTE it and it's a function: client.slot.inventory.8.id vs slot(\"inventory.\" + i, \"id\").");
+        helpLine("§7One vocabulary, three subjects:§r type, uuid, name, health, pos, blockpos, nbt.<path> work on YOU (client.*), your CROSSHAIR (client.target.*), and ANY entity (entity(uuid, ...)). Swapping subject changes only the subject.");
+        for (net.tupenter.script.SubjectDocs.Subject subject : net.tupenter.script.SubjectDocs.ALL) {
+            helpLine(navRow(subject.name() + ".*", subject.blurb(), "/tupenter help " + subject.name()));
+        }
+        helpLine(navRow("/tupenter vars", "the live inspector — current values by group", "/tupenter vars"));
+        helpLine("§7In custom commands:§r declared params bind as $name$ or $1$..$n$.");
+        helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
+        endHelpPage();
+        return 1;
+    }
+
+    /** The VarDocs of an enumerated subject, or null for dynamic subjects. */
+    private static java.util.List<net.tupenter.script.VarDoc> subjectVarDocs(String subjectName) {
+        return switch (subjectName) {
+            case "client" -> CLIENT_VARIABLES.docs();
+            case "world" -> WORLD_VARIABLES.docs();
+            case "players" -> PLAYERS_VARIABLES.docs();
+            case "real" -> REAL_VARIABLES.docs();
+            default -> null;
+        };
+    }
+
+    /**
+     * One subject in depth. Enumerated subjects list their members straight
+     * from the provider's registrations — compact category rows where every
+     * name is clickable and its blurb rides in the hover.
+     */
+    private static int renderSubjectPage(CommandContext<FabricClientCommandSource> context, net.tupenter.script.SubjectDocs.Subject subject) {
+        beginHelpPage();
+        helpLine("§b" + subject.name() + ".*§r §7— " + subject.blurb());
+        if (subject.gate() != null) {
+            helpLine("§7Gate:§r " + subject.gate());
+        }
+        for (String line : subject.detail()) {
+            helpLine(line);
+        }
+        java.util.List<net.tupenter.script.VarDoc> docs = subjectVarDocs(subject.name());
+        if (docs != null) {
+            java.util.LinkedHashMap<String, MutableComponent> rows = new java.util.LinkedHashMap<>();
+            int prefixLen = subject.name().length() + 1;
+            for (net.tupenter.script.VarDoc doc : docs) {
+                String shortName = doc.name().substring(prefixLen);
+                if (shortName.indexOf('.') >= 0) {
+                    continue; // .x/.y/.z components ride on their base's blurb
+                }
+                MutableComponent row = rows.computeIfAbsent(doc.category(),
+                        category -> Component.literal(category + ": ").withStyle(ChatFormatting.DARK_AQUA));
+                if (!row.getSiblings().isEmpty()) {
+                    row.append(Component.literal(" · ").withStyle(ChatFormatting.DARK_GRAY));
+                }
+                String page = "/tupenter help " + doc.name();
+                row.append(Component.literal(shortName).withStyle(style -> style
+                        .withColor(ChatFormatting.WHITE)
+                        .withClickEvent(new ClickEvent.RunCommand(page))
+                        .withHoverEvent(new HoverEvent.ShowText(Component.literal("§7" + doc.blurb() + "\n§8" + page)))));
+            }
+            rows.values().forEach(TupenterModClient::helpLine);
+        }
+        helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY).append(suggestLink(subject.exampleSimple(), subject.exampleSimple())));
+        helpLine(Component.literal("Then: ").withStyle(ChatFormatting.GRAY).append(suggestLink(subject.exampleComposed(), subject.exampleComposed())));
+        if (docs != null) {
+            helpLine(runLink("live values: /tupenter vars " + subject.name(), ChatFormatting.DARK_GRAY, "/tupenter vars " + subject.name()));
+        }
+        helpLine(runLink("« variables", ChatFormatting.DARK_GRAY, "/tupenter help variables"));
+        endHelpPage();
+        return 1;
+    }
+
+    /** One enumerated variable: its blurb, its value right now, and the way up. */
+    private static int renderVariableMiniPage(CommandContext<FabricClientCommandSource> context, String name, String blurb) {
+        beginHelpPage();
+        helpLine("§b$" + name + "$§r §7— " + blurb);
+        try {
+            VARIABLE_REGISTRY.resolve(name).ifPresent(value -> helpLine("§7Right now:§r §f" + value.displayString()));
+        } catch (RuntimeException notAvailable) {
+            helpLine("§8(no live value — " + notAvailable.getMessage() + ")");
+        }
+        net.tupenter.script.SubjectDocs.Subject subject = net.tupenter.script.SubjectDocs.findByPrefix(name);
+        helpLine(subject != null
+                ? runLink("« " + subject.name() + ".*", ChatFormatting.DARK_GRAY, "/tupenter help " + subject.name())
+                : runLink("« variables", ChatFormatting.DARK_GRAY, "/tupenter help variables"));
+        endHelpPage();
+        return 1;
+    }
+
     private static int runHelpCommand(CommandContext<FabricClientCommandSource> context, String topic) {
         if (topic.equals("index")) {
             return runHelpIndex(context);
+        }
+        if (topic.equals("variables")) {
+            return runVariablesHelp(context);
         }
         if (topic.equals("expressions")) {
             return runExpressionsOverview(context);
@@ -2589,32 +2716,6 @@ public class TupenterModClient implements ClientModInitializer {
             return runPrefixesHelp(context);
         }
         String[] lines = switch (topic) {
-            case "variables" -> new String[]{
-                    "§bVariables — use anywhere as $name$:",
-                    "§7Yours:§r #set x = 5 (session, cleared on join) · #set x += 1 (also -= *= /= %=) · $ around the name is optional · dotted groups allowed: #set hitlist.bob = \"wanted\"",
-                    "§7#local — the workhorse:§r compute ONCE, use many times, save NOTHING: #local $hit$ = raycast_entity(30) && #if (hit != \"miss\") (/echo $entity(hit, \"name\")$ · $entity(hit, \"health\")$ hp). Scoped to its line and silent — a tick script stays stateless, and both reads see the SAME raycast. Reach for #set only when the value must OUTLIVE the line.",
-                    "§7On the right side§r you're already in expression world: #set x = x + 1 — bare names work; $x + 1$ works too ($...$ always evaluates its inside)",
-                    "§7#setdefault x = 5§r sets x ONLY if it isn't already defined (session, saved, or live) — idempotent init, so a stateful custom command is a clean drop-in: #setdefault $frozen$ = false && #if $frozen$ (/tick unfreeze) #else (/tick freeze) && #set $frozen$ = !$frozen$",
-                    "§7Persistent:§r /tupenter var save <name> keeps it forever (re-saving an unchanged value is a no-op) · /tupenter var delete <name> removes it · create-once-across-sessions: #setdefault $x$ = 0 && /tupenter var save $x$",
-                    "§7Built-in:§r $client.pos$ + $client.pos.x/y/z$ (precise) · $client.blockpos$ + .x/y/z (whole) · $client.health$ · $client.held.id$ · $client.target.hit/type/blockpos$ · $world.time/difficulty/raining...$ · $players.count/list$ · $real.hour/day_of_week...$ — target.hit = \"block\"/\"entity\"/\"miss\"; the other target fields error on the wrong kind (gate with it)",
-                    "§7Environment:§r $client.biome$ · $client.light / light_block / light_sky$ · $client.facing$ · $client.chunk_x/chunk_z$ · $world.spawn$ · $world.key$ (the per-world scripts id)",
-                    "§7Movement:§r $client.speed$ (full 3D b/s) · $client.speed_xz$ (horizontal) · $client.motion$ (vec3 \"vx vy vz\" b/s) + $client.motion.x/y/z$ — motion.y is the signed vertical speed · booleans: on_ground, sneaking, sprinting, swimming, flying, gliding",
-                    "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · selected_slot (0-8, which hotbar slot is held) · gamemode, ping, fps, uuid",
-                    "§7Hazards & effects:§r in_water, underwater, in_lava, on_fire, fall_distance · effects (a LIST — #foreach $e$ in client.effects works)",
-                    "§7Your hands:§r $client.held.<field>$ / $client.offhand.<field>$ — id, count, durability, max_durability. Named shorthands for client.slot.weapon.mainhand/offhand, same reader, so they can't disagree. Empty = \"empty\" and 0, never an error.",
-                    "§7What you're riding:§r $client.riding$ is the gate; $client.vehicle.<field>$ is the FULL entity vocabulary — type, uuid, name, health, pos, blockpos, nbt.<path> — the same fields client.target.* and entity(uuid, ...) use.",
-                    "§7Keys (a script IS a keybind):§r $client.key.<name>$ = held now · $client.keypress.<name>$ = the tick it goes down. <name> is a bind (jump, sneak, attack, hotbar.1 — follows your controls + mods) OR a physical key (g, space, f6). Arrows are up_arrow/down_arrow/left_arrow/right_arrow (bare left/right = the strafe binds). All false while a screen is open. Pair with a tick script: restock = #if (client.keypress.g) (/tp @s $client.target_block$)",
-                    "§7Everything else:§r $client.nbt.<any path>$ / $client.target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · TAB-COMPLETES the live tree one level at a time · browse with /tupenter dump",
-                    "§7Missing paths:§r NBT omits defaulted fields (an UNDAMAGED item has no minecraft:damage), so a plain read errors. Use the 3-arg form for a fallback: $entity(\"self\", \"nbt.equipment.chest.components.minecraft:damage\", 0)$ — also covers 'nothing equipped'.",
-                    "§7Your slots:§r $client.slot.<slot>.<field>$ — slot is an /item replace name (hotbar.0-8, inventory.0-26 where 0-8 is the TOP row, armor.head/chest/legs/feet, weapon.mainhand, weapon.offhand); field is id, count, durability, max_durability. Tab-completes both halves. e.g. $client.slot.inventory.8.id$ · $client.slot.armor.chest.durability$",
-                    "§7Dotted or function?§r Both read LIVE — the difference is the ADDRESS, not the value. Spell the address out and it's a dotted variable ($client.slot.inventory.8.id$); COMPUTE the address and it's a function (slot(\"inventory.\" + i, \"id\") inside a #for). Same split as $client.<field>$ vs entity(selector, field). Dotted forms are exactly the ones whose addresses can be enumerated — which is why they tab-complete and functions can't. Empty = \"empty\" and 0, never an error.",
-                    "§7Not client.nbt.Inventory:§r that's the SAVE format — a compacted list of non-empty stacks with a Slot field, so Inventory.0 is 'my first stack', not slot 0. Use the slot forms above.",
-                    "§7One vocabulary, three subjects:§r the SAME fields work on you, your crosshair, and any entity — $client.health$ · $client.target.health$ · $entity(uuid, \"health\")$. Fields: type, uuid, name, health, pos, blockpos, nbt.<path>. Swapping subject changes only the subject.",
-                    "§7Finding UUIDs:§r raycast_entity(dist) = UUID you're aiming at (or \"miss\") · entities(radius[, type]) = LIST of nearby UUIDs for #foreach · nearest_entity(radius[, type]) = closest UUID (or \"miss\") · $client.target.uuid$ = crosshair entity. Chain them: $entity(raycast_entity(30), \"health\")$",
-                    "§7Missing fields:§r entity(selector, field, FALLBACK) yields the fallback instead of erroring — NBT omits defaulted values, so $entity(uuid, \"nbt.minecraft:damage\", 0)$ is how you read \"0 if undamaged\" without faulting a tick script.",
-                    "§7Discover:§r /tupenter vars — groups overview · /tupenter vars <group> — live values",
-                    "§7In custom commands:§r declared params bind as $name$ or $1$..$n$",
-            };
             case "scripts" -> new String[]{
                     "§bTick scripts (Mod Menu → Tupenter → Scripts):",
                     "§7Each armed line runs as its own loop — one body pass per tick (20x/s) — while the master toggle is on. A walking mcfunction file.",

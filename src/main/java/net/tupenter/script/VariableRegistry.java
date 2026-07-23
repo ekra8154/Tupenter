@@ -37,4 +37,15 @@ public final class VariableRegistry implements VariableProvider {
         }
         return Optional.empty();
     }
+
+    @Override
+    public String describe(String name) {
+        for (VariableProvider provider : providers) {
+            String doc = provider.describe(name);
+            if (doc != null) {
+                return doc;
+            }
+        }
+        return null;
+    }
 }
