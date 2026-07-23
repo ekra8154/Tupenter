@@ -2784,7 +2784,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7scripts§r — what's armed in THIS world · §7scripts enable|disable§r — master on/off (no name), or arm/disarm one by §fname§r",
                     "§7vars [group]§r — variables overview, or one group with live values",
                     "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
-                    "§7dump [client|target] [path]§r — browse entity NBT (the data behind client.nbt.* / client.target.nbt.*)",
+                    "§7dump [client|target] [path]§r — BROWSE entity NBT: click a branch to open it, click a value to put its $variable$ in your chat bar, breadcrumb walks back up (the data behind client.nbt.* / client.target.nbt.*)",
                     "§7help <topic>§r — topics: expressions [math|text|logic|random|lists|world], variables, flow, prefixes, scripts, functions, command [name] — or any FUNCTION name: help blockset",
             };
             case "customcommand" -> new String[]{
@@ -2842,40 +2842,126 @@ public class TupenterModClient implements ClientModInitializer {
         return sendHelpPage(lines, runLink("« all commands", ChatFormatting.DARK_GRAY, "/tupenter help command"));
     }
 
+    /** How many list entries one dump page shows before pointing you at direct indexing. */
+    private static final int DUMP_LIST_LIMIT = 32;
+
+    /**
+     * /tupenter dump — an NBT BROWSER, not a log. One level per pager page:
+     * compounds and lists click through to their own level, and a SCALAR leaf
+     * clicks its {@code $variable$} into the chat bar, which is the whole point
+     * of browsing — find the path, then use it. A breadcrumb walks back up.
+     */
     private static int runDumpCommand(CommandContext<FabricClientCommandSource> context, String which, String path) {
         if (!which.equals("client") && !which.equals("target")) {
             context.getSource().sendError(Component.literal("Usage: /tupenter dump [client|target] [path]"));
             return 0;
         }
+        // The dump's own word is NOT the variable root: the crosshair entity's
+        // tree is client.target.nbt.*, so every reference we hand back stays a
+        // name you can actually paste into a command.
+        String varRoot = which.equals("target") ? "client.target.nbt" : "client.nbt";
         try {
             var entity = which.equals("target") ? EntityNbtVariableProvider.targetEntity() : EntityNbtVariableProvider.clientEntity();
             var root = EntityNbtVariableProvider.snapshot(entity);
             String cleanPath = path.trim().replaceAll("^\\.|\\.$", "");
-            String fullName = which + ".nbt" + (cleanPath.isEmpty() ? "" : "." + cleanPath);
+            String fullName = varRoot + (cleanPath.isEmpty() ? "" : "." + cleanPath);
             var tag = EntityNbtVariableProvider.walk(root, cleanPath, fullName);
 
-            context.getSource().sendFeedback(Component.literal("$" + fullName + "$:").withStyle(ChatFormatting.AQUA));
+            beginHelpPage();
+            helpLine(dumpBreadcrumb(which, varRoot, cleanPath));
             if (tag instanceof net.minecraft.nbt.CompoundTag compound) {
+                if (compound.isEmpty()) {
+                    helpLine("§8(empty compound)");
+                }
                 compound.keySet().stream().sorted().forEach(key ->
-                        context.getSource().sendFeedback(Component.literal(" " + key + ": ").withStyle(ChatFormatting.YELLOW)
-                                .append(Component.literal(summarizeTag(compound.get(key))).withStyle(ChatFormatting.WHITE))));
+                        helpLine(dumpChildRow(which, varRoot, cleanPath, key, compound.get(key))));
             } else if (tag instanceof net.minecraft.nbt.CollectionTag list) {
-                int shown = Math.min(list.size(), 16);
+                if (list.isEmpty()) {
+                    helpLine("§8(empty list)");
+                }
+                int shown = Math.min(list.size(), DUMP_LIST_LIMIT);
                 for (int i = 0; i < shown; i++) {
-                    context.getSource().sendFeedback(Component.literal(" " + i + ": ").withStyle(ChatFormatting.YELLOW)
-                            .append(Component.literal(summarizeTag(list.get(i))).withStyle(ChatFormatting.WHITE)));
+                    helpLine(dumpChildRow(which, varRoot, cleanPath, String.valueOf(i), list.get(i)));
                 }
                 if (list.size() > shown) {
-                    context.getSource().sendFeedback(Component.literal(" … " + (list.size() - shown) + " more").withStyle(ChatFormatting.GRAY));
+                    helpLine("§8… " + (list.size() - shown) + " more — index one directly: /tupenter dump "
+                            + which + " " + (cleanPath.isEmpty() ? "" : cleanPath + ".") + shown);
                 }
             } else {
-                context.getSource().sendFeedback(Component.literal(" " + summarizeTag(tag)));
+                // a leaf reached head-on: show the value and offer its reference
+                helpLine(Component.literal(" " + summarizeTag(tag)).withStyle(ChatFormatting.WHITE));
+                helpLine(Component.literal("Use it: ").withStyle(ChatFormatting.GRAY)
+                        .append(suggestLink("$" + fullName + "$", "$" + fullName + "$")));
             }
+            helpLine(dumpUpLink(which, varRoot, cleanPath));
+            endHelpPage();
             return 1;
         } catch (IllegalArgumentException ex) {
             context.getSource().sendError(Component.literal(ex.getMessage()));
             return 0;
         }
+    }
+
+    /** {@code client.nbt › Inventory › 0} — every ancestor clickable, the current level plain. */
+    private static Component dumpBreadcrumb(String which, String varRoot, String cleanPath) {
+        MutableComponent line = Component.literal("");
+        String rootCommand = "/tupenter dump " + which;
+        boolean atRoot = cleanPath.isEmpty();
+        line.append(atRoot
+                ? Component.literal(varRoot).withStyle(ChatFormatting.AQUA)
+                : runLink(varRoot, ChatFormatting.AQUA, rootCommand));
+        if (!atRoot) {
+            String[] segments = cleanPath.split("\\.");
+            StringBuilder walked = new StringBuilder();
+            for (int i = 0; i < segments.length; i++) {
+                if (walked.length() > 0) {
+                    walked.append('.');
+                }
+                walked.append(segments[i]);
+                line.append(Component.literal(" › ").withStyle(ChatFormatting.DARK_GRAY));
+                line.append(i == segments.length - 1
+                        ? Component.literal(segments[i]).withStyle(ChatFormatting.AQUA)
+                        : runLink(segments[i], ChatFormatting.AQUA, "/tupenter dump " + which + " " + walked));
+            }
+        }
+        return line;
+    }
+
+    /** The bottom nav — the page snaps to its end, so the way back up has to be reachable there. */
+    private static Component dumpUpLink(String which, String varRoot, String cleanPath) {
+        if (cleanPath.isEmpty()) {
+            return Component.literal("§8Click a branch to open it · click a value to put its $variable$ in your chat bar");
+        }
+        int lastDot = cleanPath.lastIndexOf('.');
+        String parent = lastDot < 0 ? "" : cleanPath.substring(0, lastDot);
+        String label = "« " + varRoot + (parent.isEmpty() ? "" : "." + parent);
+        return runLink(label, ChatFormatting.DARK_GRAY,
+                "/tupenter dump " + which + (parent.isEmpty() ? "" : " " + parent));
+    }
+
+    /**
+     * One child row. A branch (compound/list) navigates into itself; a leaf
+     * offers its {@code $variable$} for the chat bar — browse, then use.
+     */
+    private static Component dumpChildRow(String which, String varRoot, String cleanPath,
+                                          String key, net.minecraft.nbt.Tag child) {
+        String childPath = cleanPath.isEmpty() ? key : cleanPath + "." + key;
+        boolean branch = child instanceof net.minecraft.nbt.CompoundTag
+                || child instanceof net.minecraft.nbt.CollectionTag;
+        MutableComponent row = Component.literal(" " + key + ": ").withStyle(ChatFormatting.YELLOW)
+                .append(Component.literal(summarizeTag(child))
+                        .withStyle(branch ? ChatFormatting.GRAY : ChatFormatting.WHITE));
+        if (branch) {
+            String command = "/tupenter dump " + which + " " + childPath;
+            return row.withStyle(style -> style
+                    .withClickEvent(new ClickEvent.RunCommand(command))
+                    .withHoverEvent(new HoverEvent.ShowText(Component.literal(command))));
+        }
+        String reference = "$" + varRoot + "." + childPath + "$";
+        return row.withStyle(style -> style
+                .withClickEvent(new ClickEvent.SuggestCommand(reference))
+                .withHoverEvent(new HoverEvent.ShowText(
+                        Component.literal(reference + "\n§8click to put it in your chat bar"))));
     }
 
     private static String summarizeTag(net.minecraft.nbt.Tag tag) {
