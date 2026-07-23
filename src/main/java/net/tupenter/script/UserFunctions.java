@@ -43,6 +43,11 @@ public final class UserFunctions {
             private int depth;
 
             @Override
+            public boolean defines(String name) {
+                return functions.containsKey(name.toLowerCase(Locale.ROOT));
+            }
+
+            @Override
             public Value call(String name, List<Value> args, EvalContext context) {
                 AliasDefinition def = functions.get(name.toLowerCase(Locale.ROOT));
                 if (def == null) {

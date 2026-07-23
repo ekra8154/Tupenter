@@ -44,29 +44,60 @@ class ExpressionEvaluatorTest {
     }
 
     @Test
-    void componentFunctionsIndexAnyVec() {
-        assertEquals("0", eval("x(vec(0, 64, 128))"));
-        assertEquals("64", eval("y(vec(0, 64, 128))"));
-        assertEquals("128", eval("z(vec(0, 64, 128))"));
-        // works on a bare vec string, comma- or space-separated
-        assertEquals("64", eval("y(\"0 64 128\")"));
-        assertEquals("128", eval("z(\"0,64,128\")"));
-        // the component is a real number you can compute with
-        assertEquals("130", eval("z(\"0 64 128\") + 2"));
+    void aBuiltinStillWinsOverASameNamedVariable() {
+        // the flip side of the x(2) fix: a BUILTIN name followed by '(' is always
+        // a call, even if a variable shadows it — otherwise binding a variable
+        // called "min" would silently disable min(a, b).
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("min", Value.ofNumber(99));
+        EvalContext ctx = new EvalContext(new Random(1), store);
+        assertEquals("1", ExpressionEvaluator.evaluate("min(1, 2)", ctx).displayString());
+        assertEquals("99", ExpressionEvaluator.evaluate("min", ctx).displayString()); // bare = the variable
     }
 
     @Test
-    void componentFunctionsKeepExactPrecision() {
-        // not routed through a lossy double — 1/3 stays 1/3
-        assertEquals("0.5", eval("x(vec(1/2, 0, 0))"));
-        assertEquals("2.5", eval("x(\"2.5 0 0\") "));
+    void componentIndexesAnyVec() {
+        assertEquals("0", eval("component(vec(0, 64, 128), \"x\")"));
+        assertEquals("64", eval("component(vec(0, 64, 128), \"y\")"));
+        assertEquals("128", eval("component(vec(0, 64, 128), \"z\")"));
+        // works on a bare vec string, comma- or space-separated
+        assertEquals("64", eval("component(\"0 64 128\", \"y\")"));
+        assertEquals("128", eval("component(\"0,64,128\", \"z\")"));
+        // the component is a real number you can compute with
+        assertEquals("130", eval("component(\"0 64 128\", \"z\") + 2"));
+    }
+
+    @Test
+    void componentKeepsExactPrecision() {
+        // not routed through a lossy double — 1/2 stays 1/2
+        assertEquals("0.5", eval("component(vec(1/2, 0, 0), \"x\")"));
+        assertEquals("2.5", eval("component(\"2.5 0 0\", \"x\")"));
     }
 
     @Test
     void componentOnANonVecErrors() {
-        assertThrows(ExpressionException.class, () -> eval("x(\"miss\")"));   // a missed raycast
-        assertThrows(ExpressionException.class, () -> eval("y(\"0 64\")"));   // only two components
-        assertThrows(ExpressionException.class, () -> eval("z(42)"));         // a plain number
+        assertThrows(ExpressionException.class, () -> eval("component(\"miss\", \"x\")")); // a missed raycast
+        assertThrows(ExpressionException.class, () -> eval("component(\"0 64\", \"y\")")); // only two components
+        assertThrows(ExpressionException.class, () -> eval("component(42, \"z\")"));       // a plain number
+        assertThrows(ExpressionException.class, () -> eval("component(vec(1,2,3), \"w\")")); // no such axis
+        assertThrows(ExpressionException.class, () -> eval("component(vec(1,2,3))"));       // needs an axis
+    }
+
+    @Test
+    void aVariableNamedXStillMultipliesByAParenthesizedGroup() {
+        // regression: builtins named x/y/z used to win over a bound variable the
+        // moment an identifier was followed by '(' — so "x (2)" called the builtin
+        // instead of multiplying. $x$/$y$/$z$ are THE loop names in the randomfill
+        // and circle recipes, so this has to keep working.
+        SessionVariableStore store = new SessionVariableStore();
+        store.set("x", Value.ofNumber(5));
+        store.set("y", Value.ofNumber(3));
+        EvalContext ctx = new EvalContext(new Random(1), store);
+        assertEquals("10", ExpressionEvaluator.evaluate("x (2)", ctx).displayString());
+        assertEquals("10", ExpressionEvaluator.evaluate("x(2)", ctx).displayString());
+        assertEquals("40", ExpressionEvaluator.evaluate("x (3 + 5)", ctx).displayString());
+        assertEquals("15", ExpressionEvaluator.evaluate("x(y)", ctx).displayString());
+        assertEquals("5", ExpressionEvaluator.evaluate("x", ctx).displayString());
     }
 
     // A stub EntityAccess: "target" has 18 Health; two fake mobs sit at radius 3 and 7.

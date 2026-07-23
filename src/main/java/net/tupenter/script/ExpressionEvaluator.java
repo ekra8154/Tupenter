@@ -37,6 +37,18 @@ final class ExpressionEvaluator {
         return value;
     }
 
+    /**
+     * Every built-in function name. Used to decide {@code f(x)} (a call) versus
+     * {@code v (x)} (implicit multiplication by a parenthesized group) — a
+     * builtin always wins, so this must stay in step with the dispatch switch.
+     */
+    private static final java.util.Set<String> BUILTIN_FUNCTIONS = java.util.Set.of(
+            "int", "float", "abs", "floor", "ceil", "round", "min", "max", "len", "nth", "contains", "indexof",
+            "trim", "upper", "lower", "substr", "replace", "rand", "randf", "sin", "cos", "tan", "sqrt", "range",
+            "itemset", "blockset", "effectset", "entityset", "block", "pick", "vec", "component",
+            "raycast", "raycast_block", "entity_nbt", "entity_type", "raycast_entity", "entities", "nearest_entity",
+            "slot");
+
     private static final class Parser {
         /** A dead branch's stand-in: never inspected in skip mode, never leaks to eval mode. */
         private static final Value SKIP = Value.ofNumber(0);
@@ -446,6 +458,17 @@ final class ExpressionEvaluator {
                 // bare identifier → variable reference
                 return skipping ? SKIP : resolveVariable(identifier);
             }
+            // An identifier followed by '(' is USUALLY a call — but the language
+            // also has implicit multiplication, so "x (2)" is x*2 when x is a
+            // variable and no function x exists. Deciding here (before the '(' is
+            // consumed) is what keeps a loop variable named x/y/z from being
+            // swallowed by a same-named function. The check is a name lookup in
+            // both eval and skip mode, so the index advances identically.
+            if (!BUILTIN_FUNCTIONS.contains(identifier.toLowerCase(java.util.Locale.ROOT))
+                    && !context.functions().defines(identifier)
+                    && context.variables().resolve(identifier).isPresent()) {
+                return skipping ? SKIP : resolveVariable(identifier);
+            }
             index++; // consume '('
 
             if (identifier.equalsIgnoreCase("pick")) {
@@ -490,9 +513,7 @@ final class ExpressionEvaluator {
                 case "entityset" -> tagMembers("entityset", TagResolver.TagKind.ENTITY, args);
                 case "block" -> blockAt(args);
                 case "vec" -> vec(args);
-                case "x" -> component(args, 0, "x");
-                case "y" -> component(args, 1, "y");
-                case "z" -> component(args, 2, "z");
+                case "component" -> component(args);
                 case "raycast" -> raycast(args);
                 case "raycast_block" -> raycastBlock(args);
                 case "entity_nbt" -> entityNbt(args);
@@ -925,27 +946,45 @@ final class ExpressionEvaluator {
         }
 
         /**
-         * x(v) / y(v) / z(v) — pull one component out of a vec3, so any vec can
-         * be indexed in an expression: x(client.pos), y(raycast(500)),
-         * z(client.look), x(vec(1, 2, 3)). Keeps the exact Rational (no lossy
-         * double), so component math stays precise. A non-vec (e.g. the "miss"
-         * sentinel) errors clearly — gate a raycast with == "miss" first.
+         * component(v, axis) — pull one component out of a vec3, so any COMPUTED
+         * vec can be indexed: component(raycast(500), "y"), component(vec(1,2,3), "x").
+         * The spelled-out counterpart is the dotted variable client.pos.x — same
+         * split as client.slot.&lt;slot&gt;.&lt;field&gt; vs slot(slot, field).
+         *
+         * <p>This replaced three builtins named x/y/z. Single letters were not just
+         * ugly: the language has implicit multiplication, and parseFunctionCall
+         * takes the function branch as soon as an identifier is followed by '(',
+         * so a bound variable named x (the canonical loop name — see the randomfill
+         * and circle recipes) turned "x (2)" into a call instead of x*2.
+         *
+         * <p>Keeps the exact Rational (no lossy double). A non-vec — e.g. the "miss"
+         * sentinel — errors clearly; gate a raycast with == "miss" first.
          */
-        private Value component(List<Value> args, int slot, String name) {
-            Value value = single(args, name);
-            if (!(value instanceof Value.StringValue string)) {
-                throw new ExpressionException(name + "(v) takes a vec3, e.g. " + name
-                        + "(client.pos) or " + name + "(vec(1, 2, 3))");
+        private Value component(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("component(v, axis) takes a vec3 and \"x\", \"y\", or \"z\" — "
+                        + "e.g. component(client.pos, \"y\")");
+            }
+            String axis = args.get(1).displayString().trim().toLowerCase(java.util.Locale.ROOT);
+            int slot = switch (axis) {
+                case "x" -> 0;
+                case "y" -> 1;
+                case "z" -> 2;
+                default -> throw new ExpressionException("component(v, axis): axis must be \"x\", \"y\", or \"z\", got '"
+                        + args.get(1).displayString() + "'");
+            };
+            if (!(args.get(0) instanceof Value.StringValue string)) {
+                throw new ExpressionException("component(v, axis) takes a vec3, e.g. component(client.pos, \"x\")");
             }
             String[] parts = Coords.split(string.value());
             if (parts.length != 3) {
-                throw new ExpressionException(name + "(v) expected a vec3 with three components, got \""
+                throw new ExpressionException("component(v, axis) expected a vec3 with three components, got \""
                         + string.value() + "\"");
             }
             try {
                 return new Value.NumberValue(Rational.parse(parts[slot]));
             } catch (IllegalArgumentException ex) {
-                throw new ExpressionException(name + "(v): '" + parts[slot] + "' isn't a number");
+                throw new ExpressionException("component(v, axis): '" + parts[slot] + "' isn't a number");
             }
         }
 

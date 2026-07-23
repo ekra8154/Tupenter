@@ -20,4 +20,16 @@ public interface FunctionResolver {
      *         problem — wrong arity, a bad body, runaway recursion.
      */
     Value call(String name, List<Value> args, EvalContext context);
+
+    /**
+     * Whether a function by this name exists — asked BEFORE any arguments are
+     * parsed, so the evaluator can tell {@code f(x)} (a call) from {@code v (x)}
+     * (a variable times a parenthesized group; the language has implicit
+     * multiplication). Defaults to false so a resolver that only implements
+     * {@link #call} keeps working — an unknown name then falls through to the
+     * variable reading, and to the "unknown function" error if that fails too.
+     */
+    default boolean defines(String name) {
+        return false;
+    }
 }

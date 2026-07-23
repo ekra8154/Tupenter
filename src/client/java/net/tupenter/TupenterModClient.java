@@ -267,7 +267,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
-                "trim", "upper", "lower", "substr", "replace", "vec", "x", "y", "z", "raycast", "raycast_block",
+                "trim", "upper", "lower", "substr", "replace", "vec", "component", "raycast", "raycast_block",
                 "entity_nbt", "entity_type", "raycast_entity", "entities", "nearest_entity",
                 "slot"));
         names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too
@@ -2046,7 +2046,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "§7Note:§r a body is a statement block only if it uses one of those directives up top; otherwise it's a single expression, so a boolean like <s> x>=0 && x<=100 stays logical-AND. In a statement body, a trailing logical && must be parenthesized. #while already gives you $i$ as its counter — don't #set your own.",
                 "§7Call it with parens inside any expression§r, alongside min or sqrt: /echo $dist(client.pos, \"0 64 0\")$ — args are full expressions themselves, and tab-complete works.",
                 "§7Passing coordinates:§r \"0 64 0\" (or \"0,64,0\") is a LITERAL — everything inside quotes stays as-is, $ included. To COMPUTE components use vec(x, y, z): each slot is its own expression — $dist(vec(client.x/2, 39+12, 1), \"0 0 0\")$. A vec3 variable like client.pos passes straight through, no quotes needed.",
-                "§7Reading a vec back apart:§r x(v)/y(v)/z(v) pull one component out of ANY vec3 — a variable, a vec(...), a raycast, a function result: x(client.pos) · y(raycast(500)) · z(client.look). Exact precision, so the math stays sharp. On a miss (\"miss\") it errors — gate with == \"miss\" first.",
+                "§7Reading a vec back apart:§r component(v, \"x\"|\"y\"|\"z\") pulls one component out of ANY vec3 — a vec(...), a raycast, a function result: component(raycast(500), \"y\"). For a vec you can NAME, use the dotted form instead: $client.pos.y$. Exact precision, so the math stays sharp. On a miss (\"miss\") it errors — gate with == \"miss\" first.",
                 "§7Param types§r are the custom-command ones: <a:pos> (decimal) / <a:blockpos> (whole) bind $a$ plus a.x/a.y/a.z · <n:int>/<n:float> numbers · bare <s> a word or \"quoted text\". Inside the body params are just variables: a.x - b.x.",
                 "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing (so does [edit] in list).",
                 "§7Functions can call functions§r — including yours — with recursion capped at depth 32.",
