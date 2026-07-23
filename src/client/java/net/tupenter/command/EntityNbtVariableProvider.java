@@ -66,6 +66,82 @@ public final class EntityNbtVariableProvider implements VariableProvider {
         return NbtSnapshot.of(entity);
     }
 
+    /**
+     * Tab-completion for client.nbt.* / target.nbt.* — the live tree, one level at
+     * a time. Given what's typed so far, walks the entity's snapshot to the last
+     * complete segment and offers that node's children (compound keys, or list
+     * indices). Segments are echoed back in their CANONICAL case, so completing
+     * "client.nbt.inv" yields "client.nbt.Inventory". Anything unresolvable (no
+     * world, no crosshair entity, a bogus path) simply suggests nothing.
+     */
+    public static List<String> pathCompletions(String prefix) {
+        String lower = prefix.toLowerCase(Locale.ROOT);
+        try {
+            String root;
+            Entity entity;
+            if (lower.startsWith(CLIENT_PREFIX)) {
+                root = CLIENT_PREFIX;
+                entity = clientEntity();
+            } else if (lower.startsWith(TARGET_PREFIX)) {
+                root = TARGET_PREFIX;
+                entity = targetEntity();
+            } else {
+                return List.of();
+            }
+
+            // everything up to the last '.' is settled; the tail is being typed
+            String rest = lower.substring(root.length());
+            int lastDot = rest.lastIndexOf('.');
+            String walked = lastDot < 0 ? "" : rest.substring(0, lastDot);
+
+            Tag current = snapshot(entity);
+            StringBuilder canonical = new StringBuilder(root);
+            if (!walked.isEmpty()) {
+                for (String segment : walked.split("\\.")) {
+                    if (current instanceof CompoundTag compound) {
+                        String key = compound.keySet().stream()
+                                .filter(k -> k.equalsIgnoreCase(segment))
+                                .findFirst()
+                                .orElse(null);
+                        if (key == null) {
+                            return List.of();
+                        }
+                        canonical.append(key).append('.');
+                        current = compound.get(key);
+                    } else if (current instanceof CollectionTag list) {
+                        int index;
+                        try {
+                            index = Integer.parseInt(segment);
+                        } catch (NumberFormatException ex) {
+                            return List.of();
+                        }
+                        if (index < 0 || index >= list.size()) {
+                            return List.of();
+                        }
+                        canonical.append(index).append('.');
+                        current = list.get(index);
+                    } else {
+                        return List.of(); // a scalar has no children
+                    }
+                }
+            }
+
+            List<String> out = new ArrayList<>();
+            if (current instanceof CompoundTag compound) {
+                for (String key : new java.util.TreeSet<>(compound.keySet())) {
+                    out.add(canonical + key);
+                }
+            } else if (current instanceof CollectionTag list) {
+                for (int i = 0; i < list.size(); i++) {
+                    out.add(canonical.toString() + i);
+                }
+            }
+            return out;
+        } catch (RuntimeException ex) {
+            return List.of(); // suggestions must never throw into the chat screen
+        }
+    }
+
     private static Value resolvePath(Entity entity, String path, String fullName) {
         Tag tag = walk(snapshot(entity), path, fullName);
         return toValue(tag, fullName);

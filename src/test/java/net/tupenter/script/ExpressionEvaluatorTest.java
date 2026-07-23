@@ -123,6 +123,19 @@ class ExpressionEvaluatorTest {
     }
 
     @Test
+    void entityNbtFallbackCoversAnAbsentPath() {
+        EvalContext ctx = entityCtx();
+        // NBT omits defaulted fields (an undamaged item has no "minecraft:damage"),
+        // so the 3-arg form must yield the fallback instead of faulting the script
+        assertEquals("0", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Nope\", 0)", ctx).displayString());
+        // ...but a present path still wins
+        assertEquals("18", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Health\", 0)", ctx).displayString());
+        // and without a fallback it still errors
+        assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Nope\")", ctx));
+    }
+
+    @Test
     void entityTypeNamesTheEntity() {
         EvalContext ctx = entityCtx();
         assertEquals("minecraft:zombie", ExpressionEvaluator.evaluate("entity_type(\"target\")", ctx).displayString());

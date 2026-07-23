@@ -1003,12 +1003,23 @@ final class ExpressionEvaluator {
          * A missing entity or bad path errors clearly (same as the variable form).
          */
         private Value entityNbt(List<Value> args) {
-            if (args.size() != 2) {
-                throw new ExpressionException("entity_nbt(selector, path) takes an entity selector "
-                        + "(\"self\", \"target\", or a UUID) and an NBT path, e.g. entity_nbt(\"target\", \"Health\")");
+            if (args.size() != 2 && args.size() != 3) {
+                throw new ExpressionException("entity_nbt(selector, path) or entity_nbt(selector, path, fallback) — "
+                        + "a selector (\"self\", \"target\", or a UUID) and an NBT path, e.g. entity_nbt(\"target\", \"Health\")");
             }
             String selector = args.get(0).displayString();
             String path = args.get(1).displayString();
+            if (args.size() == 3) {
+                // 3-arg form: absent path (or no such entity) yields the fallback
+                // instead of erroring. NBT omits defaulted fields — an UNDAMAGED
+                // item simply has no "minecraft:damage" — so a read that means
+                // "0 if it isn't there" needs this to not fault a tick script.
+                try {
+                    return context.entities().readNbt(selector, path);
+                } catch (ExpressionException missing) {
+                    return args.get(2);
+                }
+            }
             return context.entities().readNbt(selector, path);
         }
 

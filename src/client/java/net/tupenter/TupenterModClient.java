@@ -257,6 +257,8 @@ public class TupenterModClient implements ClientModInitializer {
         names.addAll(SESSION_VARIABLES.names());
         names.add("client.nbt.");
         names.add("target.nbt.");
+        // ...and once you're inside one, the live tree one level at a time
+        names.addAll(net.tupenter.command.EntityNbtVariableProvider.pathCompletions(typed));
         names.addAll(java.util.List.of(
                 "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
@@ -2263,7 +2265,8 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · slot (0-8), offhand_item, target_entity, target_uuid (the crosshair entity's UUID — an entity_nbt selector) · gamemode, ping, fps, uuid",
                     "§7Hazards & held:§r in_water, underwater, in_lava, on_fire, fall_distance, eye_y · riding + vehicle · effects (a LIST — #foreach $e$ in client.effects works) · held_count, offhand_count, held_durability/held_max_durability (error on non-damageable — guard with held_item)",
                     "§7Keys (a script IS a keybind):§r $client.key.<name>$ = held now · $client.keypress.<name>$ = the tick it goes down. <name> is a bind (jump, sneak, attack, hotbar.1 — follows your controls + mods) OR a physical key (g, space, f6). Arrows are up_arrow/down_arrow/left_arrow/right_arrow (bare left/right = the strafe binds). All false while a screen is open. Pair with a tick script: restock = #if (client.keypress.g) (/tp @s $client.target_block$)",
-                    "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · browse with /tupenter dump",
+                    "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · TAB-COMPLETES the live tree one level at a time · browse with /tupenter dump",
+                    "§7Missing paths:§r NBT omits defaulted fields (an UNDAMAGED item has no minecraft:damage), so a plain read errors. Use the 3-arg form for a fallback: $entity_nbt(\"self\", \"equipment.chest.components.minecraft:damage\", 0)$ — also covers 'nothing equipped'.",
                     "§7Any entity by UUID:§r $entity_nbt(uuid, \"path\")$ reads the same NBT for ANY loaded entity, not just self/target — entity_nbt(\"self\"|\"target\"|<uuid>, \"Health\") · e.g. $entity_nbt(client.uuid, \"Pos.1\")$. Client-synced only (~render distance); an out-of-range UUID errors.",
                     "§7Finding UUIDs:§r entity_raycast(dist) = UUID you're aiming at (or \"miss\") · entities(radius[, type]) = LIST of nearby UUIDs for #foreach · nearest_entity(radius[, type]) = closest UUID (or \"miss\") · client.target_uuid = crosshair entity. Chain them: $entity_nbt(entity_raycast(30), \"Health\")$ · #foreach $e$ in entities(8, \"minecraft:zombie\") (...)",
                     "§7Entity type from a UUID:§r entity_type(selector) = the type id (\"minecraft:zombie\") — entity_nbt can't (entities are stored without their id tag). Name what you're aiming at: /echo This is a $entity_type(entity_raycast(100))$",
