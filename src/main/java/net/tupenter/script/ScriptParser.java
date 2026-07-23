@@ -952,7 +952,7 @@ public final class ScriptParser {
 
         /** True if the name already has a value anywhere — this script's #sets, the session
          * store, a saved persistent var, or a live read. A live var that errors when absent
-         * (e.g. target_block with no target) counts as unset. */
+         * (e.g. client.target.blockpos with no target) counts as unset. */
         private boolean isAlreadyDefined(String name) {
             try {
                 return lookup.resolve(name).isPresent();

@@ -6,10 +6,10 @@ package net.tupenter.script;
  * durability. It is a normal, transient world state, not a scripting mistake.
  *
  * <p>In a command or value position it still surfaces as a loud error (a
- * mis-aimed {@code /setblock $client.target_block$} should tell you nothing was
+ * mis-aimed {@code /setblock $client.target.blockpos$} should tell you nothing was
  * there, not silently send garbage). But inside an {@code #if}/{@code #while}
  * <em>condition</em>, the parser catches this and reads the condition as
- * {@code false} — so {@code #if $client.target_entity$ == "minecraft:zombie"}
+ * {@code false} — so {@code #if $client.target.type$ == "minecraft:zombie"}
  * quietly skips when you're aiming at nothing instead of killing the script.
  * That's the only difference from a plain {@link ExpressionException}.
  */

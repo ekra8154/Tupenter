@@ -19,9 +19,9 @@ import java.util.Set;
  * armor.head/chest/legs/feet, weapon.mainhand, weapon.offhand).
  *
  * <p>This is the same pairing {@code client.nbt.<path>} has with
- * {@code entity_nbt(selector, path)}: the VARIABLE form reads well and
+ * {@code entity(selector, field)}: the VARIABLE form reads well and
  * tab-completes when the slot is known as you write the script; the FUNCTION
- * form ({@code slot_item(s)}/{@code slot_count(s)}/{@code slot_durability(s)})
+ * form ({@code slot(slot, field)})
  * is what you reach for when the slot is computed, e.g. inside a loop.
  */
 public final class SlotVariableProvider implements VariableProvider {

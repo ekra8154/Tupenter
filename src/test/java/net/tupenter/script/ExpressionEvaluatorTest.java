@@ -103,20 +103,22 @@ class ExpressionEvaluatorTest {
     // A stub EntityAccess: "target" has 18 Health; two fake mobs sit at radius 3 and 7.
     private static EvalContext entityCtx() {
         EntityAccess access = new EntityAccess() {
+            // one field vocabulary for every subject — the whole point of entity()
             @Override
-            public Value readNbt(String selector, String path) {
-                if (selector.equals("target") && path.equals("Health")) {
-                    return Value.ofNumber(18);
+            public Value entityField(String selector, String field) {
+                if (!selector.equals("target") && !selector.equals("uuid-hit")) {
+                    throw new ExpressionException("no entity: " + selector);
                 }
-                throw new ExpressionException("no such entity/path: " + selector + " / " + path);
-            }
-
-            @Override
-            public String typeId(String selector) {
-                if (selector.equals("target") || selector.equals("uuid-hit")) {
-                    return "minecraft:zombie";
-                }
-                throw new ExpressionException("no entity: " + selector);
+                return switch (field) {
+                    case "type" -> Value.of("minecraft:zombie");
+                    case "uuid" -> Value.of("uuid-hit");
+                    case "name" -> Value.of("Zombie");
+                    case "health" -> Value.ofNumber(18);
+                    case "pos" -> Value.of("1.5 64 -2.5");
+                    case "blockpos" -> Value.of("1 64 -3");
+                    case "nbt.Health" -> Value.ofNumber(18);
+                    default -> throw new ExpressionException("no such field: " + field);
+                };
             }
 
             @Override
@@ -163,24 +165,39 @@ class ExpressionEvaluatorTest {
     }
 
     @Test
-    void entityNbtReadsThroughTheAccess() {
+    void entityReadsAnyFieldOfAnySubject() {
         EvalContext ctx = entityCtx();
-        assertEquals("18", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Health\")", ctx).displayString());
-        // selector and path are just expressions — arithmetic composes
-        assertEquals("20", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Health\") + 2", ctx).displayString());
+        // one field vocabulary — the same words client.<field> and
+        // client.target.<field> use, so only the SUBJECT changes
+        assertEquals("minecraft:zombie", ExpressionEvaluator.evaluate("entity(\"target\", \"type\")", ctx).displayString());
+        assertEquals("18", ExpressionEvaluator.evaluate("entity(\"target\", \"health\")", ctx).displayString());
+        assertEquals("1.5 64 -2.5", ExpressionEvaluator.evaluate("entity(\"target\", \"pos\")", ctx).displayString());
+        // nbt.<path> is the escape hatch for everything not curated
+        assertEquals("18", ExpressionEvaluator.evaluate("entity(\"target\", \"nbt.Health\")", ctx).displayString());
+        // and the subject can be COMPUTED — the reason the function form exists
+        assertEquals("minecraft:zombie",
+                ExpressionEvaluator.evaluate("entity(raycast_entity(30), \"type\")", ctx).displayString());
     }
 
     @Test
-    void entityNbtFallbackCoversAnAbsentPath() {
+    void entityFallbackCoversAnAbsentField() {
         EvalContext ctx = entityCtx();
-        // NBT omits defaulted fields (an undamaged item has no "minecraft:damage"),
-        // so the 3-arg form must yield the fallback instead of faulting the script
-        assertEquals("0", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Nope\", 0)", ctx).displayString());
-        // ...but a present path still wins
-        assertEquals("18", ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Health\", 0)", ctx).displayString());
-        // and without a fallback it still errors
+        // NBT omits defaulted values, so "0 if it isn't there" must not fault a script
+        assertEquals("0", ExpressionEvaluator.evaluate("entity(\"target\", \"nbt.Nope\", 0)", ctx).displayString());
+        assertEquals("18", ExpressionEvaluator.evaluate("entity(\"target\", \"health\", 0)", ctx).displayString());
+        // an unknown entity falls back too
+        assertEquals("none", ExpressionEvaluator.evaluate("entity(\"nobody\", \"type\", \"none\")", ctx).displayString());
+        // ...but without a fallback it still errors
         assertThrows(ExpressionException.class,
-                () -> ExpressionEvaluator.evaluate("entity_nbt(\"target\", \"Nope\")", ctx));
+                () -> ExpressionEvaluator.evaluate("entity(\"target\", \"nbt.Nope\")", ctx));
+    }
+
+    @Test
+    void entityValidatesArity() {
+        EvalContext ctx = entityCtx();
+        assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("entity(\"target\")", ctx));
+        assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("entity(\"a\", \"b\", \"c\", \"d\")", ctx));
     }
 
     @Test
@@ -216,15 +233,6 @@ class ExpressionEvaluatorTest {
                 () -> ExpressionEvaluator.evaluate("slot(\"armor.chest\")", ctx));
         assertThrows(ExpressionException.class,
                 () -> ExpressionEvaluator.evaluate("slot(\"armor.chest\", \"nope\")", ctx));
-    }
-
-    @Test
-    void entityTypeNamesTheEntity() {
-        EvalContext ctx = entityCtx();
-        assertEquals("minecraft:zombie", ExpressionEvaluator.evaluate("entity_type(\"target\")", ctx).displayString());
-        // the exact "what am I aiming at" composition
-        assertEquals("minecraft:zombie",
-                ExpressionEvaluator.evaluate("entity_type(raycast_entity(30))", ctx).displayString());
     }
 
     @Test

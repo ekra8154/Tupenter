@@ -16,13 +16,8 @@ import java.util.List;
 public interface EntityAccess {
     EntityAccess NONE = new EntityAccess() {
         @Override
-        public Value readNbt(String selector, String path) {
-            throw new ExpressionException("entity_nbt(...) needs a live world");
-        }
-
-        @Override
-        public String typeId(String selector) {
-            throw new ExpressionException("entity_type(...) needs a live world");
+        public Value entityField(String selector, String field) {
+            throw new ExpressionException("entity(...) needs a live world");
         }
 
         @Override
@@ -46,11 +41,14 @@ public interface EntityAccess {
         }
     };
 
-    /** The scalar NBT value at {@code path} for the entity {@code selector} ("self"/"target"/UUID) picks, or throws. */
-    Value readNbt(String selector, String path);
-
-    /** The entity type id (e.g. "minecraft:zombie") of the entity {@code selector} picks, or throws. */
-    String typeId(String selector);
+    /**
+     * One field of the entity {@code selector} picks ("self", "target", or a UUID) —
+     * the computed-subject counterpart to the {@code client.<field>} and
+     * {@code client.target.<field>} variables, sharing their field vocabulary:
+     * type, uuid, name, health, pos, blockpos, and {@code nbt.<path>} for the raw
+     * tree. Swapping subject then changes only the subject, not the shape.
+     */
+    Value entityField(String selector, String field);
 
     /**
      * One field of one of YOUR slots — the computed-address counterpart to the

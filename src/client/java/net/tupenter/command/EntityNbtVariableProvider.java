@@ -20,19 +20,19 @@ import java.util.Set;
 
 /**
  * The "parse whatever they put in there" provider: resolves ANY path under
- * client.nbt.* (your own entity data) or target.nbt.* (the entity under your
+ * client.nbt.* (your own entity data) or client.target.nbt.* (the entity under your
  * crosshair) by walking the entity's NBT tree at evaluation time. Nothing is
  * enumerated — coverage is whatever the client has synced. Browse paths with
  * /tupenter dump.
  */
 public final class EntityNbtVariableProvider implements VariableProvider {
     private static final String CLIENT_PREFIX = "client.nbt.";
-    private static final String TARGET_PREFIX = "target.nbt.";
+    private static final String TARGET_PREFIX = "client.target.nbt.";
 
     @Override
     public Set<String> names() {
         // dynamic — advertise just the roots so suggestions can hint at them
-        return Set.of("client.nbt", "target.nbt");
+        return Set.of("client.nbt", "client.target.nbt");
     }
 
     @Override
@@ -59,7 +59,7 @@ public final class EntityNbtVariableProvider implements VariableProvider {
         if (Minecraft.getInstance().hitResult instanceof EntityHitResult hit) {
             return hit.getEntity();
         }
-        throw new ExpressionException("target.nbt: no entity under the crosshair");
+        throw new ExpressionException("client.target: no entity under the crosshair");
     }
 
     public static CompoundTag snapshot(Entity entity) {
@@ -67,7 +67,7 @@ public final class EntityNbtVariableProvider implements VariableProvider {
     }
 
     /**
-     * Tab-completion for client.nbt.* / target.nbt.* — the live tree, one level at
+     * Tab-completion for client.nbt.* / client.target.nbt.* — the live tree, one level at
      * a time. Given what's typed so far, walks the entity's snapshot to the last
      * complete segment and offers that node's children (compound keys, or list
      * indices). Segments are echoed back in their CANONICAL case, so completing
@@ -149,7 +149,7 @@ public final class EntityNbtVariableProvider implements VariableProvider {
 
     /**
      * Read one NBT value out of a given entity — the shared path used by both the
-     * target.nbt / client.nbt variables and the entity_nbt(...) function.
+     * client.nbt / client.target.nbt variables and the entity(...) function.
      * {@code label} names the source in error messages (e.g. "entity_nbt").
      */
     public static Value read(Entity entity, String path, String label) {

@@ -218,6 +218,7 @@ public class TupenterModClient implements ClientModInitializer {
         VARIABLE_REGISTRY.register(PLAYERS_VARIABLES);
         VARIABLE_REGISTRY.register(REAL_VARIABLES);
         VARIABLE_REGISTRY.register(new EntityNbtVariableProvider());
+        VARIABLE_REGISTRY.register(new net.tupenter.command.TargetVariableProvider());
         VARIABLE_REGISTRY.register(new net.tupenter.command.SlotVariableProvider());
     }
 
@@ -241,7 +242,7 @@ public class TupenterModClient implements ClientModInitializer {
      * <p>{@code client.key.*}/{@code client.keypress.*} enumerate every bind AND every
      * physical key — 250+ entries that would bury the ~90 other variables. So they
      * collapse to their two roots until the prefix reaches into one, exactly how
-     * client.nbt./target.nbt. already behave. Resolution and validation are untouched:
+     * client.nbt./client.target.nbt. already behave. Resolution and validation are untouched:
      * this only shapes the suggestion list.
      */
     public static java.util.List<String> expressionCompletions(String prefix) {
@@ -257,18 +258,19 @@ public class TupenterModClient implements ClientModInitializer {
         }
         names.addAll(SESSION_VARIABLES.names());
         names.add("client.nbt.");
-        names.add("target.nbt.");
+        names.add("client.target.");
         names.add("client.slot.");
         // ...and once you're inside one, expand it: the live NBT tree one level
         // at a time, or the slot names / that slot's fields
         names.addAll(net.tupenter.command.EntityNbtVariableProvider.pathCompletions(typed));
         names.addAll(net.tupenter.command.SlotVariableProvider.completions(typed));
+        names.addAll(net.tupenter.command.TargetVariableProvider.completions(typed));
         names.addAll(java.util.List.of(
                 "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
                 "trim", "upper", "lower", "substr", "replace", "vec", "component", "raycast", "raycast_block",
-                "entity_nbt", "entity_type", "raycast_entity", "entities", "nearest_entity",
+                "entity", "raycast_entity", "entities", "nearest_entity",
                 "slot"));
         names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too
         return new java.util.ArrayList<>(names);
@@ -288,9 +290,9 @@ public class TupenterModClient implements ClientModInitializer {
     /**
      * Like ChatInputStyler.maskMarkers, but each complete $...$ is replaced by
      * a SAME-LENGTH mask whose token count matches the marker's evaluated
-     * value — so a position marker like $client.target_block$ (three coords)
+     * value — so a position marker like $client.target.blockpos$ (three coords)
      * masks to three numeric tokens and a command's later arguments still
-     * parse and complete (/setblock $client.target_block$ mine|). Positions
+     * parse and complete (/setblock $client.target.blockpos$ mine|). Positions
      * stay 1:1 with the real input; an eval failure (no world, bad expr) falls
      * back to a single zero-blob, the old behavior.
      */
@@ -325,7 +327,7 @@ public class TupenterModClient implements ClientModInitializer {
                 String value = MathEvaluator.evaluateValue(text.substring(i + 1, close), ctx).substitutionString();
                 tokens = tokenCount(value);
             } catch (RuntimeException ignored) {
-                // eval failed (e.g. target_block off-crosshair while chat is open) —
+                // eval failed (e.g. target.blockpos off-crosshair while chat is open) —
                 // fall back to the known arity of a position variable, else one blob
                 tokens = positionalArity(text.substring(i + 1, close));
             }
@@ -342,7 +344,7 @@ public class TupenterModClient implements ClientModInitializer {
 
     /** Variables that resolve to a 3-coordinate position — used to size a mask when the marker can't currently evaluate. */
     private static final java.util.Set<String> POSITIONAL_VARS = java.util.Set.of(
-            "client.pos", "client.target_block", "client.motion");
+            "client.pos", "client.target.blockpos", "client.motion");
 
     private static int positionalArity(String inner) {
         return POSITIONAL_VARS.contains(inner.trim().toLowerCase(java.util.Locale.ROOT)) ? 3 : 1;
@@ -898,7 +900,7 @@ public class TupenterModClient implements ClientModInitializer {
     };
 
     /**
-     * Backs entity_nbt / raycast_entity / entities / nearest_entity off the
+     * Backs entity / raycast_entity / entities / nearest_entity off the
      * synced client world (~render distance). "self"/"target"/UUID selectors for
      * NBT; ProjectileUtil + ClientLevel lookups for the UUID finders. See
      * {@link net.tupenter.command.EntityAccessImpl}.
@@ -1931,7 +1933,7 @@ public class TupenterModClient implements ClientModInitializer {
         java.util.Set<String> flagged = new java.util.LinkedHashSet<>();
         while (matcher.find()) {
             String candidate = matcher.group().toLowerCase(java.util.Locale.ROOT);
-            if (candidate.startsWith("client.nbt.") || candidate.startsWith("target.nbt.")) {
+            if (candidate.startsWith("client.nbt.") || candidate.startsWith("client.target.nbt.")) {
                 continue; // dynamic paths — checked at run time
             }
             if (!known.contains(candidate)) {
@@ -2123,7 +2125,7 @@ public class TupenterModClient implements ClientModInitializer {
         }
         StringBuilder summary = new StringBuilder("Built-in groups: ");
         groupCounts.forEach((g, count) -> summary.append("$").append(g).append(".*$ (").append(count).append(") · "));
-        summary.append("$client.nbt.*$ / $target.nbt.*$ (browse: /tupenter dump)");
+        summary.append("$client.nbt.*$ / $client.target.nbt.*$ (browse: /tupenter dump)");
         context.getSource().sendFeedback(Component.literal(summary.toString()).withStyle(ChatFormatting.GRAY));
         context.getSource().sendFeedback(Component.literal("Details: /tupenter vars <group>").withStyle(ChatFormatting.DARK_GRAY));
         return 1;
@@ -2226,9 +2228,9 @@ public class TupenterModClient implements ClientModInitializer {
                     "§bExpressions · world reads:",
                     "§7block(x, y, z)§r or block(\"x y z\") — the block id at a position: $block(0, 64, 0)$ → minecraft:stone",
                     "§7No round trip:§r reads come from YOUR client's synced world copy, so #if handles them instantly — this is /execute if block folded into the expression world, with a real #else.",
-                    "§7Crosshair:§r $client.target_hit$ = \"block\"/\"entity\"/\"miss\" · $client.target_block$ = \"x y z\" (errors on a miss — gate with target_hit) · $client.target_entity$ = the entity id",
+                    "§7Crosshair:§r $client.target.hit$ = \"block\"/\"entity\"/\"miss\" — gate with it · BLOCK fields: $client.target.blockpos$ (+ .x/.y/.z), $client.target.block$ (the id) · ENTITY fields: $client.target.type$, .uuid, .name, .health, .pos, .nbt.<path>",
                     "§7raycast(dist)§r or raycast(origin, dir, dist) — casts like your crosshair (hits collidable blocks): returns \"x y z\" or \"miss\". raycast_block(dist) returns the block id, or \"miss\". $client.eye_pos$ = your eye vec3 (a ray origin), $client.look$ = your unit look vec3 (a ray dir) — so raycast(client.eye_pos, client.look, 60) is the long-hand of raycast(60).",
-                    "§7Pattern:§r #if (client.target_hit == \"block\" && block(client.target_block) == \"minecraft:diamond_ore\") (/echo &bfound it) — a condition is already an expression, so $ $ around names is optional",
+                    "§7Pattern:§r #if (client.target.hit == \"block\" && client.target.block == \"minecraft:diamond_ore\") (/echo &bfound it) — a condition is already an expression, so $ $ around names is optional",
                     "§7Limits:§r loaded chunks only (unloaded = loud error, never a guess) · states/NBT not included, just the id",
                     "§7Tick state:§r $world.tickrate$ (from /tick rate, ~20) · $world.frozen$ (is /tick freeze on) · $world.stepping$ (mid /tick step) — exact, synced from the server. So a freeze toggle is just: #if $world.frozen$ (/tick unfreeze) #else (/tick freeze)",
                     "§7Registry sets§r (blockset/itemset/effectset) are under: /tupenter help expressions lists",
@@ -2270,14 +2272,14 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Stats & session:§r max_health, absorption, armor, saturation, xp_level, xp_progress · selected_slot (0-8, which hotbar slot is held), offhand_item, target_entity, target_uuid (the crosshair entity's UUID — an entity_nbt selector) · gamemode, ping, fps, uuid",
                     "§7Hazards & held:§r in_water, underwater, in_lava, on_fire, fall_distance, eye_y · riding + vehicle · effects (a LIST — #foreach $e$ in client.effects works) · held_count, offhand_count, held_durability/held_max_durability (error on non-damageable — guard with held_item)",
                     "§7Keys (a script IS a keybind):§r $client.key.<name>$ = held now · $client.keypress.<name>$ = the tick it goes down. <name> is a bind (jump, sneak, attack, hotbar.1 — follows your controls + mods) OR a physical key (g, space, f6). Arrows are up_arrow/down_arrow/left_arrow/right_arrow (bare left/right = the strafe binds). All false while a screen is open. Pair with a tick script: restock = #if (client.keypress.g) (/tp @s $client.target_block$)",
-                    "§7Everything else:§r $client.nbt.<any path>$ / $target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · TAB-COMPLETES the live tree one level at a time · browse with /tupenter dump",
+                    "§7Everything else:§r $client.nbt.<any path>$ / $client.target.nbt.<any path>$ — e.g. $client.nbt.Inventory.0.id$ · TAB-COMPLETES the live tree one level at a time · browse with /tupenter dump",
                     "§7Missing paths:§r NBT omits defaulted fields (an UNDAMAGED item has no minecraft:damage), so a plain read errors. Use the 3-arg form for a fallback: $entity_nbt(\"self\", \"equipment.chest.components.minecraft:damage\", 0)$ — also covers 'nothing equipped'.",
                     "§7Your slots:§r $client.slot.<slot>.<field>$ — slot is an /item replace name (hotbar.0-8, inventory.0-26 where 0-8 is the TOP row, armor.head/chest/legs/feet, weapon.mainhand, weapon.offhand); field is id, count, durability, max_durability. Tab-completes both halves. e.g. $client.slot.inventory.8.id$ · $client.slot.armor.chest.durability$",
                     "§7Dotted or function?§r Both read LIVE — the difference is the ADDRESS, not the value. Spell the address out and it's a dotted variable ($client.slot.inventory.8.id$); COMPUTE the address and it's a function (slot(\"inventory.\" + i, \"id\") inside a #for). Same split as $client.nbt.<path>$ vs entity_nbt(selector, path). Dotted forms are exactly the ones whose addresses can be enumerated — which is why they tab-complete and functions can't. Empty = \"empty\" and 0, never an error.",
                     "§7Not client.nbt.Inventory:§r that's the SAVE format — a compacted list of non-empty stacks with a Slot field, so Inventory.0 is 'my first stack', not slot 0. Use the slot forms above.",
-                    "§7Any entity by UUID:§r $entity_nbt(uuid, \"path\")$ reads the same NBT for ANY loaded entity, not just self/target — entity_nbt(\"self\"|\"target\"|<uuid>, \"Health\") · e.g. $entity_nbt(client.uuid, \"Pos.1\")$. Client-synced only (~render distance); an out-of-range UUID errors.",
-                    "§7Finding UUIDs:§r raycast_entity(dist) = UUID you're aiming at (or \"miss\") · entities(radius[, type]) = LIST of nearby UUIDs for #foreach · nearest_entity(radius[, type]) = closest UUID (or \"miss\") · client.target_uuid = crosshair entity. Chain them: $entity_nbt(raycast_entity(30), \"Health\")$ · #foreach $e$ in entities(8, \"minecraft:zombie\") (...)",
-                    "§7Entity type from a UUID:§r entity_type(selector) = the type id (\"minecraft:zombie\") — entity_nbt can't (entities are stored without their id tag). Name what you're aiming at: /echo This is a $entity_type(raycast_entity(100))$",
+                    "§7One vocabulary, three subjects:§r the SAME fields work on you, your crosshair, and any entity — $client.health$ · $client.target.health$ · $entity(uuid, \"health\")$. Fields: type, uuid, name, health, pos, blockpos, nbt.<path>. Swapping subject changes only the subject.",
+                    "§7Finding UUIDs:§r raycast_entity(dist) = UUID you're aiming at (or \"miss\") · entities(radius[, type]) = LIST of nearby UUIDs for #foreach · nearest_entity(radius[, type]) = closest UUID (or \"miss\") · $client.target.uuid$ = crosshair entity. Chain them: $entity(raycast_entity(30), \"health\")$",
+                    "§7Missing fields:§r entity(selector, field, FALLBACK) yields the fallback instead of erroring — NBT omits defaulted values, so $entity(uuid, \"nbt.minecraft:damage\", 0)$ is how you read \"0 if undamaged\" without faulting a tick script.",
                     "§7Discover:§r /tupenter vars — groups overview · /tupenter vars <group> — live values",
                     "§7In custom commands:§r declared params bind as $name$ or $1$..$n$",
             };
@@ -2363,7 +2365,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7scripts§r — what's armed in THIS world · §7scripts enable|disable§r — master on/off (no name), or arm/disarm one by §fname§r",
                     "§7vars [group]§r — variables overview, or one group with live values",
                     "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
-                    "§7dump [client|target] [path]§r — browse entity NBT (the data behind client.nbt.* / target.nbt.*)",
+                    "§7dump [client|target] [path]§r — browse entity NBT (the data behind client.nbt.* / client.target.nbt.*)",
                     "§7help <topic>§r — topics: expressions [math|text|logic|random|lists|world], variables, flow, prefixes, scripts, command [name]",
             };
             case "customcommand" -> new String[]{

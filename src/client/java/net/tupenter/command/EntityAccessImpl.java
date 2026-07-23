@@ -29,13 +29,8 @@ import java.util.function.Predicate;
 public final class EntityAccessImpl implements EntityAccess {
 
     @Override
-    public Value readNbt(String selector, String path) {
-        return EntityNbtVariableProvider.read(resolveEntity(selector), path, "entity_nbt");
-    }
-
-    @Override
-    public String typeId(String selector) {
-        return BuiltInRegistries.ENTITY_TYPE.getKey(resolveEntity(selector).getType()).toString();
+    public Value entityField(String selector, String field) {
+        return EntityFields.read(EntityFields.resolve(selector), field);
     }
 
     /** The readable fields of a slot — shared with the client.slot.&lt;slot&gt;.&lt;field&gt; variable form. */
@@ -86,31 +81,6 @@ public final class EntityAccessImpl implements EntityAccess {
                     + "hotbar.0-8, inventory.0-26, armor.head/chest/legs/feet, weapon.mainhand, weapon.offhand");
         }
         return player.getSlot(id).get();
-    }
-
-    /** "self" / "target" / a UUID → the entity, or a clear error. */
-    private static Entity resolveEntity(String selector) {
-        String key = selector.trim();
-        if (key.equalsIgnoreCase("self")) {
-            return EntityNbtVariableProvider.clientEntity();
-        }
-        if (key.equalsIgnoreCase("target")) {
-            return EntityNbtVariableProvider.targetEntity();
-        }
-        UUID uuid;
-        try {
-            uuid = UUID.fromString(key);
-        } catch (IllegalArgumentException ex) {
-            throw new ExpressionException("entity selector '" + selector
-                    + "' isn't \"self\", \"target\", or a valid UUID");
-        }
-        ClientLevel level = Minecraft.getInstance().level;
-        Entity entity = level == null ? null : level.getEntity(uuid);
-        if (entity == null) {
-            throw new ExpressionException("no entity with UUID " + uuid
-                    + " is loaded on the client (out of range, or not synced)");
-        }
-        return entity;
     }
 
     @Override

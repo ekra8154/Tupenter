@@ -48,13 +48,6 @@ public final class ClientVariableProvider implements VariableProvider {
         register("client.name", player -> Value.of(player.getName().getString()));
         register("client.dimension", player -> Value.of(player.level().dimension().location().toString()));
         register("client.held_item", player -> Value.of(BuiltInRegistries.ITEM.getKey(player.getMainHandItem().getItem()).toString()));
-        register("client.target_block", ClientVariableProvider::targetBlock);
-        register("client.target_block.x", player -> targetBlockComponent(0));
-        register("client.target_block.y", player -> targetBlockComponent(1));
-        register("client.target_block.z", player -> targetBlockComponent(2));
-        register("client.target_hit", ClientVariableProvider::targetHit);
-        register("client.target_entity", ClientVariableProvider::targetEntity);
-        register("client.target_uuid", ClientVariableProvider::targetUuid);
 
         // movement + orientation
         register("client.speed", player -> {
@@ -194,56 +187,10 @@ public final class ClientVariableProvider implements VariableProvider {
         variables.put(name, reader);
     }
 
-    /** One axis of the crosshair block — same miss handling as client.target_block. */
-    private static Value targetBlockComponent(int axis) {
-        if (Minecraft.getInstance().hitResult instanceof BlockHitResult hit
-                && hit.getType() != net.minecraft.world.phys.HitResult.Type.MISS) {
-            BlockPos pos = hit.getBlockPos();
-            return Value.ofNumber(switch (axis) {
-                case 0 -> pos.getX();
-                case 1 -> pos.getY();
-                default -> pos.getZ();
-            });
-        }
-        throw new MissingValueException("client.target_block: no block under the crosshair — check $client.target_hit$ first");
-    }
 
-    private static Value targetBlock(LocalPlayer player) {
-        // a MISS is still a BlockHitResult (holding the ray's endpoint) —
-        // returning that would silently teleport people into the air, so
-        // only an actual block hit counts; gate with $client.target_hit$
-        if (Minecraft.getInstance().hitResult instanceof BlockHitResult hit
-                && hit.getType() != net.minecraft.world.phys.HitResult.Type.MISS) {
-            BlockPos pos = hit.getBlockPos();
-            return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
-        }
-        throw new MissingValueException("client.target_block: no block under the crosshair — check $client.target_hit$ first");
-    }
 
-    /** Entity type id under the crosshair, e.g. "minecraft:zombie". */
-    private static Value targetEntity(LocalPlayer player) {
-        if (Minecraft.getInstance().hitResult instanceof net.minecraft.world.phys.EntityHitResult hit) {
-            return Value.of(BuiltInRegistries.ENTITY_TYPE.getKey(hit.getEntity().getType()).toString());
-        }
-        throw new MissingValueException("client.target_entity: no entity under the crosshair — check $client.target_hit$ first");
-    }
 
-    /** UUID of the entity under the crosshair — a selector for entity_nbt(...). */
-    private static Value targetUuid(LocalPlayer player) {
-        if (Minecraft.getInstance().hitResult instanceof net.minecraft.world.phys.EntityHitResult hit) {
-            return Value.of(hit.getEntity().getStringUUID());
-        }
-        throw new MissingValueException("client.target_uuid: no entity under the crosshair — check $client.target_hit$ first");
-    }
 
-    /** "block", "entity", or "miss" — what the crosshair ray actually found. */
-    private static Value targetHit(LocalPlayer player) {
-        net.minecraft.world.phys.HitResult hit = Minecraft.getInstance().hitResult;
-        if (hit == null || hit.getType() == net.minecraft.world.phys.HitResult.Type.MISS) {
-            return Value.of("miss");
-        }
-        return Value.of(hit.getType() == net.minecraft.world.phys.HitResult.Type.ENTITY ? "entity" : "block");
-    }
 
     @Override
     public Set<String> names() {

@@ -46,7 +46,7 @@ final class ExpressionEvaluator {
             "int", "float", "abs", "floor", "ceil", "round", "min", "max", "len", "nth", "contains", "indexof",
             "trim", "upper", "lower", "substr", "replace", "rand", "randf", "sin", "cos", "tan", "sqrt", "range",
             "itemset", "blockset", "effectset", "entityset", "block", "pick", "vec", "component",
-            "raycast", "raycast_block", "entity_nbt", "entity_type", "raycast_entity", "entities", "nearest_entity",
+            "raycast", "raycast_block", "entity", "raycast_entity", "entities", "nearest_entity",
             "slot");
 
     private static final class Parser {
@@ -516,8 +516,7 @@ final class ExpressionEvaluator {
                 case "component" -> component(args);
                 case "raycast" -> raycast(args);
                 case "raycast_block" -> raycastBlock(args);
-                case "entity_nbt" -> entityNbt(args);
-                case "entity_type" -> entityType(args);
+                case "entity" -> entityField(args);
                 case "slot" -> slotField(args);
                 case "raycast_entity" -> entityRaycast(args);
                 case "entities" -> entitiesWithin(args);
@@ -564,7 +563,7 @@ final class ExpressionEvaluator {
                 throw new ExpressionException("contains(list, value) takes a list and a value");
             }
             if (!(args.get(0) instanceof Value.ListValue list)) {
-                throw new ExpressionException("contains(list, value): the first argument must be a list, e.g. contains(blockset(#minecraft:logs), block(client.target_block))");
+                throw new ExpressionException("contains(list, value): the first argument must be a list, e.g. contains(blockset(#minecraft:logs), block(client.target.blockpos))");
             }
             for (Value element : list.values()) {
                 try {
@@ -584,7 +583,7 @@ final class ExpressionEvaluator {
                 throw new ExpressionException("indexof(list, value) takes a list and a value");
             }
             if (!(args.get(0) instanceof Value.ListValue list)) {
-                throw new ExpressionException("indexof(list, value): the first argument must be a list, e.g. indexof(blockset(#minecraft:wool), block(client.target_block))");
+                throw new ExpressionException("indexof(list, value): the first argument must be a list, e.g. indexof(blockset(#minecraft:wool), block(client.target.blockpos))");
             }
             List<Value> values = list.values();
             for (int i = 0; i < values.size(); i++) {
@@ -899,7 +898,7 @@ final class ExpressionEvaluator {
          * no delay — this is /execute if block folded into the expression
          * world, where #if/#else handle it naturally). Coordinates floor to
          * block positions; the string form accepts what client.target_block
-         * and pos params bind: block(client.target_block) == "minecraft:air".
+         * and pos params bind: block(client.target.blockpos) == "minecraft:air".
          */
         private Value blockAt(List<Value> args) {
             long[] position = new long[3];
@@ -924,7 +923,7 @@ final class ExpressionEvaluator {
                     }
                 }
             } else {
-                throw new ExpressionException("block(x, y, z) or block(\"x y z\") — e.g. block(client.target_block)");
+                throw new ExpressionException("block(x, y, z) or block(\"x y z\") — e.g. block(client.target.blockpos)");
             }
 
             String id = context.blocks().blockAt(position[0], position[1], position[2]);
@@ -1035,39 +1034,40 @@ final class ExpressionEvaluator {
         }
 
         /**
-         * entity_nbt(selector, path) — read one value out of an entity's synced
-         * NBT, the runtime-selectable cousin of the target.nbt / client.nbt vars. The
-         * selector is "self", "target", or a UUID string (e.g. client.uuid, or a
-         * UUID pulled from elsewhere); path dot-walks the tree, numbers indexing
-         * lists: entity_nbt("target", "Health"), entity_nbt(client.uuid, "Pos.1").
-         * A missing entity or bad path errors clearly (same as the variable form).
+         * entity(selector, field) — one field of one entity, with BOTH halves as
+         * arguments so the SUBJECT can be computed: entity(raycast_entity(30), "health").
+         * The spelled-out counterparts are the variables client.&lt;field&gt; (you) and
+         * client.target.&lt;field&gt; (your crosshair) — one field vocabulary, three
+         * subjects, so swapping subject changes only the subject.
+         *
+         * <p>field is type, uuid, name, health, pos, blockpos, or nbt.&lt;path&gt; for the
+         * raw tree. A third argument is a FALLBACK for an absent field: NBT omits
+         * defaulted values (an UNDAMAGED item has no "minecraft:damage"), so a read
+         * meaning "0 if it isn't there" needs this to not fault a tick script.
          */
-        private Value entityNbt(List<Value> args) {
+        private Value entityField(List<Value> args) {
             if (args.size() != 2 && args.size() != 3) {
-                throw new ExpressionException("entity_nbt(selector, path) or entity_nbt(selector, path, fallback) — "
-                        + "a selector (\"self\", \"target\", or a UUID) and an NBT path, e.g. entity_nbt(\"target\", \"Health\")");
+                throw new ExpressionException("entity(selector, field) or entity(selector, field, fallback) — "
+                        + "a selector (\"self\", \"target\", or a UUID) and a field, "
+                        + "e.g. entity(\"target\", \"health\") or entity(uuid, \"nbt.Health\", 0)");
             }
             String selector = args.get(0).displayString();
-            String path = args.get(1).displayString();
+            String field = args.get(1).displayString();
             if (args.size() == 3) {
-                // 3-arg form: absent path (or no such entity) yields the fallback
-                // instead of erroring. NBT omits defaulted fields — an UNDAMAGED
-                // item simply has no "minecraft:damage" — so a read that means
-                // "0 if it isn't there" needs this to not fault a tick script.
                 try {
-                    return context.entities().readNbt(selector, path);
+                    return context.entities().entityField(selector, field);
                 } catch (ExpressionException missing) {
                     return args.get(2);
                 }
             }
-            return context.entities().readNbt(selector, path);
+            return context.entities().entityField(selector, field);
         }
 
         /**
          * slot(slot, field) — one field of one of your slots, with BOTH halves as
          * arguments so the slot can be computed: slot("inventory." + i, "id").
          * The spelled-out counterpart is the variable client.slot.&lt;slot&gt;.&lt;field&gt;
-         * — same split as client.nbt.&lt;path&gt; vs entity_nbt(selector, path).
+         * — same split as client.&lt;field&gt; vs entity(selector, field).
          */
         private Value slotField(List<Value> args) {
             if (args.size() != 2) {
@@ -1078,22 +1078,10 @@ final class ExpressionEvaluator {
         }
 
         /**
-         * entity_type(selector) — the type id ("minecraft:zombie") of the entity
-         * a selector picks ("self", "target", or a UUID). The counterpart to
-         * entity_nbt for the one field NBT can't give you: the client stores
-         * entities without their "id" tag, so entity_nbt(uuid, "id") has nothing
-         * to read. entity_type(raycast_entity(100)) names what you're aiming at.
-         */
-        private Value entityType(List<Value> args) {
-            String selector = single(args, "entity_type").displayString();
-            return Value.of(context.entities().typeId(selector));
-        }
-
-        /**
          * raycast_entity(dist) — cast from the player's eyes along their look up
          * to dist blocks and yield the UUID of the first entity hit, or the
          * "miss" sentinel (so it gates with == "miss", like raycast). Feed the
-         * UUID straight to entity_nbt: entity_nbt(raycast_entity(30), "Health").
+         * UUID straight to entity: entity(raycast_entity(30), "health").
          */
         private Value entityRaycast(List<Value> args) {
             double dist = asNumber(single(args, "raycast_entity"), "raycast_entity(dist)").doubleValue();

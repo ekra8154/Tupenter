@@ -1101,12 +1101,12 @@ class ScriptParserTest {
         return new VariableProvider() {
             @Override
             public java.util.Set<String> names() {
-                return java.util.Set.of("client.target_entity");
+                return java.util.Set.of("client.target.type");
             }
 
             @Override
             public java.util.Optional<Value> resolve(String name) {
-                if (name.equalsIgnoreCase("client.target_entity")) {
+                if (name.equalsIgnoreCase("client.target.type")) {
                     throw new MissingValueException("no entity under the crosshair");
                 }
                 if (name.equalsIgnoreCase("bad.var")) {
@@ -1126,7 +1126,7 @@ class ScriptParserTest {
     @Test
     void absentValueMakesAConditionFalseNotAnError() {
         ScriptParser.ParseResult result = ScriptParser.parse(
-                "#if ($client.target_entity$ == \"minecraft:zombie\") (/say hit)", optionsWith(crosshairProvider()));
+                "#if ($client.target.type$ == \"minecraft:zombie\") (/say hit)", optionsWith(crosshairProvider()));
         assertNull(result.error(), "an absent live value is normal world state, not a scripting error");
         assertTrue(contents(result).isEmpty(), "condition read false — nothing emitted");
     }
@@ -1134,7 +1134,7 @@ class ScriptParserTest {
     @Test
     void absentValueInAConditionTakesTheElseBranch() {
         ScriptParser.ParseResult result = ScriptParser.parse(
-                "#if ($client.target_entity$ == \"minecraft:zombie\") (/say hit) #else (/say miss)",
+                "#if ($client.target.type$ == \"minecraft:zombie\") (/say hit) #else (/say miss)",
                 optionsWith(crosshairProvider()));
         assertNull(result.error());
         assertEquals(List.of("say miss"), contents(result));
