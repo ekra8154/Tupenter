@@ -2790,7 +2790,7 @@ public class TupenterModClient implements ClientModInitializer {
             case "customcommand" -> new String[]{
                     "§b/customcommand — make your own commands:",
                     "§7add <name> [params] = <body>§r — create · §7update§r — edit · §7remove <name>§r — delete",
-                    "§7Always signature = body§r — the = separates them (the same form it's stored in). An optional \"quoted note\" goes last before the =: /customcommand add tickfreeze \"toggles time\" = #if ($frozen$) (/tick unfreeze) #else (/tick freeze). The note shows on missing args + in /customcommand <name>; &-colors like /echo.",
+                    "§7Always signature = body§r — the = separates them (the same form it's stored in). An optional \"quoted note\" goes last before the =: /customcommand add tickfreeze \"toggles time\" = #if ($world.frozen$) (/tick unfreeze) #else (/tick freeze). The note shows on missing args + in /customcommand <name>; &-colors like /echo.",
                     "§7list [verbose]§r — signatures (verbose: full bodies) · §7/customcommand <name>§r — one command + [edit] link",
                     "§7add/update with a name but no body§r puts the existing definition in your chat bar for editing",
                     "§7Full guide§r (typed params, defaults, examples): /customcommand help",
@@ -3136,7 +3136,7 @@ public class TupenterModClient implements ClientModInitializer {
 
     /** /customcommand help descriptions — the quoted note. */
     private static int runDescriptionsHelp(CommandContext<FabricClientCommandSource> context) {
-        String plainExample = "/customcommand add tickfreeze \"toggles time\" = #if ($frozen$) (/tick unfreeze) #else (/tick freeze)";
+        String plainExample = "/customcommand add tickfreeze \"toggles time\" = #if ($world.frozen$) (/tick unfreeze) #else (/tick freeze)";
         String paramExample = "/customcommand add greet <who:player> \"wave at someone\" = /me waves at $who$";
         beginHelpPage();
         helpLine("§bDescriptions — a note on your command:");

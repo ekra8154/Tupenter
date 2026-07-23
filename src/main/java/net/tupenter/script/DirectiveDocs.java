@@ -102,10 +102,11 @@ public final class DirectiveDocs {
                 doc("setdefault", Group.VARIABLES, "#setdefault name = value",
                         "set only if not already defined — idempotent init", null, true,
                         "#setdefault maxy = 80 && /echo building up to $maxy$",
-                        "#setdefault frozen = false && #if frozen (/tick unfreeze) #else (/tick freeze) && #set frozen = !frozen",
+                        "#setdefault runs = 0 && #set runs = runs + 1 && /echo run $runs$ this session",
                         "§7Already defined§r means session, saved, or live — an existing value always wins.",
-                        "§7Bare name throughout:§r the composed example's frozen reads bare in the #if condition and the !frozen assignment — no $ $ needed until it hits command text.",
-                        "§7The stateful-command idiom:§r a complete freeze TOGGLE that's safe to paste into any world — first run initializes, every run flips.",
+                        "§7Bare name throughout:§r runs reads bare in the #set arithmetic — $runs$ only where it lands in command text.",
+                        "§7The stateful-command idiom:§r first run initializes, every run advances — paste it anywhere, no separate setup line.",
+                        "§7Only track what the game DOESN'T tell you:§r for live state read the real variable — $world.frozen$, $client.held.id$, $client.riding$. A self-tracked flag drifts the moment anything else changes it (or you rejoin), and then your toggle does the opposite of what you meant.",
                         "§7Create-once-across-sessions:§r #setdefault x = 0 && /tupenter var save x."),
 
                 // ---- Loops ----
