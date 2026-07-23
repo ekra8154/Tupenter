@@ -226,10 +226,34 @@ public class TupenterModClient implements ClientModInitializer {
         TICK_SCRIPTS.clearFaults();
     }
 
-    /** Everything worth tab-completing inside a $...$ marker. */
+    /** Namespaces too big to list flat — collapsed to a root until you type into them. */
+    private static final java.util.List<String> COLLAPSED_NAMESPACES =
+            java.util.List.of("client.key.", "client.keypress.");
+
     public static java.util.List<String> expressionCompletions() {
+        return expressionCompletions("");
+    }
+
+    /**
+     * Everything worth tab-completing inside a $...$ marker, for what's typed so far.
+     *
+     * <p>{@code client.key.*}/{@code client.keypress.*} enumerate every bind AND every
+     * physical key — 250+ entries that would bury the ~90 other variables. So they
+     * collapse to their two roots until the prefix reaches into one, exactly how
+     * client.nbt./target.nbt. already behave. Resolution and validation are untouched:
+     * this only shapes the suggestion list.
+     */
+    public static java.util.List<String> expressionCompletions(String prefix) {
+        String typed = prefix == null ? "" : prefix.toLowerCase(java.util.Locale.ROOT);
         java.util.TreeSet<String> names = new java.util.TreeSet<>();
-        names.addAll(VARIABLE_REGISTRY.names());
+        for (String name : VARIABLE_REGISTRY.names()) {
+            String collapsedRoot = collapsedRootFor(name);
+            if (collapsedRoot != null && !typed.startsWith(collapsedRoot)) {
+                names.add(collapsedRoot); // show the door, not every room behind it
+                continue;
+            }
+            names.add(name);
+        }
         names.addAll(SESSION_VARIABLES.names());
         names.add("client.nbt.");
         names.add("target.nbt.");
@@ -241,6 +265,17 @@ public class TupenterModClient implements ClientModInitializer {
                 "entity_nbt", "entity_type", "entity_raycast", "entities", "nearest_entity"));
         names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too
         return new java.util.ArrayList<>(names);
+    }
+
+    /** The collapsed root a name lives under, or null if it isn't in a collapsed namespace. */
+    private static String collapsedRootFor(String name) {
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        for (String root : COLLAPSED_NAMESPACES) {
+            if (lower.startsWith(root) && lower.length() > root.length()) {
+                return root;
+            }
+        }
+        return null;
     }
 
     /**

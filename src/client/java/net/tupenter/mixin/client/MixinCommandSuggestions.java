@@ -91,14 +91,14 @@ public abstract class MixinCommandSuggestions {
             String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
             candidates = prefix.startsWith("#")
                     ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
-                    : TupenterModClient.expressionCompletions();
+                    : TupenterModClient.expressionCompletions(prefix);
         } else if ((tokenStart = ChatInputStyler.headerExprTokenStart(text, cursor)) >= 0) {
             // a scanner directive's header (#foreach ... in itemset(#|), #if $x$>|)
             // is an implicit expression zone — complete it like a marker
             String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
             candidates = prefix.startsWith("#")
                     ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
-                    : TupenterModClient.expressionCompletions();
+                    : TupenterModClient.expressionCompletions(prefix);
         } else {
             // typing a directive word (#norec... / after-')' #elseif)
             tokenStart = ChatInputStyler.directiveTokenStart(text, cursor);
