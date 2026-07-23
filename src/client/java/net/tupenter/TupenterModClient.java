@@ -2510,7 +2510,8 @@ public class TupenterModClient implements ClientModInitializer {
         String[] lines = switch (topic) {
             case "variables" -> new String[]{
                     "§bVariables — use anywhere as $name$:",
-                    "§7Yours:§r #set x = 5 (session, cleared on join) · #set x += 1 (also -= *= /= %=) · #local x = 5 (this line only, silent) · $ around the name is optional · dotted groups allowed: #set hitlist.bob = \"wanted\"",
+                    "§7Yours:§r #set x = 5 (session, cleared on join) · #set x += 1 (also -= *= /= %=) · $ around the name is optional · dotted groups allowed: #set hitlist.bob = \"wanted\"",
+                    "§7#local — the workhorse:§r compute ONCE, use many times, save NOTHING: #local $hit$ = raycast_entity(30) && #if (hit != \"miss\") (/echo $entity(hit, \"name\")$ · $entity(hit, \"health\")$ hp). Scoped to its line and silent — a tick script stays stateless, and both reads see the SAME raycast. Reach for #set only when the value must OUTLIVE the line.",
                     "§7On the right side§r you're already in expression world: #set x = x + 1 — bare names work; $x + 1$ works too ($...$ always evaluates its inside)",
                     "§7#setdefault x = 5§r sets x ONLY if it isn't already defined (session, saved, or live) — idempotent init, so a stateful custom command is a clean drop-in: #setdefault $frozen$ = false && #if $frozen$ (/tick unfreeze) #else (/tick freeze) && #set $frozen$ = !$frozen$",
                     "§7Persistent:§r /tupenter var save <name> keeps it forever (re-saving an unchanged value is a no-op) · /tupenter var delete <name> removes it · create-once-across-sessions: #setdefault $x$ = 0 && /tupenter var save $x$",
