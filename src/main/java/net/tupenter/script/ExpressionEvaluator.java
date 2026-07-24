@@ -523,6 +523,7 @@ final class ExpressionEvaluator {
                 case "entityset" -> tagMembers("entityset", TagResolver.TagKind.ENTITY, args);
                 case "block" -> blockAt(args);
                 case "loaded" -> loadedAt(args);
+                case "simulated" -> simulatedAt(args);
                 case "vec" -> vec(args);
                 case "component" -> component(args);
                 case "vadd" -> vecArith(args, "vadd", true);
@@ -940,6 +941,21 @@ final class ExpressionEvaluator {
         private Value loadedAt(List<Value> args) {
             long[] position = blockPosArgs(args, "loaded");
             return Value.of(context.blocks().blockAt(position[0], position[1], position[2]) != null);
+        }
+
+        /**
+         * simulated(x, y, z) or simulated("x y z") — true if the server is
+         * ticking entities at that position (its chunk is within the server's
+         * simulation distance of you), false otherwise, and — like loaded(...) —
+         * never errors. This is what actually governs item despawn / mob
+         * spawning, unlike loaded(...), which only reports what your client has
+         * rendered. On a shared server it sees only YOUR simulation, not a
+         * distant teammate's.
+         */
+        private Value simulatedAt(List<Value> args) {
+            long[] position = blockPosArgs(args, "simulated");
+            Boolean simulated = context.blocks().simulated(position[0], position[1], position[2]);
+            return Value.of(simulated != null && simulated);
         }
 
         /** The shared x/y/z parsing for block(...) / loaded(...): three numbers or one vec3, floored. */

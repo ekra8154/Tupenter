@@ -870,19 +870,44 @@ public class TupenterModClient implements ClientModInitializer {
      * block conditions need no server round trip. Null (a clear error, not
      * a guess) when there's no world or the chunk isn't loaded.
      */
-    public static final net.tupenter.script.BlockReader BLOCK_READER = (x, y, z) -> {
-        net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
-        if (level == null || x < Integer.MIN_VALUE || x > Integer.MAX_VALUE
-                || y < Integer.MIN_VALUE || y > Integer.MAX_VALUE
-                || z < Integer.MIN_VALUE || z > Integer.MAX_VALUE) {
-            return null;
+    public static final net.tupenter.script.BlockReader BLOCK_READER = new net.tupenter.script.BlockReader() {
+        @Override
+        public String blockAt(long x, long y, long z) {
+            net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
+            if (level == null || x < Integer.MIN_VALUE || x > Integer.MAX_VALUE
+                    || y < Integer.MIN_VALUE || y > Integer.MAX_VALUE
+                    || z < Integer.MIN_VALUE || z > Integer.MAX_VALUE) {
+                return null;
+            }
+            net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos((int) x, (int) y, (int) z);
+            if (!level.hasChunkAt(pos)) {
+                return null;
+            }
+            return net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                    .getKey(level.getBlockState(pos).getBlock()).toString();
         }
-        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos((int) x, (int) y, (int) z);
-        if (!level.hasChunkAt(pos)) {
-            return null;
+
+        /**
+         * The server sends the client its simulation distance (the F3 value);
+         * a chunk within that many chunks (Chebyshev) of the player is ticking
+         * entities. Approximate at the very edge, and it can only see the local
+         * player — on a server, another player near the position also keeps it
+         * ticking, which this can't know.
+         */
+        @Override
+        public Boolean simulated(long x, long y, long z) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level == null || mc.player == null) {
+                return null;
+            }
+            int simDistance = mc.level.getServerSimulationDistance();
+            int playerChunkX = (int) Math.floor(mc.player.getX()) >> 4;
+            int playerChunkZ = (int) Math.floor(mc.player.getZ()) >> 4;
+            int chunkX = (int) (x >> 4);
+            int chunkZ = (int) (z >> 4);
+            int chebyshev = Math.max(Math.abs(chunkX - playerChunkX), Math.abs(chunkZ - playerChunkZ));
+            return chebyshev <= simDistance;
         }
-        return net.minecraft.core.registries.BuiltInRegistries.BLOCK
-                .getKey(level.getBlockState(pos).getBlock()).toString();
     };
 
     /**

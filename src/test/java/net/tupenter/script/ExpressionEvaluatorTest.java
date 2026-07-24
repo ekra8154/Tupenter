@@ -762,6 +762,36 @@ class ExpressionEvaluatorTest {
         assertEquals("false", ExpressionEvaluator.evaluate("loaded(0, 0, 0)", noWorld).displayString());
     }
 
+    // --- simulated(x, y, z) ---
+
+    @Test
+    void simulatedReportsServerTickingAndNeverErrors() {
+        // a reader that "simulates" only y >= 0 (a stand-in for the sim-distance test)
+        BlockReader reader = new BlockReader() {
+            @Override
+            public String blockAt(long x, long y, long z) {
+                return "minecraft:stone"; // everything is rendered here
+            }
+
+            @Override
+            public Boolean simulated(long x, long y, long z) {
+                return y >= 0;
+            }
+        };
+        EvalContext ctx = new EvalContext(new Random(7), VariableProvider.EMPTY, TagResolver.NONE, reader);
+
+        assertEquals("true", ExpressionEvaluator.evaluate("simulated(0, 5, 0)", ctx).displayString());
+        assertEquals("false", ExpressionEvaluator.evaluate("simulated(0, -5, 0)", ctx).displayString());
+        // both spellings; the point that a chunk can be loaded but NOT simulated
+        assertEquals("true", ExpressionEvaluator.evaluate("loaded(0, -5, 0)", ctx).displayString());
+        assertEquals("false", ExpressionEvaluator.evaluate("simulated(\"0 -5 0\")", ctx).displayString());
+
+        // a block-only stub (no simulated override) reports false, never throws
+        BlockReader blockOnly = (x, y, z) -> "minecraft:stone";
+        EvalContext noSim = new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE, blockOnly);
+        assertEquals("false", ExpressionEvaluator.evaluate("simulated(0, 0, 0)", noSim).displayString());
+    }
+
     // --- pick ---
 
     @Test

@@ -18,4 +18,17 @@ public interface BlockReader {
      *         the chunk isn't loaded
      */
     String blockAt(long x, long y, long z);
+
+    /**
+     * Whether the server is ticking entities at this position — its chunk is
+     * within the server's simulation distance of the player. This is what
+     * governs item despawn, mob spawning, redstone and crop growth, unlike
+     * {@link #blockAt} which reflects only what the client has rendered.
+     *
+     * @return TRUE/FALSE when it can be judged, null when there's no world.
+     *         Default: unknown (null), so a bare block-only stub says nothing.
+     */
+    default Boolean simulated(long x, long y, long z) {
+        return null;
+    }
 }

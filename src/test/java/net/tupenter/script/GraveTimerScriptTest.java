@@ -29,14 +29,14 @@ class GraveTimerScriptTest {
 
     /** The body exactly as seeded (name prefix stripped, as the tick runner runs it). */
     private static final String BODY =
-            "#setdefault grave = \"\" && #setdefault graveleft = -1 && #setdefault gravestamp = 0 && #setdefault gravesaid = 999 && #if (client.just_died) (#set grave = client.blockpos && #local isvoid = block(grave) == \"minecraft:void_air\" && #if (isvoid) (/echohud &cYou died in the void - nothing to recover && #set graveleft = -1) #else (#set graveleft = 300 && #set gravestamp = real.timestamp && #set gravesaid = 300)) && #if (client.just_respawned && graveleft > 0) (/echo &7Grave at &f$grave$&7 - items despawn in &e$floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$&7 (pauses while that chunk is unloaded)) && #if (graveleft > 0 && loaded(grave)) (#local here = block(grave) && #if (here == \"minecraft:void_air\") (#set gravestamp = real.timestamp && /echohud &8grave chunk out of view - timer paused at $floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$) #else (#set graveleft = graveleft - (real.timestamp - gravestamp) && #set gravestamp = real.timestamp && #local now = floor(graveleft) && #if (now < gravesaid) (#set gravesaid = now && #if (client.health > 0 && (now == 120 || now == 60 || now == 30 || (now <= 10 && now >= 1))) (/echohud &e$floor(now / 60)$:$now % 60 < 10 ? \"0\" : \"\"$$now % 60$ &7until your items despawn) && #if (now <= 0) (/echohud &cYour items have despawned && #set graveleft = -1)))) && #if (graveleft > 0 && !loaded(grave)) (#set gravestamp = real.timestamp && /echohud &8grave chunk out of view - despawn timer paused)";
+            "#setdefault grave = \"\" && #setdefault graveleft = -1 && #setdefault gravestamp = 0 && #setdefault gravesaid = 999 && #if (client.just_died) (#set grave = client.blockpos && #local isvoid = block(grave) == \"minecraft:void_air\" && #if (isvoid) (/echohud &cYou died in the void - nothing to recover && #set graveleft = -1) #else (#set graveleft = 300 && #set gravestamp = real.timestamp && #set gravesaid = 300)) && #if (client.just_respawned && graveleft > 0) (/echo &7Grave at &f$grave$&7 - items despawn in &e$floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$&7 (pauses while that chunk is unsimulated)) && #if (graveleft > 0 && simulated(grave)) (#set graveleft = graveleft - (real.timestamp - gravestamp) && #set gravestamp = real.timestamp && #local now = floor(graveleft) && #if (now < gravesaid) (#set gravesaid = now && #if (client.health > 0 && (now == 120 || now == 60 || now == 30 || (now <= 10 && now >= 1))) (/echohud &e$floor(now / 60)$:$now % 60 < 10 ? \"0\" : \"\"$$now % 60$ &7until your items despawn) && #if (now <= 0) (/echohud &cYour items have despawned && #set graveleft = -1))) && #if (graveleft > 0 && !simulated(grave)) (#set gravestamp = real.timestamp && /echohud &8grave not simulated - timer paused at $floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$)";
 
     // The mutable "world" the stubs read — the harness sets these before each tick.
     private boolean justDied;
     private boolean justRespawned;
     private String blockpos = "10 64 20";
     private String blockId = "minecraft:air"; // what block(grave) returns
-    private boolean chunkLoaded = true;       // what loaded(grave) returns
+    private boolean simulated = true;         // what simulated(grave) returns
     private long timestamp = 1000;
     private double health = 20;
 
@@ -65,7 +65,17 @@ class GraveTimerScriptTest {
                 };
             }
         });
-        BlockReader blocks = (x, y, z) -> chunkLoaded ? blockId : null;
+        BlockReader blocks = new BlockReader() {
+            @Override
+            public String blockAt(long x, long y, long z) {
+                return blockId;
+            }
+
+            @Override
+            public Boolean simulated(long x, long y, long z) {
+                return simulated;
+            }
+        };
 
         ScriptParser.Options options = new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, Map.of(),
                 true, true, true, true, 1000, 1000, new Random(1), variables, store,
@@ -181,47 +191,28 @@ class GraveTimerScriptTest {
     }
 
     @Test
-    void aGraveChunkReadingAsVoidAirPausesTheCountdown() {
+    void anUnsimulatedGraveChunkPausesTheCountdown() {
         justDied = false;
         tick();
         justDied = true;
-        blockId = "minecraft:air";
         timestamp = 1000;
         tick(); // graveleft=300 at t=1000
 
         justDied = false;
 
-        // 60s pass while the chunk is out of view — the client reads it as
-        // void_air (the reliable "not really loaded" signal), so the timer holds
-        blockId = "minecraft:void_air";
+        // 60s pass while the grave chunk is beyond simulation distance — the
+        // items aren't ticking there, so the despawn timer must hold
+        simulated = false;
         timestamp = 1060;
         List<String> paused = tick();
-        assertEquals("300", num("graveleft"), "paused while the grave chunk reads void_air");
+        assertEquals("300", num("graveleft"), "paused while the grave chunk isn't simulated");
         assertTrue(paused.stream().anyMatch(s -> s.contains("paused")), "shows a paused HUD: " + paused);
 
-        // it comes back into view (real block again); only time from HERE counts
-        blockId = "minecraft:air";
+        // it comes back into simulation; only time from HERE counts
+        simulated = true;
         timestamp = 1100;
         tick();
         assertEquals("260", num("graveleft"), "resumes without charging the paused gap");
-    }
-
-    @Test
-    void aFullyUnloadedChunkAlsoPausesWithoutErroring() {
-        justDied = false;
-        tick();
-        justDied = true;
-        blockId = "minecraft:air";
-        timestamp = 1000;
-        tick();
-
-        justDied = false;
-        // block() would THROW here (chunk absent); the loaded() guard routes us to
-        // the pause branch instead of faulting the script
-        chunkLoaded = false;
-        timestamp = 1060;
-        tick();
-        assertEquals("300", num("graveleft"), "held while the chunk is fully unloaded");
     }
 
     @Test
