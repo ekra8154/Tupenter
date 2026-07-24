@@ -52,7 +52,7 @@ class HelpScreensTest {
             Set.of("expressions", "variables", "flow", "prefixes", "scripts", "commands", "functions");
 
     private static final Set<String> EXPRESSION_SUBTOPICS =
-            Set.of("math", "text", "logic", "random", "lists", "world");
+            Set.of("math", "text", "logic", "random", "lists", "world", "vectors");
 
     private static final Set<String> CUSTOM_COMMAND_TOPICS = Set.of("types", "optionals", "descriptions");
 
@@ -407,8 +407,8 @@ class HelpScreensTest {
      * functions the guides teach you to define, and English.
      */
     private static final Set<String> NOT_A_FUNCTION = Set.of(
-            "dist", "rayhit", "lightlevel", // the custom functions the guides teach you to define
-            "name",                         // the placeholder in "$name(...)$"
+            "midpoint", "rayhit", "lightlevel", // the custom functions the guides teach you to define
+            "name",                             // the placeholder in "$name(...)$"
             "and", "or", "not", "above", "like", "s", "x", "y", "z");
 
     // --------------------------------------------------------- the examples
@@ -457,6 +457,37 @@ class HelpScreensTest {
         assertTrue(checked >= 8, "expected the pages' worked examples to be found, got " + checked);
         if (!broken.isEmpty()) {
             fail("hand-written help examples that don't parse:\n  " + String.join("\n  ", broken));
+        }
+    }
+
+    /**
+     * A "/customfunction add &lt;name&gt; ..." example must not name a built-in —
+     * that add is REJECTED at runtime (a function can't shadow a built-in), even
+     * though the definition parses fine. This caught the customfunction guide's
+     * `dist` example the day dist became a built-in vector function.
+     */
+    @Test
+    void noCustomFunctionExampleNamesABuiltin() {
+        List<String> collisions = new ArrayList<>();
+        int checked = 0;
+        List<String> everyExample = new ArrayList<>(handWrittenExamples());
+        for (BuiltinFunctions.Doc doc : BuiltinFunctions.ALL) {
+            everyExample.add(doc.exampleSimple());
+            everyExample.add(doc.exampleComposed());
+        }
+        for (String example : everyExample) {
+            Matcher add = Pattern.compile("/customfunction (?:add|update) ([a-z][a-z0-9_]*)").matcher(example);
+            if (add.find()) {
+                checked++;
+                if (BuiltinFunctions.NAMES.contains(add.group(1))) {
+                    collisions.add(add.group(1) + " is a built-in — " + example);
+                }
+            }
+        }
+        assertScanned(checked, 1, "custom-function-add examples");
+        if (!collisions.isEmpty()) {
+            fail("custom-function examples that name a built-in (the add would be refused):\n  "
+                    + String.join("\n  ", collisions));
         }
     }
 

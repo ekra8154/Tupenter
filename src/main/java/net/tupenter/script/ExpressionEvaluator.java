@@ -524,6 +524,14 @@ final class ExpressionEvaluator {
                 case "block" -> blockAt(args);
                 case "vec" -> vec(args);
                 case "component" -> component(args);
+                case "vadd" -> vecArith(args, "vadd", true);
+                case "vsub" -> vecArith(args, "vsub", false);
+                case "scale" -> scale(args);
+                case "mag" -> mag(args);
+                case "dist" -> dist(args);
+                case "normalize" -> normalize(args);
+                case "dot" -> dot(args);
+                case "cross" -> cross(args);
                 case "raycast" -> raycast(args);
                 case "raycast_block" -> raycastBlock(args);
                 case "entity" -> entityField(args);
@@ -996,6 +1004,123 @@ final class ExpressionEvaluator {
             } catch (IllegalArgumentException ex) {
                 throw new ExpressionException("component(v, axis): '" + parts[slot] + "' isn't a number");
             }
+        }
+
+        // ---- vector arithmetic ----
+        // vec3s are "x y z" strings (Coords.split in, displayString out). The
+        // dot/dist/mag family returns exact-where-it-can Rationals; the vec-valued
+        // ones round to the command form on output, which is far finer than block
+        // precision. sqrt is irrational, so dist/mag/normalize go through double.
+
+        /** Parse a vec3 argument into its three components, with a {@code where}-labelled error. */
+        private Rational[] asVec3(Value value, String where) {
+            if (!(value instanceof Value.StringValue string)) {
+                throw new ExpressionException(where + " needs a vec3 like vec(0, 64, 0) or client.pos");
+            }
+            String[] parts = Coords.split(string.value());
+            if (parts.length != 3) {
+                throw new ExpressionException(where + ": \"" + string.value() + "\" isn't a vec3 (needs three numbers)");
+            }
+            Rational[] out = new Rational[3];
+            for (int i = 0; i < 3; i++) {
+                try {
+                    out[i] = Rational.parse(parts[i]);
+                } catch (IllegalArgumentException notNumeric) {
+                    throw new ExpressionException(where + ": \"" + parts[i] + "\" isn't a number");
+                }
+            }
+            return out;
+        }
+
+        /** Build a vec3 value from three components (same "x y z" form vec() emits). */
+        private static Value vec3(Rational x, Rational y, Rational z) {
+            return new Value.StringValue(new Value.NumberValue(x).displayString() + " "
+                    + new Value.NumberValue(y).displayString() + " "
+                    + new Value.NumberValue(z).displayString());
+        }
+
+        private static double magnitude(Rational[] v) {
+            double x = v[0].doubleValue();
+            double y = v[1].doubleValue();
+            double z = v[2].doubleValue();
+            return Math.sqrt(x * x + y * y + z * z);
+        }
+
+        /** vadd/vsub(a, b) — component-wise add or subtract. */
+        private Value vecArith(List<Value> args, String name, boolean add) {
+            if (args.size() != 2) {
+                throw new ExpressionException(name + "(a, b) takes two vec3s, e.g. " + name + "(client.pos, client.look)");
+            }
+            Rational[] a = asVec3(args.get(0), name + "(a, b)");
+            Rational[] b = asVec3(args.get(1), name + "(a, b)");
+            return add
+                    ? vec3(a[0].add(b[0]), a[1].add(b[1]), a[2].add(b[2]))
+                    : vec3(a[0].subtract(b[0]), a[1].subtract(b[1]), a[2].subtract(b[2]));
+        }
+
+        /** scale(v, s) — every component times the scalar s. */
+        private Value scale(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("scale(v, s) takes a vec3 and a number, e.g. scale(client.look, 5)");
+            }
+            Rational[] v = asVec3(args.get(0), "scale(v, s)");
+            Rational s = asNumber(args.get(1), "scale(v, s)");
+            return vec3(v[0].multiply(s), v[1].multiply(s), v[2].multiply(s));
+        }
+
+        /** mag(v) — the length of a vector. */
+        private Value mag(List<Value> args) {
+            return new Value.NumberValue(Rational.fromDouble(magnitude(asVec3(single(args, "mag"), "mag(v)"))));
+        }
+
+        /** dist(a, b) — the straight-line distance between two points. */
+        private Value dist(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("dist(a, b) takes two vec3s, e.g. dist(client.pos, world.spawn)");
+            }
+            Rational[] a = asVec3(args.get(0), "dist(a, b)");
+            Rational[] b = asVec3(args.get(1), "dist(a, b)");
+            double sum = 0;
+            for (int i = 0; i < 3; i++) {
+                double d = a[i].subtract(b[i]).doubleValue();
+                sum += d * d;
+            }
+            return new Value.NumberValue(Rational.fromDouble(Math.sqrt(sum)));
+        }
+
+        /** normalize(v) — v scaled to length 1; a zero vector stays zero rather than dividing by zero. */
+        private Value normalize(List<Value> args) {
+            Rational[] v = asVec3(single(args, "normalize"), "normalize(v)");
+            double m = magnitude(v);
+            if (m == 0) {
+                return vec3(Rational.of(0), Rational.of(0), Rational.of(0));
+            }
+            Rational len = Rational.fromDouble(m);
+            return vec3(v[0].divide(len), v[1].divide(len), v[2].divide(len));
+        }
+
+        /** dot(a, b) — the scalar a.x*b.x + a.y*b.y + a.z*b.z (exact). */
+        private Value dot(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("dot(a, b) takes two vec3s, e.g. dot(client.look, vec(0, 1, 0))");
+            }
+            Rational[] a = asVec3(args.get(0), "dot(a, b)");
+            Rational[] b = asVec3(args.get(1), "dot(a, b)");
+            return new Value.NumberValue(
+                    a[0].multiply(b[0]).add(a[1].multiply(b[1])).add(a[2].multiply(b[2])));
+        }
+
+        /** cross(a, b) — the vector perpendicular to both (exact). */
+        private Value cross(List<Value> args) {
+            if (args.size() != 2) {
+                throw new ExpressionException("cross(a, b) takes two vec3s, e.g. cross(client.look, vec(0, 1, 0))");
+            }
+            Rational[] a = asVec3(args.get(0), "cross(a, b)");
+            Rational[] b = asVec3(args.get(1), "cross(a, b)");
+            return vec3(
+                    a[1].multiply(b[2]).subtract(a[2].multiply(b[1])),
+                    a[2].multiply(b[0]).subtract(a[0].multiply(b[2])),
+                    a[0].multiply(b[1]).subtract(a[1].multiply(b[0])));
         }
 
         /**

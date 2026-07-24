@@ -14,14 +14,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Exercises the REAL user-function call machinery ({@link UserFunctions}) —
  * the code the client's /customfunction resolver runs — not a stand-in
- * resolver. The dist() definition here is byte-for-byte the one from the
+ * resolver. The mydist() definition here is byte-for-byte the one from the
  * in-game bug report.
  */
 class UserFunctionsTest {
 
-    /** The user's exact definition: /customfunction add dist <a:vec3> <b:vec3> = sqrt(...). */
+    /** The user's exact definition: /customfunction add mydist <a:vec3> <b:vec3> = sqrt(...). */
     private static final Map<String, AliasDefinition> FUNCTIONS = Map.of(
-            "dist", AliasDefinition.parse("<a:vec3> <b:vec3> = sqrt((a.x-b.x)^2 + (a.y-b.y)^2 + (a.z-b.z)^2)"),
+            "mydist", AliasDefinition.parse("<a:vec3> <b:vec3> = sqrt((a.x-b.x)^2 + (a.y-b.y)^2 + (a.z-b.z)^2)"),
             "bad", AliasDefinition.parse("= nosuchfn(1)"));
 
     private static final VariableProvider CLIENT_POS = new VariableProvider() {
@@ -48,43 +48,43 @@ class UserFunctionsTest {
 
     @Test
     void distOfTwoQuotedLiterals() {
-        assertEquals("5", echo("$dist(\"3 4 0\", \"0 0 0\")$"));
+        assertEquals("5", echo("$mydist(\"3 4 0\", \"0 0 0\")$"));
     }
 
     @Test
     void distOfDottedVariableAndQuotedLiteral() {
-        // the in-game repro: /echo $dist(client.pos, "0 0 0")$
-        assertEquals("5", echo("$dist(client.pos, \"0 0 0\")$"));
+        // the in-game repro: /echo $mydist(client.pos, "0 0 0")$
+        assertEquals("5", echo("$mydist(client.pos, \"0 0 0\")$"));
     }
 
     @Test
     void distWithExplicitlyWrappedVariableArg() {
-        // /echo $dist($client.pos$, "0 0 0")$ — the inner $...$ is explicit
+        // /echo $mydist($client.pos$, "0 0 0")$ — the inner $...$ is explicit
         // wrapping; the marker scan must extend past it, not close at it
-        assertEquals("5", echo("$dist($client.pos$, \"0 0 0\")$"));
+        assertEquals("5", echo("$mydist($client.pos$, \"0 0 0\")$"));
     }
 
     @Test
     void distAcceptsCommaSeparatedVecLiterals() {
-        assertEquals("5", echo("$dist(\"3,4,0\", \"0 0 0\")$"));
+        assertEquals("5", echo("$mydist(\"3,4,0\", \"0 0 0\")$"));
     }
 
     @Test
     void distWithVecBuilder() {
-        assertEquals("5", echo("$dist(vec(3, 4, 0), vec(0, 0, 0))$"));
+        assertEquals("5", echo("$mydist(vec(3, 4, 0), vec(0, 0, 0))$"));
     }
 
     @Test
     void wrongArityIsAClearError() {
         ExpressionException ex = assertThrows(ExpressionException.class,
-                () -> ExpressionEvaluator.evaluate("dist(\"3 4 0\")", ctx()));
+                () -> ExpressionEvaluator.evaluate("mydist(\"3 4 0\")", ctx()));
         assertTrue(ex.getMessage().contains("takes 2 arguments, got 1"), ex.getMessage());
     }
 
     @Test
     void nonVecArgIsAClearError() {
         ExpressionException ex = assertThrows(ExpressionException.class,
-                () -> ExpressionEvaluator.evaluate("dist(\"oops\", \"0 0 0\")", ctx()));
+                () -> ExpressionEvaluator.evaluate("mydist(\"oops\", \"0 0 0\")", ctx()));
         assertTrue(ex.getMessage().contains("isn't a"), ex.getMessage());
     }
 

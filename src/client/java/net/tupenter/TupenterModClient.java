@@ -1367,7 +1367,7 @@ public class TupenterModClient implements ClientModInitializer {
                                             .executes(context -> runHelpCommand(context, "expressions"))
                                             .then(argument("topic", StringArgumentType.word())
                                                     .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
-                                                            new String[]{"math", "text", "logic", "random", "lists", "world"}, b))
+                                                            new String[]{"math", "text", "logic", "random", "lists", "world", "vectors"}, b))
                                                     .executes(context -> runExpressionsHelp(context, StringArgumentType.getString(context, "topic")))))
                                     .then(literal("variables").executes(context -> runHelpCommand(context, "variables")))
                                     .then(literal("flow").executes(context -> runHelpCommand(context, "flow")))
@@ -2105,16 +2105,16 @@ public class TupenterModClient implements ClientModInitializer {
 
     /** /customfunction help — the guide, restyled as a navigable page with runnable examples. */
     private static int runCustomFunctionHelp(CommandContext<FabricClientCommandSource> context) {
-        String distExample = "/customfunction add dist <a:vec3> <b:vec3> = sqrt((a.x-b.x)^2 + (a.y-b.y)^2 + (a.z-b.z)^2)";
+        String midpointExample = "/customfunction add midpoint <a:vec3> <b:vec3> = scale(vadd(a, b), 0.5)";
         String rayhitExample = "/customfunction add rayhit <p:vec3> <d:vec3> <n:int> = #set $x$=p.x && #set $y$=p.y && #set $z$=p.z && "
                 + "#for $i$ in 1..n (#if (block(x,y,z) != \"minecraft:air\") (#return vec(x,y,z)) && "
                 + "#set $x$=x+d.x && #set $y$=y+d.y && #set $z$=z+d.z) && #return \"miss\"";
         beginHelpPage();
         helpLine("§bCustom functions — your own min()/sqrt()-style functions for $...$ expressions:");
         helpLine("§7Create:§r /customfunction add <name> <params...> = <expression> · §7edit:§r update · §7remove§r · §7list§r");
-        helpLine("§7The body returns a value§r — no commands or chat (that's /customcommand). Simplest is one expression:");
-        helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY).append(suggestLink(distExample, distExample))
-                .append(Component.literal(" — then /echo $dist(client.pos, \"0 64 0\")$").withStyle(ChatFormatting.DARK_GRAY)));
+        helpLine("§7The body returns a value§r — no commands or chat (that's /customcommand). Simplest is one expression, and it can build on the built-ins:");
+        helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY).append(suggestLink(midpointExample, midpointExample))
+                .append(Component.literal(" — then /echo $midpoint(client.pos, world.spawn)$").withStyle(ChatFormatting.DARK_GRAY)));
         helpLine("§7Statement bodies§r do real algorithms: #set (function-local), #for/#foreach/#while, #if, #return — the value is your #return, or the last expression. Pure compute: no #wait, no commands; loops capped by Max Loop Iterations.");
         helpLine(Component.literal("Then: ").withStyle(ChatFormatting.GRAY)
                 .append(suggestLink("a raytracer in one definition (click to load)", rayhitExample))
@@ -2567,8 +2567,18 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Tick state:§r $world.tickrate$ (from /tick rate, ~20) · $world.frozen$ (is /tick freeze on) · $world.stepping$ (mid /tick step) — exact, synced from the server. So a freeze toggle is just: #if $world.frozen$ (/tick unfreeze) #else (/tick freeze)",
                     "§7Registry sets§r (blockset/itemset/effectset) are under: /tupenter help expressions lists",
             };
+            case "vectors" -> new String[]{
+                    "§bExpressions · vectors:",
+                    "§7A vec3 is a point or a direction:§r \"x y z\". client.pos, client.look, client.motion, world.spawn are all vec3s, and each carries .x/.y/.z.",
+                    "§7Build & read:§r vec(x, y, z) makes one (each slot an expression) · component(v, \"y\") — or the dotted .y — reads one back out.",
+                    "§7Measure:§r dist(a, b) between two points · mag(v) a vector's length · dot(a, b) alignment: >0 same-ish way, 0 perpendicular, <0 opposite.",
+                    "§7Combine:§r vadd / vsub add and subtract · scale(v, s) stretches · normalize(v) keeps the direction at length 1 · cross(a, b) gives a perpendicular.",
+                    "§7The move-along pattern:§r N blocks down a heading = vadd(from, scale(normalize(dir), n)) · direction to a target = normalize(vsub(target, here)).",
+                    "§7Straight into commands:§r a vec3 substitutes as x y z — /tp @s $vadd(client.pos, scale(client.look, 5))$ leaps 5 blocks the way you face.",
+                    "§7Every one has a page:§r /tupenter help functions (the Vectors group), or by name like /tupenter help cross.",
+            };
             default -> new String[]{
-                    "§cUnknown expressions topic '" + topic + "' — try: math, text, logic, random, lists, world",
+                    "§cUnknown expressions topic '" + topic + "' — try: math, text, logic, random, lists, world, vectors",
             };
         };
         return sendHelpPage(lines, runLink("« expressions topics", ChatFormatting.DARK_GRAY, "/tupenter help expressions"));
@@ -2618,6 +2628,7 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine(navRow("random", "rand, randf, pick, and re-roll rules", "/tupenter help expressions random"));
         helpLine(navRow("lists", "range, len, registry sets, #foreach", "/tupenter help expressions lists"));
         helpLine(navRow("world", "block(x,y,z) and reading your client's world copy", "/tupenter help expressions world"));
+        helpLine(navRow("vectors", "dist, dot, cross, normalize — math on positions and directions", "/tupenter help expressions vectors"));
         helpLine(navRow("functions", "the full function index — every one with its own page", "/tupenter help functions"));
         helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
         endHelpPage();

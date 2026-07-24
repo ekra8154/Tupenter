@@ -46,21 +46,21 @@ class CustomFunctionManagerTest {
 
     @Test
     void aFunctionSurvivesTheConfigRoundTripAndThenEvaluates() {
-        CustomFunctionManager.addFunction("dist",
+        CustomFunctionManager.addFunction("mydist",
                 "<a:vec3> <b:vec3> = sqrt((a.x-b.x)^2 + (a.y-b.y)^2 + (a.z-b.z)^2)");
         TupenterConfig.save();
 
         TupenterConfig.INSTANCE = new TupenterConfig();
         TupenterConfig.load();
 
-        AliasDefinition reloaded = CustomFunctionManager.getFunctionMap().get("dist");
+        AliasDefinition reloaded = CustomFunctionManager.getFunctionMap().get("mydist");
         assertNotNull(reloaded, "the function came back");
         assertEquals(2, reloaded.params().size());
 
         // and it actually runs through the real evaluator + resolver
         EvalContext context = new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE,
                 BlockReader.NONE, CustomFunctionManager.resolver());
-        assertEquals("5", MathEvaluator.evaluateForDisplay("dist(\"0 0 0\", \"3 4 0\")", context));
+        assertEquals("5", MathEvaluator.evaluateForDisplay("mydist(\"0 0 0\", \"3 4 0\")", context));
     }
 
     @Test

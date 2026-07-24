@@ -385,11 +385,11 @@ class ExpressionEvaluatorTest {
                 return n.equalsIgnoreCase("client.pos") ? java.util.Optional.of(Value.of("1 2 3")) : java.util.Optional.empty();
             }
         };
-        FunctionResolver f = (name, args, ctx) -> name.equalsIgnoreCase("dist") ? args.get(1) : null;
+        FunctionResolver f = (name, args, ctx) -> name.equalsIgnoreCase("mydist") ? args.get(1) : null;
         EvalContext ctx = new EvalContext(new Random(1), vars, TagResolver.NONE, BlockReader.NONE, f);
-        assertEquals("0 0 0", ExpressionEvaluator.evaluate("dist(client.pos, \"0 0 0\")", ctx).displayString());
+        assertEquals("0 0 0", ExpressionEvaluator.evaluate("mydist(client.pos, \"0 0 0\")", ctx).displayString());
         // through the /echo marker path too
-        assertEquals("0 0 0", MathEvaluator.applyNumberMath("$dist(client.pos, \"0 0 0\")$", NumberMathMode.EXPLICIT_ONLY, ctx));
+        assertEquals("0 0 0", MathEvaluator.applyNumberMath("$mydist(client.pos, \"0 0 0\")$", NumberMathMode.EXPLICIT_ONLY, ctx));
     }
 
     // --- numbers (inherited behavior) ---
