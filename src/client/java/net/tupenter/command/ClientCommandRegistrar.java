@@ -41,6 +41,7 @@ import net.tupenter.TupenterModClient;
 import net.tupenter.script.AliasDefinition;
 
 import java.lang.reflect.Field;
+import java.util.HashMap;
 import java.util.Map;
 
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
@@ -52,6 +53,18 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.lit
  * add/remove takes effect without relaunching.
  */
 public final class ClientCommandRegistrar {
+
+    /**
+     * The server-tree suggestion nodes WE installed this session, each mapped to
+     * the real command node it displaced (or null if it covered nothing). Two
+     * jobs: {@code containsKey} says "we put a node here, so removing it is ours
+     * to do" — without it, removing a SAVED shadow after relog would delete the
+     * fresh vanilla node we never touched; and the value is the original to put
+     * back, so a custom /tp doesn't leave /tp reading as unknown (red) until
+     * relog. Only the first cover is kept (an update re-covers our own node),
+     * and it's cleared per connection since the nodes belong to that tree.
+     */
+    private static final Map<String, CommandNode<?>> installedServerNodes = new HashMap<>();
 
     private ClientCommandRegistrar() {
     }
@@ -224,7 +237,14 @@ public final class ClientCommandRegistrar {
 
         ClientPacketListener connection = Minecraft.getInstance().getConnection();
         if (connection != null) {
-            removeNode(connection.getCommands().getRoot(), name);
+            // installing our suggestion node displaces whatever was there; record
+            // that WE now own this slot, and remember the real command we covered
+            // (if any) so remove can put it back. Only the first cover counts —
+            // an update re-covers the node we added a moment ago, not vanilla's.
+            CommandNode<?> displaced = detachNode(connection.getCommands().getRoot(), name);
+            if (!installedServerNodes.containsKey(name)) {
+                installedServerNodes.put(name, displaced); // value may be null: covered nothing
+            }
             connection.getCommands().getRoot().addChild(buildSuggestionNode(name, definition, buildContext).build());
         }
     }
@@ -246,10 +266,24 @@ public final class ClientCommandRegistrar {
             removed = removeNode(dispatcher.getRoot(), name);
         }
         ClientPacketListener connection = Minecraft.getInstance().getConnection();
-        if (connection != null) {
-            removed |= removeNode(connection.getCommands().getRoot(), name);
+        if (connection != null && installedServerNodes.containsKey(name)) {
+            // only touch the server tree where WE installed a node — a saved
+            // shadow reloaded after relog sits on the fresh vanilla node, which
+            // we must not delete
+            CommandNode<?> root = connection.getCommands().getRoot();
+            removed |= removeNode(root, name);
+            CommandNode<?> original = installedServerNodes.remove(name);
+            if (original != null) {
+                restoreNode(root, original); // put the real command back — /tp valid again at once
+                removed = true;
+            }
         }
         return removed;
+    }
+
+    /** Forget installed nodes — they belong to the connection's tree, gone on the next. */
+    public static void clearShadowedNodes() {
+        installedServerNodes.clear();
     }
 
     /** Suggestion-only tree for the vanilla command tree (drives tab-complete). */
@@ -407,20 +441,40 @@ public final class ClientCommandRegistrar {
      * non-fatal — the stale node just lingers until relaunch.
      */
     private static boolean removeNode(CommandNode<?> root, String name) {
+        return detachNode(root, name) != null;
+    }
+
+    /**
+     * Removes {@code name} from a node's child maps and returns the node that
+     * was there (null if none). Brigadier keeps a child in {@code children} plus
+     * one of {@code literals}/{@code arguments}; we clear all three and hand
+     * back the {@code children} entry, which is the node itself.
+     */
+    private static CommandNode<?> detachNode(CommandNode<?> root, String name) {
+        CommandNode<?> detached = null;
         try {
-            boolean removed = false;
             for (String fieldName : new String[]{"children", "literals", "arguments"}) {
                 Field field = CommandNode.class.getDeclaredField(fieldName);
                 field.setAccessible(true);
                 Map<?, ?> map = (Map<?, ?>) field.get(root);
-                if (map.remove(name) != null) {
-                    removed = true;
+                Object removed = map.remove(name);
+                if (removed instanceof CommandNode<?> node) {
+                    detached = node;
                 }
             }
-            return removed;
         } catch (ReflectiveOperationException | ClassCastException ex) {
             TupenterMod.LOGGER.warn("Could not remove command node '{}' dynamically: {}", name, ex.toString());
-            return false;
+        }
+        return detached;
+    }
+
+    /** Puts a previously detached node back on the root (addChild re-files it into the right maps). */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void restoreNode(CommandNode<?> root, CommandNode<?> node) {
+        try {
+            ((CommandNode) root).addChild(node);
+        } catch (RuntimeException ex) {
+            TupenterMod.LOGGER.warn("Could not restore command node '{}' dynamically: {}", node.getName(), ex.toString());
         }
     }
 }

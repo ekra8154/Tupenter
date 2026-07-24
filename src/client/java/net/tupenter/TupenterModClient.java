@@ -1461,6 +1461,10 @@ public class TupenterModClient implements ClientModInitializer {
             }
             SCRIPT_EXECUTOR.abortAll();
             TICK_SCRIPTS.reset();
+            // the fresh server sends its own command tree; any nodes a shadowing
+            // alias displaced belonged to the OLD tree and must not be restored
+            // into this one
+            ClientCommandRegistrar.clearShadowedNodes();
 
             if (TupenterConfig.INSTANCE.tickScriptsMigrationNoticePending) {
                 TupenterConfig.INSTANCE.tickScriptsMigrationNoticePending = false;
