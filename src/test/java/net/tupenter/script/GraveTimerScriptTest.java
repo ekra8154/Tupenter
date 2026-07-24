@@ -29,7 +29,7 @@ class GraveTimerScriptTest {
 
     /** The body exactly as seeded (name prefix stripped, as the tick runner runs it). */
     private static final String BODY =
-            "#setdefault grave = \"\" && #setdefault graveleft = -1 && #setdefault gravestamp = 0 && #setdefault gravesaid = 999 && #if (client.just_died) (#set grave = client.blockpos && #local isvoid = block(grave) == \"minecraft:void_air\" && #if (isvoid) (/echohud &cYou died in the void - nothing to recover && #set graveleft = -1) #else (#set graveleft = 300 && #set gravestamp = real.timestamp && #set gravesaid = 300)) && #if (client.just_respawned && graveleft > 0) (/echo &7Grave at &f$grave$&7 - items despawn in &e$floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$&7 (pauses while that chunk is unsimulated)) && #if (graveleft > 0 && simulated(grave)) (#set graveleft = graveleft - (real.timestamp - gravestamp) && #set gravestamp = real.timestamp && #local now = floor(graveleft) && #if (now < gravesaid) (#set gravesaid = now && #if (client.health > 0 && (now == 120 || now == 60 || now == 30 || (now <= 10 && now >= 1))) (/echohud &e$floor(now / 60)$:$now % 60 < 10 ? \"0\" : \"\"$$now % 60$ &7until your items despawn) && #if (now <= 0) (/echohud &cYour items have despawned && #set graveleft = -1))) && #if (graveleft > 0 && !simulated(grave)) (#set gravestamp = real.timestamp && /echohud &8grave not simulated - timer paused at $floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$)";
+            "#setdefault grave = \"\" && #setdefault graveleft = -1 && #setdefault gravestamp = 0 && #setdefault gravesaid = 999 && #setdefault gravepaused = false && #if (client.just_died) (#set grave = client.blockpos && #local isvoid = block(grave) == \"minecraft:void_air\" && #if (isvoid) (/echo &cYou died in the void - nothing to recover && #set graveleft = -1) #else (#set graveleft = 300 && #set gravestamp = real.timestamp && #set gravesaid = 300 && #set gravepaused = false)) && #if (client.just_respawned && graveleft > 0) (/echo &7Grave at &f$grave$&7 - items despawn in &e$floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$&7 (pauses while that chunk is unsimulated)) && #if (graveleft > 0 && simulated(grave)) (#if (gravepaused) (/echo &aGrave simulated again - &e$floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$&a left && #set gravepaused = false) && #set graveleft = graveleft - (real.timestamp - gravestamp) && #set gravestamp = real.timestamp && #local now = floor(graveleft) && #if (now < gravesaid) (#set gravesaid = now && #if (client.health > 0 && (now == 120 || now == 60 || now == 30 || (now <= 10 && now >= 1))) (/echo &e$floor(now / 60)$:$now % 60 < 10 ? \"0\" : \"\"$$now % 60$ &7until your items despawn) && #if (now <= 0) (/echo &cYour items have despawned && #set graveleft = -1))) && #if (graveleft > 0 && !simulated(grave)) (#set gravestamp = real.timestamp && #if (!gravepaused) (/echo &8Grave chunk unsimulated - despawn timer paused at $floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$ && #set gravepaused = true))";
 
     // The mutable "world" the stubs read — the harness sets these before each tick.
     private boolean justDied;
@@ -191,7 +191,7 @@ class GraveTimerScriptTest {
     }
 
     @Test
-    void anUnsimulatedGraveChunkPausesTheCountdown() {
+    void anUnsimulatedGraveChunkPausesTheCountdownAndSaysSoOnceNotEveryTick() {
         justDied = false;
         tick();
         justDied = true;
@@ -200,19 +200,27 @@ class GraveTimerScriptTest {
 
         justDied = false;
 
-        // 60s pass while the grave chunk is beyond simulation distance — the
-        // items aren't ticking there, so the despawn timer must hold
+        // leave simulation right away: the timer holds AND announces the pause — once
         simulated = false;
-        timestamp = 1060;
-        List<String> paused = tick();
+        timestamp = 1001;
+        List<String> firstPaused = tick();
         assertEquals("300", num("graveleft"), "paused while the grave chunk isn't simulated");
-        assertTrue(paused.stream().anyMatch(s -> s.contains("paused")), "shows a paused HUD: " + paused);
+        assertEquals(1, firstPaused.stream().filter(s -> s.contains("paused")).count(),
+                "announced the pause: " + firstPaused);
 
-        // it comes back into simulation; only time from HERE counts
+        // 200 seconds later, still unsimulated — held, and no repeat spam
+        timestamp = 1200;
+        List<String> stillPaused = tick();
+        assertEquals("300", num("graveleft"), "still held after a long pause");
+        assertTrue(stillPaused.stream().noneMatch(s -> s.contains("paused")), "no repeat: " + stillPaused);
+
+        // back into simulation one tick later: it resumes, says so, and the whole
+        // 200s pause cost nothing — only the sub-tick since the last pause frame
         simulated = true;
-        timestamp = 1100;
-        tick();
-        assertEquals("260", num("graveleft"), "resumes without charging the paused gap");
+        timestamp = 1201;
+        List<String> resumed = tick();
+        assertTrue(resumed.stream().anyMatch(s -> s.contains("simulated again")), "announced resume: " + resumed);
+        assertEquals("299", num("graveleft"), "the 200s pause wasn't charged");
     }
 
     @Test
