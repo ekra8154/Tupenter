@@ -2535,7 +2535,7 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine(navRow("commands", "everything the mod adds — start here", "/tupenter help commands"));
         helpLine(navRow("custom commands", "make your own /commands (typed params, autocomplete)", "/customcommand help"));
         helpLine(navRow("custom functions", "write your own min()-style functions for expressions", "/customfunction help"));
-        helpLine(navRow("expressions", "the $...$ language: math, text, logic, random, lists, world", "/tupenter help expressions"));
+        helpLine(navRow("expressions", "$...$ — compute inside any vanilla command, or read state and send nothing", "/tupenter help expressions"));
         helpLine(navRow("functions", "every built-in function at a glance", "/tupenter help functions"));
         helpLine(navRow("variables", "#set, #local, client.*/world.*/nbt paths, groups", "/tupenter help variables"));
         helpLine(navRow("flow", "&& chains, #repeat, #for, #foreach, #if/#elseif, #while", "/tupenter help flow"));
@@ -2549,11 +2549,20 @@ public class TupenterModClient implements ClientModInitializer {
 
     /** /tupenter help expressions — the overview; the six subtopics are clickable rows. */
     private static int runExpressionsOverview(CommandContext<FabricClientCommandSource> context) {
+        String vanillaExample = "/setblock ~ ~-1 ~ $rand(blockset(#minecraft:wool))$";
+        String localExample = "/echohud chest: $client.slot.armor.chest.durability$ left";
         beginHelpPage();
-        helpLine("§bExpressions — $...$ evaluates before sending:");
+        helpLine("§bExpressions — $...$ computes BEFORE the line leaves your client:");
+        helpLine("§7Vanilla comes out the other side.§r Whatever $...$ evaluates to is what actually gets sent, so the server receives an ordinary command and never knows Tupenter exists. Nothing is installed there — this works on ANY server you can type commands on, vanilla realms included.");
+        helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY).append(suggestLink(vanillaExample, vanillaExample))
+                .append(Component.literal(" → the server just sees /setblock ~ ~-1 ~ minecraft:red_wool").withStyle(ChatFormatting.DARK_GRAY)));
+        helpLine("§7See it for yourself:§r /unroll <line> prints the exact vanilla commands your line turns into, and sends none of them.");
+        helpLine("§7Or send NOTHING at all.§r /echo and /echohud show text only to you, and conditions read live state locally — so you can watch your own gear, light level or coordinates with zero server traffic (and nothing to get you kicked for chat spam).");
+        helpLine(Component.literal("Try: ").withStyle(ChatFormatting.GRAY).append(suggestLink(localExample, localExample)));
+        helpLine("§7Make it a keybind:§r put that in a tick script behind a key and it becomes a HUD you summon — gearcheck = #if (client.keypress.g) (/echohud chest: $client.slot.armor.chest.durability$) — see /tupenter help scripts.");
         helpLine("§7The rule:§r inside $...$ you're writing CODE, not command text — quotes say what it is (\"air\" = text, air = a variable), position says what it becomes.");
         helpLine("§7Works everywhere:§r commands, chat, directives, custom command bodies, tick scripts. A bad $...$ shows a local error and sends NOTHING. \\$ = literal dollar.");
-        helpLine("§7Try it:§r /calc <expr> evaluates locally · /$ expr $ is top-down: numbers display, a string result RUNS as a fresh line");
+        helpLine("§7Calculator:§r /calc <expr> evaluates locally · /$ expr $ is top-down: numbers display, a string result RUNS as a fresh line");
         helpLine(navRow("math", "arithmetic, exact fractions, stack suffix, rounding, trig", "/tupenter help expressions math"));
         helpLine(navRow("text", "strings, joining, comparisons, strings that run", "/tupenter help expressions text"));
         helpLine(navRow("logic", "booleans, conditions, ternary, #if", "/tupenter help expressions logic"));
