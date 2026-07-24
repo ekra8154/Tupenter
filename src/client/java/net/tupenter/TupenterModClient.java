@@ -1816,6 +1816,10 @@ public class TupenterModClient implements ClientModInitializer {
             }
             context.getSource().sendFeedback(Component.literal(
                     (isNew ? "Saved custom command /" : "Updated custom command /") + savedName + " — available now.").withStyle(ChatFormatting.GREEN));
+            String shadowWarning = CommandAliasManager.vanillaShadowWarning(savedName);
+            if (shadowWarning != null) {
+                context.getSource().sendFeedback(Component.literal(shadowWarning).withStyle(ChatFormatting.YELLOW));
+            }
             warnUnknownNamespacedVariables(context, command);
             warnUnbalancedDefinition(context, command);
             return 1;

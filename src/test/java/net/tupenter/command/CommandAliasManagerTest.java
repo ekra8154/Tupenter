@@ -153,6 +153,51 @@ class CommandAliasManagerTest {
         }
     }
 
+    /**
+     * A vanilla command name is ALLOWED — overriding is a real use — but it
+     * doesn't happen silently: the create succeeds and a warning explains that
+     * a client alias runs before the server sees the line, so it takes over.
+     */
+    @Test
+    void namingACommandAfterAVanillaOneIsAllowedButWarns() {
+        for (String vanilla : List.of("function", "tp", "give", "execute", "kill", "gamemode")) {
+            CommandAliasManager.addAlias(vanilla, "= /say overridden");
+            assertTrue(CommandAliasManager.hasAlias(vanilla), vanilla + " is created");
+            String warning = CommandAliasManager.vanillaShadowWarning(vanilla);
+            assertNotNull(warning, vanilla + " should warn");
+            assertTrue(warning.contains("/" + vanilla), warning);
+            assertTrue(warning.contains("vanilla"), warning);
+            CommandAliasManager.removeAlias(vanilla);
+        }
+    }
+
+    @Test
+    void anOrdinaryNameDrawsNoVanillaWarning() {
+        for (String ordinary : List.of("blink", "sunny", "homewarp", "sqrt")) {
+            assertNull(CommandAliasManager.vanillaShadowWarning(ordinary), ordinary + " is not a vanilla command");
+        }
+    }
+
+    @Test
+    void theWarningIsCaseAndSlashInsensitiveLikeTheName() {
+        assertNotNull(CommandAliasManager.vanillaShadowWarning("/TP"));
+        assertNotNull(CommandAliasManager.vanillaShadowWarning("Give"));
+    }
+
+    /**
+     * A hard-blocked name never ALSO warns — the two paths are exclusive, so a
+     * name is either refused outright (Tupenter's own commands, reserved words)
+     * or allowed, possibly with a vanilla heads-up. Nothing is both.
+     */
+    @Test
+    void hardBlockedNamesDoNotAlsoWarn() {
+        for (String blocked : CommandAliasManager.MOD_COMMANDS) {
+            assertThrows(IllegalArgumentException.class, () -> CommandAliasManager.addAlias(blocked, "= /say hi"));
+            assertNull(CommandAliasManager.vanillaShadowWarning(blocked),
+                    blocked + " is hard-blocked; it must not appear on the warn path too");
+        }
+    }
+
     @Test
     void ambiguousSubcommandWordsAreRefusedToo() {
         for (String reserved : List.of("alias", "list", "verbose", "help", "add", "remove", "update")) {

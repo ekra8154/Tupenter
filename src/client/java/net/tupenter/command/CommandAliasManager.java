@@ -29,7 +29,41 @@ public final class CommandAliasManager {
     private static final java.util.Set<String> RESERVED_WORDS = java.util.Set.of(
             "alias", "list", "verbose", "help", "add", "remove", "update");
 
+    /**
+     * The vanilla singleplayer command set (1.21). A custom command with one of
+     * these names is ALLOWED — overriding a vanilla command is a real use, and
+     * the client can't know a given server's command set anyway (plugins vary,
+     * and aliases are defined before joining). But client commands are matched
+     * before the packet reaches the server, so naming one "tp" quietly takes
+     * over vanilla /tp — a heads-up, not a wall. See {@link #vanillaShadowWarning}.
+     */
+    private static final java.util.Set<String> VANILLA_COMMANDS = java.util.Set.of(
+            "advancement", "attribute", "ban", "banlist", "bossbar", "clear", "clone", "damage",
+            "data", "datapack", "debug", "defaultgamemode", "deop", "difficulty", "effect", "enchant",
+            "execute", "experience", "fill", "fillbiome", "forceload", "function", "gamemode", "gamerule",
+            "give", "item", "jfr", "kick", "kill", "locate", "loot", "me", "msg", "op", "pardon",
+            "particle", "place", "playsound", "publish", "random", "recipe", "reload", "return", "ride",
+            "rotate", "say", "schedule", "scoreboard", "seed", "setblock", "setidletimeout",
+            "setworldspawn", "spawnpoint", "spectate", "spreadplayers", "stop", "stopsound", "summon",
+            "tag", "team", "teammsg", "teleport", "tell", "tellraw", "test", "tick", "time", "title",
+            "tp", "transfer", "trigger", "weather", "whitelist", "worldborder", "xp");
+
     private CommandAliasManager() {
+    }
+
+    /**
+     * A heads-up if {@code rawName} would override a vanilla command, else null.
+     * Not a rejection — the command is still created; this is what the UI shows
+     * so the override is a choice, not a surprise.
+     */
+    public static String vanillaShadowWarning(String rawName) {
+        String name = normalizeName(rawName);
+        if (!VANILLA_COMMANDS.contains(name)) {
+            return null;
+        }
+        return "Heads up: /" + name + " is a vanilla command. Your custom /" + name
+                + " runs on the client BEFORE the line reaches the server, so on any server that has /"
+                + name + " it takes over — that's intended for overriding, but rename if you didn't mean to.";
     }
 
     /** Name → parsed definition (body + typed params). Invalid entries are skipped. */
