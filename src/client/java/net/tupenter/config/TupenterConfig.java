@@ -87,7 +87,7 @@ public class TupenterConfig {
     public List<String> functions = new ArrayList<>();
 
     // Script executor limits (docs/SCRIPTING_DESIGN.md §2)
-    public int maxCommandsPerTick = 16;
+    public int maxCommandsPerTick = 48;
     public int maxCommandsPerScript = 1000;
     public int maxConcurrentScripts = 8;
 
@@ -405,7 +405,7 @@ public class TupenterConfig {
                     INSTANCE.numberMathMode = loaded.numberMathMode != null ? loaded.numberMathMode : NumberMathMode.AUTO_DETECT;
                     INSTANCE.aliases = loaded.aliases != null ? loaded.aliases : new ArrayList<>();
                     INSTANCE.functions = loaded.functions != null ? loaded.functions : new ArrayList<>();
-                    INSTANCE.maxCommandsPerTick = clamp(loaded.maxCommandsPerTick, 1, 512, 16);
+                    INSTANCE.maxCommandsPerTick = clamp(loaded.maxCommandsPerTick, 1, 512, 48);
                     INSTANCE.maxCommandsPerScript = clamp(loaded.maxCommandsPerScript, 1, 100000, 1000);
                     INSTANCE.maxConcurrentScripts = clamp(loaded.maxConcurrentScripts, 1, 64, 8);
                     INSTANCE.resendAmount = Math.max(1, loaded.resendAmount); // Ensure at least 1

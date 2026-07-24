@@ -1036,9 +1036,30 @@ public final class ScriptParser {
             } catch (IllegalArgumentException ex) {
                 throw new ParseAbort(directive + " $" + setVar.name() + "$ — " + ex.getMessage());
             }
+
+            if (onlyIfAbsent) {
+                // #setdefault seeds the SESSION store directly, once — it keeps no
+                // shadowing copy in this script's own scope. So a later #set (even
+                // one typed in chat while a tick loop is running) wins, and the
+                // loop reads the live value each tick instead of stomping it back
+                // to the default. It is init-if-absent, then hands-off. With no
+                // session store (a bare parse or a unit test) it falls back to
+                // script scope so the value is still readable within the line.
+                if (options.sessionVariables() != null) {
+                    options.sessionVariables().set(setVar.name(), value);
+                } else {
+                    scriptScope.put(setVar.name(), value);
+                }
+                if (silentDepth == 0) {
+                    notice("$" + setVar.name() + "$ = " + value.displayString());
+                }
+                changed = true;
+                return;
+            }
+
             scriptScope.put(setVar.name(), value);
             if (commitToSession) {
-                localNames.remove(setVar.name()); // an explicit #set/#setdefault wins over an earlier #local
+                localNames.remove(setVar.name()); // an explicit #set wins over an earlier #local
                 if (silentDepth == 0) {
                     notice("$" + setVar.name() + "$ = " + value.displayString());
                 }

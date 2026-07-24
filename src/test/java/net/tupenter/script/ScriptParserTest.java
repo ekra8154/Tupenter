@@ -950,6 +950,29 @@ class ScriptParserTest {
     }
 
     @Test
+    void setdefaultSeedsTheSessionStoreSoALaterSetWinsAndIsNotStompedBack() {
+        // The tick-loop tuning contract: a script #setdefaults a knob, then the
+        // player retunes it live with #set. The script must NOT keep a shadowing
+        // copy that reverts the change on its next pass — #setdefault seeds the
+        // session store once and then reads the live value.
+        SessionVariableStore store = new SessionVariableStore();
+
+        // pass 1: the knob is absent, so #setdefault seeds it into the session store
+        ScriptParser.parse("#setdefault $rad$ = 4 && say $rad$", options(Map.of(), store));
+        assertEquals("4", store.resolve("rad").orElseThrow().displayString(), "seeded once");
+
+        // the player retunes it (a separate line, like typing #set in chat)
+        ScriptParser.parse("#set $rad$ = 8", options(Map.of(), store));
+        assertEquals("8", store.resolve("rad").orElseThrow().displayString());
+
+        // pass 2: the same script runs again — #setdefault is now a no-op and the
+        // body reads 8, not the default 4. The session value is left at 8.
+        ScriptParser.ParseResult again = ScriptParser.parse("#setdefault $rad$ = 4 && say $rad$", options(Map.of(), store));
+        assertEquals(List.of("say 8"), contents(again), "reads the live value, not the default");
+        assertEquals("8", store.resolve("rad").orElseThrow().displayString(), "not stomped back to 4");
+    }
+
+    @Test
     void setdefaultIsIdempotentWithinTheSameLine() {
         SessionVariableStore store = new SessionVariableStore();
         ScriptParser.ParseResult result = ScriptParser.parse(
