@@ -36,8 +36,10 @@ public final class DefaultExamples {
             + "    && #local v = cross(m, u)\n"
             + "    && #local c = vadd(client.pos, scale(m, ringoff))\n"
             + "    && #local pts = round(ringrad * 6.5)\n"
-            + "    && #for $i$ in 0..(pts - 1) (#local p = vadd(vadd(c, scale(u, ringrad*cos(360*i/pts))), scale(v, ringrad*sin(360*i/pts))) && #silent (/setblock $round(component(p, \"x\"))$ $round(component(p, \"y\"))$ $round(component(p, \"z\"))$ $nth(rc, floor(((i + rt) % (len(rc)*3)) / 3))$ keep))\n"
-            + "    && #if (dist(client.pos, litfrom) > litgap) (#local g1 = vadd(c, scale(u, ringrad)) && #silent (/setblock $round(component(g1, \"x\"))$ $round(component(g1, \"y\"))$ $round(component(g1, \"z\"))$ minecraft:glowstone) && #local g2 = vsub(c, scale(u, ringrad)) && #silent (/setblock $round(component(g2, \"x\"))$ $round(component(g2, \"y\"))$ $round(component(g2, \"z\"))$ minecraft:glowstone) && #set litfrom = client.pos))";
+            + "    && #local half = round(pts / 2)\n"
+            + "    && #local lantern = dist(client.pos, litfrom) > litgap\n"
+            + "    && #for $i$ in 0..(pts - 1) (#local p = vadd(vadd(c, scale(u, ringrad*cos(360*i/pts))), scale(v, ringrad*sin(360*i/pts))) && #silent (/setblock $round(component(p, \"x\"))$ $round(component(p, \"y\"))$ $round(component(p, \"z\"))$ $lantern && (i == 0 || i == half) ? \"minecraft:glowstone\" : nth(rc, floor(((i + rt) % (len(rc)*3)) / 3))$ keep))\n"
+            + "    && #if (lantern) (#set litfrom = client.pos))";
 
     static final String ITEM_DESPAWN_TIMER =
             "itemDespawnTimer =\n"
