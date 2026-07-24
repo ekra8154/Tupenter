@@ -179,4 +179,55 @@ class AutoBracketTest {
         // an escaped quote doesn't open a string
         assertEquals("/echo \\\" ()", type("/echo \\\" ", 9, '(').text());
     }
+
+    /**
+     * Wrapping existing text: a $ typed while a marker is already open CLOSES
+     * it — a single character matching the hanging $, not a new $$ pair to
+     * trim. This is the whole point of the fix; the closing $ used to
+     * auto-pair and force a delete.
+     */
+    @Test
+    void aClosingDollarMatchesTheHangingOneInsteadOfPairing() {
+        // "/echo $client.health" — one open $, caret at the end
+        assertNull(type("/echo $client.health", 20, '$'),
+                "inside an open marker, $ closes it — single char, no new pair");
+        // and it really does just leave one $ when the widget types it through
+        // (null = let the keystroke through, so the user gets $client.health$)
+    }
+
+    @Test
+    void theFirstDollarStillOpensAPairAsBefore() {
+        // no marker open yet (even count of $ before) → normal auto-close
+        assertEquals("/echo $$", type("/echo ", 6, '$').text(), "the opening $ is unchanged");
+    }
+
+    /**
+     * The parity is what decides it, so separate markers on one line still each
+     * auto-open. After a balanced $a$ the count is even again, so the next $
+     * opens a fresh pair rather than being treated as a close.
+     */
+    @Test
+    void abalancedMarkerLeavesTheNextDollarFreeToOpen() {
+        // "/echo $a$ " then $ → even count (2) → opens a new pair
+        assertEquals("/echo $a$ $$", type("/echo $a$ ", 10, '$').text());
+        // three markers' worth: after $a$ $b$ the next still opens
+        assertEquals("/echo $a$ $b$ $$", type("/echo $a$ $b$ ", 14, '$').text());
+    }
+
+    @Test
+    void skipOverStillWinsWhenACloserSitsRightAfterTheCaret() {
+        // caret between a fresh $|$ pair, type $ → skip OVER the closer (caret
+        // 7 → 8), not the new "close a hanging marker" path (which would insert)
+        AutoBracket.Edit e = type("/echo $$", 7, '$');
+        assertEquals("/echo $$", e.text(), "nothing inserted — stepped over");
+        assertEquals(8, e.cursor());
+    }
+
+    @Test
+    void anEscapedDollarInsideDoesNotFlipTheMarkerState() {
+        // "/echo $a\$b" — the \$ is literal, so exactly one real $ is open;
+        // a $ here still closes it
+        assertNull(type("/echo $a\\$b", 11, '$'),
+                "the escaped \\$ doesn't count as a marker edge, so we're still inside one open $");
+    }
 }

@@ -74,10 +74,38 @@ public final class AutoBracket {
         // auto-close — but not inside a quoted string (a literal zone), and not
         // right after a backslash (\$ \( … is an escape — the user wants a literal)
         if (close != 0 && !inQuotedString(text, cursor) && !isEscaped(text, cursor)) {
+            // a $ typed while a marker is already open CLOSES it — match the
+            // hanging $ with a single one, don't open a fresh pair. This is what
+            // lets you wrap existing text: $ at the front, then $ at the end
+            // just closes it instead of leaving a $$ to trim. (The same as a "
+            // inside an open string, handled by the inQuotedString guard above.)
+            if (typed == '$' && insideOpenMarker(text, cursor)) {
+                return null; // let a single $ type through and close the marker
+            }
             String inserted = text.substring(0, cursor) + typed + close + text.substring(cursor);
             return new Edit(inserted, cursor + 1); // caret between the pair
         }
         return null;
+    }
+
+    /**
+     * Is the caret inside an open {@code $…} marker? Counts unescaped {@code $}
+     * from the start of the caret's line — an odd count means one is hanging
+     * open, so the next {@code $} closes it rather than starting a new pair.
+     * Per-line, like {@link #inQuotedString}.
+     */
+    private static boolean insideOpenMarker(String text, int cursor) {
+        int lineStart = text.lastIndexOf('\n', Math.max(0, cursor - 1)) + 1;
+        boolean open = false;
+        for (int i = lineStart; i < cursor; i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++; // skip the escaped char — \$ is a literal, not a marker edge
+            } else if (c == '$') {
+                open = !open;
+            }
+        }
+        return open;
     }
 
     /** True when the caret sits after an odd run of backslashes — the next char is escaped. */
