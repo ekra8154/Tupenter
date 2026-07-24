@@ -260,16 +260,44 @@ class HelpScreensTest {
 
     /**
      * Words that look like directives on a help page and aren't in the parser's
-     * statement vocabulary: the two #if continuations, the client-side
-     * directives the parser never sees, and #directive itself — the placeholder
-     * the prose pairs with /command.
+     * statement vocabulary. Every entry needs a REASON, not just a spelling —
+     * this list is the one place the check trusts instead of verifying, so an
+     * unexplained addition is how a real typo would get waved through.
      */
-    private static final Set<String> DIRECTIVE_LOOKALIKES = Set.of(
-            "#else", "#elseif",
-            "#stage", "#unstage", "#pid",
-            "#directive", "#directives",
-            // a # in front of a placeholder means a registry TAG, not a directive
-            "#tag", "#tags", "#block_tag", "#item_tag");
+    private static final Set<String> DIRECTIVE_LOOKALIKES = lookalikes();
+
+    private static Set<String> lookalikes() {
+        Set<String> allowed = new TreeSet<>();
+        // continuations of #if, not statement heads — knownDirectiveWords omits them by design
+        allowed.add("#else");
+        allowed.add("#elseif");
+        // placeholders: "/command, #directive, bare text = chat" pairs the two slots
+        allowed.add("#directive");
+        allowed.add("#directives");
+        // a # in front of a placeholder means a registry TAG
+        allowed.add("#tag");
+        allowed.add("#tags");
+        allowed.add("#block_tag");
+        allowed.add("#item_tag");
+        allowed.addAll(clientSideDirectives());
+        return allowed;
+    }
+
+    /**
+     * The directives the CLIENT handles before the parser ever sees the line —
+     * real, and legitimately absent from the parser's vocabulary. Read from the
+     * source rather than listed, so this exemption expires the moment the
+     * handling does: drop #pid and a page still naming it starts failing.
+     */
+    private static Set<String> clientSideDirectives() {
+        Set<String> handled = new TreeSet<>();
+        Matcher prefix = Pattern.compile("prefixWordLen\\(trimmed, \"(#[a-z]+)\"").matcher(source(CLIENT));
+        while (prefix.find()) {
+            handled.add(prefix.group(1));
+        }
+        assertScanned(handled.size(), 3, "client-side directives");
+        return handled;
+    }
 
     /**
      * Where a page states a RESULT — "$3^2$ = 9", "$-1 % 3$ = 2" — the
