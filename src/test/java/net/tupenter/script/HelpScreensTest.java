@@ -45,7 +45,7 @@ class HelpScreensTest {
     private static final List<String> HELP_TEXT = helpText();
 
     /** The pages /tupenter help &lt;name&gt; can open besides functions/directives/variables. */
-    private static final List<String> MOD_COMMAND_PAGES = sourceListOf("MOD_COMMAND_PAGES");
+    private static final List<String> MOD_COMMAND_PAGES = net.tupenter.command.CommandAliasManager.MOD_COMMANDS;
 
     /** The literal topics registered under /tupenter help. */
     private static final Set<String> HELP_TOPIC_LITERALS =
@@ -617,19 +617,6 @@ class HelpScreensTest {
             }
         }
         return text;
-    }
-
-    /** The elements of a {@code List.of(...)} constant in the client source. */
-    private static List<String> sourceListOf(String constant) {
-        Matcher declaration = Pattern.compile(Pattern.quote(constant) + " = [\\w.]*List\\.of\\(([^)]*)\\)")
-                .matcher(source(CLIENT));
-        assertTrue(declaration.find(), "can't find " + constant + " in " + CLIENT);
-        List<String> values = new ArrayList<>();
-        Matcher literal = Pattern.compile("\"([^\"]*)\"").matcher(declaration.group(1));
-        while (literal.find()) {
-            values.add(literal.group(1));
-        }
-        return values;
     }
 
     /**

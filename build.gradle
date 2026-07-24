@@ -50,6 +50,17 @@ dependencies {
     testImplementation "org.slf4j:slf4j-api:2.0.9"
 }
 
+// The tests also cover the CLIENT source set, so they need its classes and
+// everything it compiles against (Minecraft, Fabric). Plenty of that source is
+// plain logic — config data, alias storage, the chat styler's span maths — and
+// being in the client set was the only reason it went untested.
+sourceSets {
+    test {
+        compileClasspath += sourceSets.client.compileClasspath + sourceSets.client.output
+        runtimeClasspath += sourceSets.client.runtimeClasspath + sourceSets.client.output
+    }
+}
+
 test {
     useJUnitPlatform()
     finalizedBy jacocoTestReport
@@ -66,6 +77,8 @@ jacoco {
 
 jacocoTestReport {
     dependsOn test
+    additionalSourceDirs.from(files(sourceSets.client.allJava.srcDirs))
+    additionalClassDirs.from(files(sourceSets.client.output))
     reports {
         html.required = true
         xml.required = true

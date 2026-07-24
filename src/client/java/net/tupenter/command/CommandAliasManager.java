@@ -10,6 +10,25 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class CommandAliasManager {
+
+    /**
+     * Every command the mod registers itself. Custom commands go into the SAME
+     * Brigadier dispatcher, and registering a duplicate literal merges onto the
+     * existing node — so a custom command named "echohud" doesn't sit beside
+     * /echohud, it clobbers it. This list is what stops that, and it's the one
+     * place the names live: TupenterModClient's help pages read it too, and a
+     * test holds it against the literals actually registered.
+     */
+    public static final List<String> MOD_COMMANDS = List.of(
+            "calc", "customcommand", "customfunction", "echo", "echohud", "tupenter", "unroll");
+
+    /**
+     * Subcommand words that would read as ambiguous at the front of a line,
+     * plus "alias" — the pre-1.0 name of /customcommand.
+     */
+    private static final java.util.Set<String> RESERVED_WORDS = java.util.Set.of(
+            "alias", "list", "verbose", "help", "add", "remove", "update");
+
     private CommandAliasManager() {
     }
 
@@ -197,9 +216,11 @@ public final class CommandAliasManager {
             throw new IllegalArgumentException("Custom command name cannot be empty");
         }
 
-        if ("alias".equals(name) || "calc".equals(name) || "customcommand".equals(name) || "tupenter".equals(name) || "echo".equals(name)
-                || "list".equals(name) || "verbose".equals(name) || "help".equals(name) || "add".equals(name) || "remove".equals(name)
-                || "update".equals(name) || "unroll".equals(name)) {
+        if (MOD_COMMANDS.contains(name)) {
+            throw new IllegalArgumentException("'" + name + "' is one of Tupenter's own commands — "
+                    + "a custom command by that name would replace it. Pick another name.");
+        }
+        if (RESERVED_WORDS.contains(name)) {
             throw new IllegalArgumentException("That custom command name is reserved");
         }
 

@@ -13,8 +13,29 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TupenterConfig {
-    private static final File CONFIG_FILE = FabricLoader.getInstance().getConfigDir().resolve("tupenter.json").toFile();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
+    /**
+     * Where the config lives. Null means "ask Fabric", which is always the
+     * answer in game; tests point it at a temp directory so the save/load round
+     * trip and the migrations can be exercised for real, on actual files,
+     * rather than around them. Package-private on purpose — nothing outside
+     * this package can move the user's config.
+     */
+    static java.nio.file.Path configDirectory = null;
+
+    /**
+     * Resolved on demand, not at class load. load() already derived the path
+     * this way; holding the other half in a static field meant merely touching
+     * INSTANCE needed a live Fabric runtime, which put every plain-data method
+     * on this class out of reach of a unit test for no benefit.
+     */
+    private static File configFile() {
+        java.nio.file.Path directory = configDirectory != null
+                ? configDirectory
+                : FabricLoader.getInstance().getConfigDir();
+        return directory.resolve("tupenter.json").toFile();
+    }
 
     public static TupenterConfig INSTANCE = new TupenterConfig();
 
@@ -339,7 +360,7 @@ public class TupenterConfig {
     }
 
     public static void load() {
-        File configFile = new File(FabricLoader.getInstance().getConfigDir().toFile(), "tupenter.json");
+        File configFile = configFile();
         if (configFile.exists()) {
             try (FileReader reader = new FileReader(configFile)) {
                 TupenterConfig loaded = GSON.fromJson(reader, TupenterConfig.class);
@@ -459,7 +480,7 @@ public class TupenterConfig {
     }
 
     public static void save() {
-        try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
+        try (FileWriter writer = new FileWriter(configFile())) {
             GSON.toJson(INSTANCE, writer);
         } catch (IOException e) {
             e.printStackTrace();

@@ -2215,8 +2215,7 @@ public class TupenterModClient implements ClientModInitializer {
      * of your custom commands, so a same-named alias of yours loses here and is
      * still reachable via /customcommand &lt;name&gt;.
      */
-    private static final java.util.List<String> MOD_COMMAND_PAGES = java.util.List.of(
-            "tupenter", "customcommand", "customfunction", "echo", "echohud", "calc", "unroll");
+    private static final java.util.List<String> MOD_COMMAND_PAGES = CommandAliasManager.MOD_COMMANDS;
 
     /**
      * Autocomplete for /tupenter help &lt;name&gt;. Two rules keep it from burying
