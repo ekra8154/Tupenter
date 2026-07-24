@@ -115,7 +115,7 @@ public final class DirectiveDocs {
                         "#repeat 5 (/say Tick $i$!)",
                         "#repeat 3 (/summon minecraft:zombie ~ ~ ~ && #wait 1s)",
                         "§7$i$ is provided§r — 1-based, so it reads naturally in chat output.",
-                        "§7Paced automatically:§r a body that sends or #waits spreads over ticks (Max Commands Per Tick) — /tupenter running shows it, /tupenter abort stops it."),
+                        "§7Paced automatically:§r a body that sends or waits spreads over ticks (Max Commands Per Tick) — /tupenter running shows it, /tupenter abort stops it."),
                 doc("for", Group.LOOPS, "#for $x$ in a..b [step s] (body)",
                         "count a whole-number range, inclusive — direction automatic", null, true,
                         "#for $x$ in 1..10 step 2 (/summon minecraft:zombie ~$x$ ~ ~)",
@@ -151,7 +151,7 @@ public final class DirectiveDocs {
                         "pause the script mid-line — everything else keeps running", null, true,
                         "/say ready && #wait 3s && /say GO",
                         "#wait 5m realtime && /echohud &ecows are ready to be fed!",
-                        "§7Units:§r t(icks), s(econds), m(inutes), d(ays) · max 72000t (one real-time hour) · works in chains, groups, loops, and custom command bodies.",
+                        "§7Units:§r t = ticks, s = seconds, m = minutes, d = days · max 72000t (one real-time hour) · works in chains, groups, loops, and custom command bodies.",
                         "§7Lazy evaluation:§r $...$ after a #wait reads state at RESUME time — /attribute ... && #wait 2t && /tp @s $client.target.blockpos$ sees the world after the boost landed.",
                         "§7Two clocks:§r default counts WORLD ticks (sprints under /tick sprint, halts under /tick freeze and pause); add §frealtime§r for wall-clock no matter the TPS."),
 

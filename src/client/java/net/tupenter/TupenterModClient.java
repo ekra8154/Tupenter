@@ -2416,7 +2416,7 @@ public class TupenterModClient implements ClientModInitializer {
         String near = net.tupenter.script.BuiltinFunctions.nearest(name);
         context.getSource().sendError(Component.literal("No help page for '" + rawName + "'"
                 + (near != null ? " — did you mean '" + near + "'?" : "")
-                + " · /tupenter help functions lists every function, /tupenter help the topics"));
+                + " · every function: /tupenter help functions · every topic: /tupenter help"));
         return 0;
     }
 
@@ -2485,7 +2485,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Booleans:§r true / false · comparisons: == != < <= > >=",
                     "§7Combine:§r && (and) · \\|\\| (or) · ! (not): $client.on_ground && client.light < 8$",
                     "§7Ternary:§r condition ? then : else — $client.health < 5 ? \"help!\" : \"fine\"$ · nests freely",
-                    "§7#if / #while use these:§r #if (client.y > 60) (/say high) #elseif (...) (...) #else (...) · #while (client.health < 20) (/effect give @s regeneration 1 1 && #wait 3s)",
+                    "§7#if / #while use these:§r #if (client.pos.y > 60) (/say high) #elseif (...) (...) #else (...) · #while (client.health < 20) (/effect give @s regeneration 1 1 && #wait 3s)",
                     "§7Gotcha:§r a bare boolean can't be substituted into a command — route it through a ternary to pick real text",
             };
             case "random" -> new String[]{
@@ -2590,7 +2590,7 @@ public class TupenterModClient implements ClientModInitializer {
         }
         helpLine("§7Variables have pages too:§r #set · #local · #setdefault — /tupenter help local is the one to read first");
         helpLine("§7Overlap:§r re-running a line starts another concurrent instance (up to the concurrency cap) — they share the per-tick budget round-robin · /tupenter abort <id> stops one, /tupenter abort stops all");
-        helpLine("§7Loops that DO something run free:§r a loop that sends or #waits each iteration paces itself over ticks, however long it needs — Max Loop Iterations only caps a loop that spins WITHOUT sending or waiting (the runaway guard).");
+        helpLine("§7Loops that DO something run free:§r a loop that sends or waits each iteration paces itself over ticks, however long it needs — Max Loop Iterations only caps a loop that spins WITHOUT sending or waiting (the runaway guard).");
         helpLine(navRow("prefixes", "#silent, #stage, #chat and friends", "/tupenter help prefixes"));
         helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
         endHelpPage();
@@ -2822,7 +2822,7 @@ public class TupenterModClient implements ClientModInitializer {
             };
             case "echo" -> new String[]{
                     "§b/echo <text> — show text only to yourself (nothing is sent):",
-                    "§7$...$§r evaluates first: /echo y is $client.y$",
+                    "§7$...$§r evaluates first: /echo y is $client.pos.y$",
                     "§7&-codes color the text from that point on, until the next code or &r:",
                     "§7Colors:§r §0&0§1&1§2&2§3&3§4&4§5&5§6&6§7&7§8&8§9&9§a&a§b&b§c&c§d&d§e&e§f&f§r §7(0-9, a-f)",
                     "§7Formats:§r &l §lbold§r§7 · &o §oitalic§r§7 · &n §nunderline§r§7 · &m §mstrike§r§7 · &k obfuscated · &r reset",

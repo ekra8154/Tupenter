@@ -129,7 +129,7 @@ public final class ParamTypeDocs {
                 doc(ParamType.TIME, "time", List.of(), "Numbers",
                         "a duration — 10t / 1.5s / 2m / 3d — binds as TICKS",
                         "/customcommand add later <delay:time> <cmd:text> = #wait $delay$ && $cmd$",
-                        "§7Units:§r t(icks), s(econds), m(inutes), d(ays); a plain number is ticks.",
+                        "§7Units:§r t = ticks, s = seconds, m = minutes, d = days; a plain number is ticks.",
                         "§7Binds the tick count§r (1.5s → 30), so it feeds #wait and math directly."),
 
                 // ---- Positions & rotation ----
