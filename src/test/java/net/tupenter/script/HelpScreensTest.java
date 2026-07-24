@@ -271,6 +271,88 @@ class HelpScreensTest {
             // a # in front of a placeholder means a registry TAG, not a directive
             "#tag", "#tags", "#block_tag", "#item_tag");
 
+    /**
+     * Where a page states a RESULT — "$3^2$ = 9", "$-1 % 3$ = 2" — the
+     * evaluator produces exactly that. These are the claims a language change
+     * quietly falsifies: nothing breaks, the page just starts lying about what
+     * the operator does. Only arithmetic that needs no world is checked; the
+     * "→ minecraft:stone" kind needs a level.
+     */
+    @Test
+    void everyArithmeticResultTheHelpClaimsIsTheResult() {
+        List<String> wrong = new ArrayList<>();
+        int checked = 0;
+        for (String text : HELP_TEXT) {
+            Matcher claim = Pattern.compile("\\$([^$]+)\\$ (?:=|is exactly) (-?[0-9]+(?:\\.[0-9]+)?)").matcher(text);
+            while (claim.find()) {
+                String expression = claim.group(1);
+                if (!expression.matches("[-0-9+*/%^() .s]+")) {
+                    continue; // anything with a name in it needs a world to read
+                }
+                checked++;
+                String claimed = claim.group(2);
+                try {
+                    String actual = ExpressionEvaluator.evaluate(expression, new EvalContext(new Random(1)))
+                            .displayString();
+                    if (!actual.equals(claimed)) {
+                        wrong.add(expression + " = " + claimed + ", but it evaluates to " + actual + "   ← in: " + text);
+                    }
+                } catch (RuntimeException broken) {
+                    wrong.add(expression + " doesn't evaluate at all: " + broken.getMessage() + "   ← in: " + text);
+                }
+            }
+        }
+        if (!wrong.isEmpty()) {
+            fail("help states results the evaluator disagrees with:\n  " + String.join("\n  ", wrong));
+        }
+        assertScanned(checked, 7, "stated arithmetic results");
+    }
+
+    /**
+     * The client.slot page spells its slot vocabulary out by hand — it's the
+     * one address space with no registry behind it — so it has to keep naming
+     * every slot the provider actually offers. armor.body shipped undocumented
+     * for exactly this reason.
+     */
+    @Test
+    void theSlotPageNamesEverySlotTheProviderOffers() {
+        String provider = source(Path.of("src", "client", "java", "net", "tupenter", "command",
+                "SlotVariableProvider.java"));
+        String page = String.join(" ", SubjectDocs.find("client.slot").detail());
+        List<String> missing = new ArrayList<>();
+
+        // the spelled-out slots: armor.head, weapon.mainhand, ...
+        int named = 0;
+        Matcher slot = Pattern.compile("names\\.add\\(\"([a-z_]+)\\.([a-z_]+)\"\\)").matcher(provider);
+        while (slot.find()) {
+            named++;
+            String family = slot.group(1);
+            String leaf = slot.group(2);
+            // the page writes a family once and slashes the leaves: armor.head/chest/legs
+            if (!page.contains(family + "." + leaf) && !page.contains("/" + leaf)) {
+                missing.add(family + "." + leaf);
+            }
+        }
+        assertScanned(named, 6, "spelled-out slots");
+
+        // the numbered ones are documented as ranges, so the bounds are the claim
+        int families = 0;
+        Matcher counted = Pattern.compile("for \\(int i = 0; i <= (\\d+); i\\+\\+\\) \\{\\s*names\\.add\\(\"([a-z]+)\\.\"")
+                .matcher(provider);
+        while (counted.find()) {
+            families++;
+            String range = counted.group(2) + ".0-" + counted.group(1);
+            if (!page.contains(range)) {
+                missing.add(range);
+            }
+        }
+        assertScanned(families, 2, "numbered slot families");
+
+        if (!missing.isEmpty()) {
+            fail("the client.slot page doesn't name: " + String.join(", ", missing) + "\n  page: " + page);
+        }
+    }
+
     /** Every built-in function the prose names is one the evaluator dispatches. */
     @Test
     void everyFunctionNamedInHelpExists() {

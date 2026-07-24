@@ -2839,7 +2839,7 @@ public class TupenterModClient implements ClientModInitializer {
             };
             case "calc" -> new String[]{
                     "§b/calc <expr> — local calculator (nothing is sent):",
-                    "§7/calc int <expr>§r / §7/calc float <expr>§r — force integer / decimal display",
+                    "§7/calc int <expr>§r / §7/calc float <expr>§r — wraps the whole expression in int(...) / float(...): truncated toward zero, or forced to a decimal",
                     "§7/$ expr $§r — top-down shorthand: numbers, booleans, and lists display like /calc,",
                     "§7but a STRING result runs as a fresh line: \"/...\" command, \"#...\" directive, else chat.",
                     "§7/$pick(\"hi\" | \"/time set day\")$§r — chats hi, or runs the command. Resending re-rolls.",

@@ -120,7 +120,7 @@ public final class SubjectDocs {
                 subject("client.slot", "any of your slots, by /item replace name", null, false,
                         "/echo chest: $client.slot.armor.chest.durability$",
                         "#for $i$ in 0..8 (/echo hotbar $i$: $slot(\"hotbar.\" + i, \"id\")$)",
-                        "§7Address:§r client.slot.<slot>.<field> — slot names are hotbar.0-8, inventory.0-26 (0-8 is the TOP row), armor.head/chest/legs/feet, weapon.mainhand/offhand; fields are id, count, durability, max_durability. Both halves tab-complete.",
+                        "§7Address:§r client.slot.<slot>.<field> — slot names are hotbar.0-8, inventory.0-26 (0-8 is the TOP row), armor.head/chest/legs/feet/body, weapon.mainhand/offhand; fields are id, count, durability, max_durability. Both halves tab-complete.",
                         "§7Computed slot?§r that's the function twin: slot(slot, field) — the composed example walks the hotbar.",
                         "§7Empty slot:§r id = \"empty\", numbers = 0 — never an error."),
                 subject("client.nbt", "your entity's raw NBT tree — Mojang's spelling, any path", null, false,
