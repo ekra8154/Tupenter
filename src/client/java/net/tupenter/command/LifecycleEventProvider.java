@@ -22,6 +22,8 @@ import java.util.Set;
  *   <li>{@code client.just_died} — the tick the player's health crosses to 0
  *       (the LocalPlayer persists at 0 through the death screen, so the loop
  *       sees it before respawn resets position)</li>
+ *   <li>{@code client.just_respawned} — the tick you come back alive after the
+ *       death screen (health crosses from 0 back to positive)</li>
  *   <li>{@code world.just_joined} — the first body pass after entering a
  *       world/server (fires again on every join, including re-joining the same
  *       world; not on a mere dimension change)</li>
@@ -36,8 +38,10 @@ import java.util.Set;
  */
 public final class LifecycleEventProvider implements VariableProvider {
     private static final String JUST_DIED = "client.just_died";
+    private static final String JUST_RESPAWNED = "client.just_respawned";
     private static final String JUST_JOINED = "world.just_joined";
     private static final String DIED_BLURB = "true for the one tick your health hits 0 — the death edge";
+    private static final String RESPAWNED_BLURB = "true the tick you come back alive after the death screen";
     private static final String JOINED_BLURB = "true the first pass after you enter a world/server — the join edge";
 
     private Boolean wasDead;      // null until first observed — no edge on the first look
@@ -45,22 +49,24 @@ public final class LifecycleEventProvider implements VariableProvider {
 
     @Override
     public Set<String> names() {
-        return Set.of(JUST_DIED, JUST_JOINED);
+        return Set.of(JUST_DIED, JUST_RESPAWNED, JUST_JOINED);
     }
 
     @Override
     public String describe(String name) {
         return switch (name.toLowerCase(Locale.ROOT)) {
             case JUST_DIED -> DIED_BLURB;
+            case JUST_RESPAWNED -> RESPAWNED_BLURB;
             case JUST_JOINED -> JOINED_BLURB;
             default -> null;
         };
     }
 
-    /** Both edges as VarDocs, so they render on their subject's help page ("Events" row). */
+    /** Each edge as a VarDoc, so they render on their subject's help page ("Events" row). */
     public List<VarDoc> docs() {
         return List.of(
                 new VarDoc(JUST_DIED, "Events", DIED_BLURB),
+                new VarDoc(JUST_RESPAWNED, "Events", RESPAWNED_BLURB),
                 new VarDoc(JUST_JOINED, "Events", JOINED_BLURB));
     }
 
@@ -69,6 +75,10 @@ public final class LifecycleEventProvider implements VariableProvider {
         String lower = name.toLowerCase(Locale.ROOT);
         if (lower.equals(JUST_DIED)) {
             return Optional.of(Value.of(deadNow() && Boolean.FALSE.equals(wasDead)));
+        }
+        if (lower.equals(JUST_RESPAWNED)) {
+            // alive now, but dead as of the previous tick — the resurrection edge
+            return Optional.of(Value.of(!deadNow() && Boolean.TRUE.equals(wasDead)));
         }
         if (lower.equals(JUST_JOINED)) {
             String key = TupenterModClient.currentWorldKey();
