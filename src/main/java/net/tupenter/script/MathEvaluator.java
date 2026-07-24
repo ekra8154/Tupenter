@@ -344,6 +344,14 @@ public final class MathEvaluator {
     }
 
     private static boolean looksLikeAutoDetectExpression(String token) {
+        // ".." is vanilla RANGE syntax — "matches 1..5", "@e[distance=..5]",
+        // "level=3..". Auto-detect rewrites bare math with nothing asked for,
+        // so it has to leave that alone: the grammar here would read 1..5 as
+        // "1." implicitly multiplied by ".5" and quietly send "matches 0.5".
+        if (token.contains("..")) {
+            return false;
+        }
+
         boolean hasDigit = false;
         boolean hasOperator = false;
 

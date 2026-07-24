@@ -14,6 +14,78 @@ class MathEvaluatorTest {
         return MathEvaluator.applyNumberMath(command, mode, new EvalContext(new Random(42)));
     }
 
+    /**
+     * Auto-detect rewrites bare math inside an ordinary command, with no $...$
+     * asked for — which means it has to be RIGHT about what is and isn't math.
+     * Every miss here is a command silently rewritten into something the user
+     * didn't type, so the rule is: when in doubt, leave it exactly alone.
+     */
+    @Test
+    void autoDetectRewritesOnlyWhatIsUnambiguouslyMath() {
+        assertEquals("/give @s stick 320", apply("/give @s stick 64*5", NumberMathMode.AUTO_DETECT));
+        assertEquals("/give @s stick 320", apply("/give @s stick 64 * 5", NumberMathMode.AUTO_DETECT));
+
+        // a coordinate PAIR is not a subtraction: "space before, none after"
+        // is how a negative coordinate is written, so the span bails out
+        assertEquals("/tp @s 82 -2 0", apply("/tp @s 82 -2 0", NumberMathMode.AUTO_DETECT));
+        // ...and a run of space-separated numbers stays a run even with
+        // symmetric spacing, because "82 - 2 0" is still three arguments
+        assertEquals("/tp @s 82 - 2 0", apply("/tp @s 82 - 2 0", NumberMathMode.AUTO_DETECT));
+        // adjacency is what makes it unambiguous math
+        assertEquals("/give @s stick 80", apply("/give @s stick 82-2", NumberMathMode.AUTO_DETECT));
+    }
+
+    /** Anything that isn't purely numeric is left byte-for-byte alone. */
+    @Test
+    void autoDetectLeavesNonMathUntouched() {
+        for (String command : new String[]{
+                "/give @s minecraft:stick",
+                "/say hello world",
+                "/tp @s ~ ~1 ~",
+                "/give @s stick{display:{Name:'x'}}",       // NBT braces are skipped wholesale
+                "/give @s stick[custom_data={a:1}]",
+                "/say 2 + ",                                  // incomplete
+                "/say a-b",                                   // not numbers
+                "/execute if score @s x matches 1..5 run say hi"}) {
+            assertEquals(command, apply(command, NumberMathMode.AUTO_DETECT), command);
+        }
+    }
+
+    /** int(...)/float(...) are the two function forms auto-detect will start a span on. */
+    @Test
+    void autoDetectHandlesTheTwoConversionFunctions() {
+        assertEquals("/give @s stick 3", apply("/give @s stick int(7/2)", NumberMathMode.AUTO_DETECT));
+        assertEquals("/give @s stick 3.5", apply("/give @s stick float(7/2)", NumberMathMode.AUTO_DETECT));
+        assertEquals("/give @s stick 3", apply("/give @s stick INT(7/2)", NumberMathMode.AUTO_DETECT));
+        // a bare name that ISN'T followed by ( is not a function call, so no span starts
+        assertEquals("/give @s intangible", apply("/give @s intangible", NumberMathMode.AUTO_DETECT));
+    }
+
+    @Test
+    void theStackSuffixWorksInBareMathToo() {
+        assertEquals("/give @s stick 192", apply("/give @s stick 3s", NumberMathMode.AUTO_DETECT));
+        assertEquals("/give @s stick 96", apply("/give @s stick 1.5s", NumberMathMode.AUTO_DETECT));
+    }
+
+    @Test
+    void disabledModeChangesNothingAtAll() {
+        assertEquals("/give @s stick 64*5", apply("/give @s stick 64*5", NumberMathMode.DISABLED));
+    }
+
+    /** The function grammar is tiny, and says so rather than guessing. */
+    @Test
+    void theBareMathFunctionsRefuseWhatTheyDoNotKnow() {
+        assertTrue(assertThrows(ExpressionException.class,
+                () -> MathEvaluator.evaluateExpressionAsCommandValue("sqrt(4)"))
+                .getMessage().contains("sqrt"));
+        assertTrue(assertThrows(ExpressionException.class,
+                () -> MathEvaluator.evaluateExpressionAsCommandValue("int 4"))
+                .getMessage().contains("'('"));
+        assertTrue(assertThrows(ExpressionException.class,
+                () -> MathEvaluator.evaluateExpressionAsCommandValue("int(4"))
+                .getMessage().contains("Missing closing parenthesis"));
+    }
+
     // --- legacy numeric evaluation (auto-detect grammar) ---
 
     @Test

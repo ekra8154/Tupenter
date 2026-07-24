@@ -184,7 +184,8 @@ final class ExpressionEvaluator {
                 return switch (op) {
                     case "==" -> l.value() == r.value();
                     case "!=" -> l.value() != r.value();
-                    default -> throw new ExpressionException("'" + op + "' only compares numbers");
+                    default -> throw new ExpressionException(
+                            "'" + op + "' only compares numbers; use == or != for true/false");
                 };
             }
 
@@ -1185,6 +1186,12 @@ final class ExpressionEvaluator {
          */
         private Value parsePick() {
             List<Value> options = new ArrayList<>();
+            skipWhitespace();
+            if (!atEnd() && peek() == ')') {
+                // otherwise the empty option falls into parseTernary and comes
+                // back as "Unexpected ')'", which says nothing about pick
+                throw new ExpressionException("pick(...) needs at least one option, e.g. pick(\"hi\" | \"bye\")");
+            }
             while (true) {
                 options.add(parseTernary());
                 skipWhitespace();

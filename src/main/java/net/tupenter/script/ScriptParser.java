@@ -777,8 +777,13 @@ public final class ScriptParser {
                 if (word.equals(RETURN)) {
                     throw new ParseAbort("#return only works inside a custom function body");
                 }
-                if (word.equals(SILENT) || word.equals(NORECORD)) {
-                    throw new ParseAbort(word + " goes at the start of the line" + (word.equals(SILENT) ? ", or wrap statements: #silent (/cmd && /cmd)" : ""));
+                // the line PREFIXES: all three are decided before the line runs,
+                // so none of them can appear mid-chain. #record used to fall
+                // through to "Unknown directive", which is wrong twice over —
+                // it exists, and the real problem is where it is.
+                if (word.equals(SILENT) || word.equals(NORECORD) || word.equals(RECORD)) {
+                    throw new ParseAbort(word + " goes at the start of the line"
+                            + (word.equals(SILENT) ? ", or wrap statements: #silent (/cmd && /cmd)" : ""));
                 }
                 throw new ParseAbort("Unknown directive " + firstWord(content));
             }
@@ -2070,6 +2075,14 @@ public final class ScriptParser {
                 throw new ParseAbort("#foreach list is missing its closing parenthesis");
             }
             return new ForeachHeader(var.name(), rest.substring(1, rest.length() - 1), null);
+        }
+        // "#foreach $b$ in range(1, 3)" with no body: the group scanner already
+        // claimed the (1, 3) as the body, leaving a bare function NAME here.
+        // Evaluating that gives "Unknown variable 'range'", which blames the
+        // wrong thing — #for says "needs a body" for the same mistake.
+        if (BuiltinFunctions.NAMES.contains(rest.toLowerCase(Locale.ROOT))) {
+            throw new ParseAbort("#foreach needs a (...) body — " + rest + "(...) was read as the body."
+                    + " e.g. #foreach $b$ in " + rest + "(...) (/say $b$)");
         }
         return new ForeachHeader(var.name(), null, rest);
     }

@@ -35,6 +35,51 @@ class ShortCircuitTest {
         return ExpressionEvaluator.evaluate(expression, fnCtx()).displayString();
     }
 
+    /**
+     * The dead side is DRY-PARSED, not evaluated — the parser still has to walk
+     * it to find where the expression ends, but nothing in it may run. So every
+     * kind of node needs a skipping path, and a node that forgets one either
+     * evaluates on the dead side (the guard pattern stops guarding) or throws
+     * while being skipped. Each case here puts one node type on a side that
+     * must never run, and would fail loudly if it did.
+     */
+    @Test
+    void everyKindOfNodeCanBeSkippedRatherThanEvaluated() {
+        // the dead expressions all fail hard if anything actually evaluates them
+        assertEquals("false", eval("false && (1/0 == 1)"), "parenthesised");
+        assertEquals("false", eval("false && -unknownvar == 1"), "unary minus");
+        assertEquals("false", eval("false && !unknownvar"), "not");
+        assertEquals("false", eval("false && 2^unknownvar == 1"), "power");
+        assertEquals("false", eval("false && unknownvar == 1"), "variable");
+        assertEquals("false", eval("false && len(unknownvar) == 1"), "function call");
+        assertEquals("false", eval("false && unknownvar > 1"), "comparison");
+        assertEquals("false", eval("false && \"text\" == unknownvar"), "string literal");
+        assertEquals("false", eval("false && 3s == unknownvar"), "stack suffix");
+        assertEquals("false", eval("false && 1.5 == unknownvar"), "decimal literal");
+        assertEquals("false", eval("false && pick(unknownvar | 2) == 1"), "pick");
+        assertEquals("false", eval("false && (true ? unknownvar : 2) == 1"), "nested ternary");
+        assertEquals("false", eval("false && (unknownvar || true)"), "nested ||");
+        assertEquals("false", eval("false && (unknownvar && true)"), "nested &&");
+
+        // and the same through || and ?:, which skip their other side
+        assertEquals("true", eval("true || 1/0 == 1"));
+        assertEquals("1", eval("true ? 1 : 1/0"));
+        assertEquals("1", eval("false ? 1/0 : 1"));
+
+        // a skipped side still has to PARSE — an unbalanced one is a real error
+        assertEquals("Missing closing parenthesis",
+                org.junit.jupiter.api.Assertions.assertThrows(ExpressionException.class,
+                        () -> eval("false && (1 + 2")).getMessage());
+    }
+
+    /** Skipping nests: a dead branch inside a dead branch still evaluates nothing. */
+    @Test
+    void skippingSurvivesNesting() {
+        assertEquals("false", eval("false && (false && 1/0 == 1)"));
+        assertEquals("false", eval("false && (true ? (false ? 1/0 : 1/0) : 1/0) == 1"));
+        assertEquals("ok", eval("true ? \"ok\" : (false && 1/0 == 1) ? \"a\" : \"b\""));
+    }
+
     @Test
     void ternaryShortCircuitsRecursion() {
         // untaken branch's recursive call must not fire → base case terminates,
