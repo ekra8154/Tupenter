@@ -66,15 +66,15 @@ test {
     finalizedBy jacocoTestReport
 }
 
-// Coverage measures the LANGUAGE, not the mod wiring: net.tupenter.script is
-// the parser, evaluator and executor, and it's Minecraft-free, so every line of
-// it is reachable from a plain JUnit run. The client source set is Minecraft
-// wiring that only runs in game — it isn't on the test classpath at all, so it
-// never enters these numbers and can't dilute them.
 jacoco {
     toolVersion = "0.8.13"
 }
 
+// The report shows BOTH source sets. net.tupenter.script (the language) is
+// Minecraft-free and reachable line-for-line; the client set is mostly GUI,
+// mixins and registration glue that only runs in game — but the plain-logic
+// parts of it (config, the alias/function stores, provider completion) turn out
+// to run fine under JUnit, so they're tested and shown here too.
 jacocoTestReport {
     dependsOn test
     additionalSourceDirs.from(files(sourceSets.client.allJava.srcDirs))
@@ -88,6 +88,9 @@ jacocoTestReport {
 // A ratchet, not a target: the point of the number is that it can't quietly
 // fall. New code arrives with tests or the build says so. Raise these when the
 // real figure has moved up — never lower them to make a build pass.
+//
+// This rule sees only the MAIN source set (the default class dirs), so it's the
+// language's gate and can't be diluted by the untestable half of the client set.
 jacocoTestCoverageVerification {
     violationRules {
         rule {
@@ -103,7 +106,34 @@ jacocoTestCoverageVerification {
     }
 }
 
-check.dependsOn jacocoTestCoverageVerification
+// The client set can't carry a whole-package number — most of its lines need a
+// running client. Instead each class we've actually brought under test carries
+// its OWN floor, so those can't regress while the rest stays honestly at zero.
+// A class earns a line here by getting a test; the floor is set below what it
+// really scores, as headroom, and raised as coverage grows.
+tasks.register('jacocoClientCoverageVerification', JacocoCoverageVerification) {
+    dependsOn test
+    executionData jacocoTestReport.executionData
+    sourceDirectories.from(files(sourceSets.client.allJava.srcDirs))
+    classDirectories.from(files(sourceSets.client.output))
+    violationRules {
+        rule {
+            element = 'CLASS'
+            includes = [
+                    'net.tupenter.config.TupenterConfig',
+                    'net.tupenter.command.CommandAliasManager',
+                    'net.tupenter.command.CustomFunctionManager',
+                    'net.tupenter.command.SlotVariableProvider',
+            ]
+            limit {
+                counter = 'LINE'
+                minimum = 0.75
+            }
+        }
+    }
+}
+
+check.dependsOn jacocoTestCoverageVerification, jacocoClientCoverageVerification
 
 processResources {
 	inputs.property "version", project.version

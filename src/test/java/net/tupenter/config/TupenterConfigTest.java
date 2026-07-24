@@ -326,6 +326,59 @@ class TupenterConfigTest {
         assertNull(config.disableArmedScript("world:nowhere", true, "g1"), "unknown world");
     }
 
+    /** Enable/disable by name reaches both a world's own scripts and the globals armed there. */
+    @Test
+    void scriptsByNameFindsGlobalsAndWorldScriptsButNeverUnnamedOnes() {
+        TupenterConfig config = TupenterConfig.INSTANCE;
+        config.globalScripts.add(new TupenterConfig.GlobalScript("g1", "restock = /clear"));
+        config.globalScripts.add(new TupenterConfig.GlobalScript("g2", "/unnamed body"));
+        TupenterConfig.WorldScriptState home = config.worldStateOrCreate("world:home");
+        home.enabledGlobalIds.add("g1");
+        home.scripts.add(new TupenterConfig.WorldScript("w1", "restock = /fill air", true));
+
+        List<TupenterConfig.ScriptRef> byName = config.scriptsByName("world:home", "RESTOCK");
+        assertEquals(2, byName.size(), "case-insensitive, both the global and the world script");
+        assertTrue(byName.get(0).global() && byName.get(0).enabled(), "the global is armed here");
+        assertFalse(byName.get(1).global());
+
+        assertTrue(config.scriptsByName("world:home", "nothing").isEmpty());
+        assertTrue(config.scriptsByName("world:home", "").isEmpty(), "unnamed scripts never match");
+    }
+
+    @Test
+    void scriptNamesAreDistinctAcrossGlobalAndWorld() {
+        TupenterConfig config = TupenterConfig.INSTANCE;
+        config.globalScripts.add(new TupenterConfig.GlobalScript("g1", "restock = /clear"));
+        config.globalScripts.add(new TupenterConfig.GlobalScript("g2", "/unnamed"));
+        TupenterConfig.WorldScriptState home = config.worldStateOrCreate("world:home");
+        home.scripts.add(new TupenterConfig.WorldScript("w1", "restock = /other", false)); // same name
+        home.scripts.add(new TupenterConfig.WorldScript("w2", "farm = /till", false));
+
+        assertEquals(List.of("restock", "farm"), config.scriptNames("world:home"),
+                "a name shared by a global and a world script appears once");
+        assertEquals(List.of("restock"), config.scriptNames("world:elsewhere"),
+                "an unconfigured world still sees the global names");
+    }
+
+    @Test
+    void setArmedReportsWhetherItChangedAnything() {
+        TupenterConfig config = TupenterConfig.INSTANCE;
+        config.globalScripts.add(new TupenterConfig.GlobalScript("g1", "/say g"));
+        TupenterConfig.WorldScriptState home = config.worldStateOrCreate("world:home");
+        home.scripts.add(new TupenterConfig.WorldScript("w1", "/say w", false));
+
+        assertTrue(config.setArmed("world:home", true, "g1", true), "arming a global here is a change");
+        assertFalse(config.setArmed("world:home", true, "g1", true), "arming it again is not");
+        assertTrue(config.setArmed("world:home", false, "w1", true));
+        assertFalse(config.setArmed("world:home", false, "w1", true));
+
+        assertTrue(config.setArmed("world:home", true, "g1", false), "disarming is a change");
+        assertFalse(config.setArmed("world:home", true, "g1", false));
+
+        assertFalse(config.setArmed("world:never", false, "w1", false),
+                "disabling in a world with no state changes nothing");
+    }
+
     /** A script may carry an optional leading name, like a custom command without params. */
     @Test
     void scriptsCanBeNamedAndTheNameIsNotPartOfTheBody() {
