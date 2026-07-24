@@ -97,4 +97,76 @@ class UndoHistoryTest {
         h.record("existing!", 9, 100);
         assertEquals("existing", h.undo().text());
     }
+
+    @Test
+    void thereIsNothingToUndoOrRedoOnAFreshHistory() {
+        UndoHistory h = new UndoHistory("", 0);
+        assertFalse(h.canUndo());
+        assertFalse(h.canRedo());
+        assertNull(h.undo());
+        assertNull(h.redo());
+    }
+
+    /**
+     * Deleting and inserting are different KINDS of edit, so switching between
+     * them starts a new group — otherwise one undo would swallow both the word
+     * you typed and the word you deleted before it.
+     */
+    @Test
+    void switchingBetweenTypingAndDeletingStartsANewGroup() {
+        UndoHistory h = new UndoHistory("", 0);
+        h.record("ab", 2, 100);
+        h.record("abc", 3, 150);   // still inserting — same group
+        h.record("ab", 2, 200);    // now deleting — boundary
+        assertEquals("abc", h.undo().text(), "the delete undoes on its own");
+        assertEquals("", h.undo().text(), "and the whole insert run undoes together");
+    }
+
+    /** A pause longer than the coalescing window ends the group too. */
+    @Test
+    void aPauseEndsTheGroup() {
+        UndoHistory h = new UndoHistory("", 0);
+        h.record("a", 1, 100);
+        h.record("ab", 2, 200);       // within the window
+        h.record("abc", 3, 5000);     // long pause → its own group
+        assertEquals("ab", h.undo().text());
+        assertEquals("", h.undo().text());
+    }
+
+    /** Typing a space is a natural word boundary, so the next edit starts fresh. */
+    @Test
+    void aSpaceBreaksTheGroupAtTheNextEdit() {
+        UndoHistory h = new UndoHistory("", 0);
+        h.record("hi", 2, 100);
+        h.record("hi ", 3, 150);      // the space ends this group
+        h.record("hi there", 8, 200); // a new one
+        assertEquals("hi ", h.undo().text(), "the second word undoes by itself");
+    }
+
+    /** Moving the caret mid-typing also splits the group. */
+    @Test
+    void aCaretMoveBetweenEditsSplitsTheGroup() {
+        UndoHistory h = new UndoHistory("", 0);
+        h.record("ab", 2, 100);
+        h.record("ab", 0, 150);   // caret move only — no entry, but a boundary
+        h.record("Xab", 1, 200);
+        assertEquals("ab", h.undo().text());
+        assertEquals("", h.undo().text());
+    }
+
+    /** History is bounded, so a long session drops its oldest states instead of growing forever. */
+    @Test
+    void theUndoStackIsCappedAtItsDepth() {
+        UndoHistory h = new UndoHistory("", 0);
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 250; i++) {
+            text.append('x');
+            h.record(text.toString(), text.length(), i * 1000L); // a pause each time = 250 groups
+        }
+        int undone = 0;
+        while (h.undo() != null) {
+            undone++;
+        }
+        assertEquals(200, undone, "capped at MAX_DEPTH, oldest dropped");
+    }
 }

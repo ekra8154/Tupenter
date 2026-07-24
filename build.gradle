@@ -72,6 +72,26 @@ jacocoTestReport {
     }
 }
 
+// A ratchet, not a target: the point of the number is that it can't quietly
+// fall. New code arrives with tests or the build says so. Raise these when the
+// real figure has moved up — never lower them to make a build pass.
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                counter = 'BRANCH'
+                minimum = 0.90
+            }
+            limit {
+                counter = 'LINE'
+                minimum = 0.93
+            }
+        }
+    }
+}
+
+check.dependsOn jacocoTestCoverageVerification
+
 processResources {
 	inputs.property "version", project.version
 

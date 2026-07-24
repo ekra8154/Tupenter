@@ -88,6 +88,45 @@ class UserFunctionsTest {
         assertTrue(ex.getMessage().contains("isn't a"), ex.getMessage());
     }
 
+    /**
+     * The tuple param types bind accessors as well as the value: a &lt;p:pos&gt;
+     * gives the body p AND p.x/p.y/p.z. Each type binds a different set of
+     * axes, and passing something with the wrong number of parts says how many
+     * it wanted and shows both ways to write one.
+     */
+    @Test
+    void eachTupleTypeBindsItsOwnAxes() {
+        Map<String, AliasDefinition> tuples = Map.of(
+                "col", AliasDefinition.parse("<c:column_pos> = c.x + c.z"),
+                "aim", AliasDefinition.parse("<r:rotation> = r.yaw + r.pitch"),
+                "high", AliasDefinition.parse("<p:blockpos> = p.y"),
+                "plain", AliasDefinition.parse("<n:int> = n + 1"));
+        EvalContext context = new EvalContext(new java.util.Random(1), VariableProvider.EMPTY,
+                TagResolver.NONE, BlockReader.NONE, UserFunctions.resolver(tuples));
+
+        assertEquals("30", ExpressionEvaluator.evaluate("col(\"10 20\")", context).displayString());
+        assertEquals("105", ExpressionEvaluator.evaluate("aim(\"90 15\")", context).displayString());
+        assertEquals("64", ExpressionEvaluator.evaluate("high(\"0 64 0\")", context).displayString());
+        // a non-tuple type binds as-is, with no accessors involved
+        assertEquals("6", ExpressionEvaluator.evaluate("plain(5)", context).displayString());
+
+        String wrongParts = assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("col(\"1 2 3\")", context)).getMessage();
+        assertTrue(wrongParts.contains("2-part"), wrongParts);
+        assertTrue(wrongParts.contains("needs 2 numbers"), wrongParts);
+    }
+
+    /** The arity message reads naturally at one argument as well as many. */
+    @Test
+    void theArityMessageIsGrammaticalForASingleArgument() {
+        Map<String, AliasDefinition> one = Map.of("twice", AliasDefinition.parse("<n:int> = n * 2"));
+        EvalContext context = new EvalContext(new java.util.Random(1), VariableProvider.EMPTY,
+                TagResolver.NONE, BlockReader.NONE, UserFunctions.resolver(one));
+        String message = assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate("twice(1, 2)", context)).getMessage();
+        assertTrue(message.contains("takes 1 argument, got 2"), message);
+    }
+
     @Test
     void bodyFailuresAreAttributedToTheFunction() {
         // a body that can't evaluate must say WHICH function's body failed,

@@ -161,4 +161,87 @@ class AliasDefinitionTest {
         assertTrue(def.params().isEmpty());
         assertEquals("/weather clear && Have fun!", def.body());
     }
+
+    private static String rejects(String definition) {
+        return org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> AliasDefinition.parse(definition)).getMessage();
+    }
+
+    private static void assertRejectionNames(String definition, String... mustContain) {
+        String message = rejects(definition);
+        for (String fragment : mustContain) {
+            assertTrue(message.contains(fragment),
+                    "'" + definition + "' should mention \"" + fragment + "\" but said: " + message);
+        }
+    }
+
+    /**
+     * A definition that won't parse is a command that silently isn't there —
+     * parseDefinition swallows the failure on config load — so these messages
+     * are the only thing standing between a typo and a command that vanished.
+     */
+    @Test
+    void malformedDeclarationsSayWhatShapeWasExpected() {
+        assertRejectionNames("<name = /say hi", "Unclosed parameter declaration");
+        assertRejectionNames("<:int> = /say hi", "<name:type> or just <name>");
+        assertRejectionNames("<x:> = /say hi", "<name:type> or just <name>");
+        assertRejectionNames("<x:int=> = /say hi", "Empty default", "<name:type=value>");
+    }
+
+    @Test
+    void parameterNamesAreValidatedWithTheRuleTheyBroke() {
+        assertRejectionNames("<1x:int> = /say hi", "Parameter names must start with a letter");
+        assertRejectionNames("<x-y:int> = /say hi", "letters, numbers, and _");
+        assertRejectionNames("<x:int> <x:int> = /say hi", "Duplicate parameter name", "'x'");
+        // and the legal shapes are accepted
+        assertEquals("x_2", AliasDefinition.parse("<x_2:int> = /say hi").params().get(0).name());
+    }
+
+    @Test
+    void theBodyMustActuallyExist() {
+        assertRejectionNames("<x:int> =", "body after '=' cannot be empty");
+        assertRejectionNames("<x:int> /say hi", "Missing '=' before the body");
+        assertRejectionNames("/say hi", "Missing '=' before the body", "sunny = /weather clear");
+    }
+
+    /** A quoted note only counts as one when an = follows it; otherwise it's body text. */
+    @Test
+    void aQuotedNoteIsToldApartFromAQuotedBody() {
+        AliasDefinition noted = AliasDefinition.parse("\"toggles time\" = /tick freeze");
+        assertEquals("toggles time", noted.description());
+        assertEquals("/tick freeze", noted.body());
+
+        AliasDefinition quotedBody = AliasDefinition.parse("= \"hello there\"");
+        assertEquals("", quotedBody.description());
+        assertEquals("\"hello there\"", quotedBody.body());
+
+        // an unterminated quote isn't a note, so the = rule applies as normal
+        assertRejectionNames("\"unterminated = /say hi", "Missing '=' before the body");
+    }
+
+    @Test
+    void aNoteKeepsItsEscapedQuotesThroughARoundTrip() {
+        AliasDefinition def = AliasDefinition.parse("\"say \\\"hi\\\" nicely\" = /say hi");
+        assertEquals("say \"hi\" nicely", def.description());
+        assertEquals("\"say \\\"hi\\\" nicely\"", def.descriptionSuffix(), "re-quoted for storage");
+        assertEquals("", AliasDefinition.parse("= /say hi").descriptionSuffix(), "no note, no suffix");
+    }
+
+    /** declarationPrefix reconstructs the signature — it's what [edit] puts in your chat bar. */
+    @Test
+    void theDeclarationPrefixRebuildsWhatWasParsed() {
+        assertEquals("", AliasDefinition.parse("= /say hi").declarationPrefix());
+        assertEquals("<n:int> ", AliasDefinition.parse("<n:int> = /say hi").declarationPrefix());
+        assertEquals("<who> ", AliasDefinition.parse("<who> = /say hi").declarationPrefix(),
+                "a bare name is the string type and stays bare");
+        assertEquals("<m:on,off> ", AliasDefinition.parse("<m:on,off> = /say hi").declarationPrefix());
+    }
+
+    /** A backslash escapes the next character everywhere the declaration is scanned. */
+    @Test
+    void escapesAreHonoredWhileScanningDeclarations() {
+        AliasDefinition def = AliasDefinition.parse("<msg:text=a \\$ b> = /say $msg$");
+        assertEquals("a \\$ b", def.params().get(0).defaultValue(),
+                "the escaped $ doesn't open a marker span");
+    }
 }

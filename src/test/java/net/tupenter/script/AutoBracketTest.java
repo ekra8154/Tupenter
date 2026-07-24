@@ -109,4 +109,74 @@ class AutoBracketTest {
         AutoBracket.Edit e = type("say \"hi\n/echo ", 14, '(');
         assertEquals("say \"hi\n/echo ()", e.text());
     }
+
+    /** All five pairs behave the same — the two symmetric ones included. */
+    @Test
+    void everyPairAutoCloses() {
+        assertEquals("/say ()", type("/say ", 5, '(').text());
+        assertEquals("/say []", type("/say ", 5, '[').text());
+        assertEquals("/say {}", type("/say ", 5, '{').text());
+        assertEquals("/say \"\"", type("/say ", 5, '"').text());
+        assertEquals("/say $$", type("/say ", 5, '$').text());
+    }
+
+    @Test
+    void everyCloserSkipsOverItself() {
+        assertEquals(7, type("/say ()", 6, ')').cursor());
+        assertEquals(7, type("/say []", 6, ']').cursor());
+        assertEquals(7, type("/say {}", 6, '}').cursor());
+        assertEquals(7, type("/say $$", 6, '$').cursor());
+    }
+
+    @Test
+    void everyPairIsDeletedWholeOnBackspace() {
+        assertEquals("/say ", AutoBracket.onBackspace("/say []", 6).text());
+        assertEquals("/say ", AutoBracket.onBackspace("/say {}", 6).text());
+        assertEquals("/say ", AutoBracket.onBackspace("/say \"\"", 6).text());
+    }
+
+    @Test
+    void backspaceAtEitherEndOfTheTextIsNormal() {
+        assertNull(AutoBracket.onBackspace("()", 0), "nothing before the caret");
+        assertNull(AutoBracket.onBackspace("()", 2), "nothing after the caret");
+        assertNull(AutoBracket.onBackspace("", 0));
+    }
+
+    @Test
+    void everyPairWrapsASelection() {
+        // "hi" selected in "say hi" (indices 4..6)
+        assertEquals("say (hi)", AutoBracket.onChar("say hi", 4, 6, '(').text());
+        assertEquals("say [hi]", AutoBracket.onChar("say hi", 4, 6, '[').text());
+        assertEquals("say \"hi\"", AutoBracket.onChar("say hi", 4, 6, '"').text());
+        assertEquals("say $hi$", AutoBracket.onChar("say hi", 4, 6, '$').text());
+    }
+
+    /** A non-bracket key with a selection replaces it the normal way — hands off. */
+    @Test
+    void anOrdinaryKeyOverASelectionIsLeftToTheWidget() {
+        assertNull(AutoBracket.onChar("say hi", 4, 6, 'x'));
+        assertNull(AutoBracket.onChar("say hi", 4, 6, ')'), "a closer doesn't wrap either");
+    }
+
+    /**
+     * A backslash means the user wants the literal character, so auto-close
+     * stays out of the way — but only for an ODD run, since \\ is itself an
+     * escaped backslash and the $ after it is a real marker again.
+     */
+    @Test
+    void escapingSuppressesAutoCloseButDoubleBackslashDoesNot() {
+        assertNull(type("/echo \\", 7, '$'), "\\$ is a literal dollar");
+        assertNull(type("/echo \\", 7, '('));
+        assertEquals("/echo \\\\$$", type("/echo \\\\", 8, '$').text(), "\\\\ is an escaped backslash");
+    }
+
+    @Test
+    void autoCloseStaysOutOfQuotedStrings() {
+        assertNull(type("/echo \"hi ", 10, '('), "inside a string a ( is just text");
+        assertNull(type("/echo \"hi ", 10, '$'));
+        // after the string closes it resumes
+        assertEquals("/echo \"hi\" ()", type("/echo \"hi\" ", 11, '(').text());
+        // an escaped quote doesn't open a string
+        assertEquals("/echo \\\" ()", type("/echo \\\" ", 9, '(').text());
+    }
 }
