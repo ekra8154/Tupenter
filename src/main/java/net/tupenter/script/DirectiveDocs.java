@@ -104,6 +104,7 @@ public final class DirectiveDocs {
                         "#setdefault maxy = 80 && /echo building up to $maxy$",
                         "#setdefault runs = 0 && #set runs = runs + 1 && /echo run $runs$ this session",
                         "§7Already defined§r means session, saved, or live — an existing value always wins.",
+                        "§7A tunable knob:§r #setdefault seeds the value once and then leaves it, so a later #set — even one you type in chat while a tick loop is running — wins and the loop reads the NEW value on its next pass. It never stomps your change back to the default. Rule of thumb: #set what the script OWNS, #setdefault what the PLAYER tunes.",
                         "§7Bare name throughout:§r runs reads bare in the #set arithmetic — $runs$ only where it lands in command text.",
                         "§7The stateful-command idiom:§r first run initializes, every run advances — paste it anywhere, no separate setup line.",
                         "§7Only track what the game DOESN'T tell you:§r for live state read the real variable — $world.frozen$, $client.held.id$, $client.riding$. A self-tracked flag drifts the moment anything else changes it (or you rejoin), and then your toggle does the opposite of what you meant.",
