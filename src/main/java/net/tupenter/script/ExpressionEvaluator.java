@@ -491,8 +491,8 @@ final class ExpressionEvaluator {
                 return SKIP;
             }
             return switch (identifier.toLowerCase()) {
-                case "int" -> new Value.NumberValue(asNumber(single(args, "int"), "int(...)").truncate());
-                case "float" -> new Value.NumberValue(asNumber(single(args, "float"), "float(...)"));
+                case "int" -> new Value.NumberValue(asNumberOrParse(single(args, "int"), "int(...)").truncate());
+                case "float" -> new Value.NumberValue(asNumberOrParse(single(args, "float"), "float(...)"));
                 case "abs" -> new Value.NumberValue(asNumber(single(args, "abs"), "abs(...)").abs());
                 case "floor" -> new Value.NumberValue(asNumber(single(args, "floor"), "floor(...)").floor());
                 case "ceil" -> new Value.NumberValue(asNumber(single(args, "ceil"), "ceil(...)").ceil());
@@ -1321,6 +1321,23 @@ final class ExpressionEvaluator {
                 return number.value();
             }
             throw new ExpressionException("Expected a number " + where + ", got " + typeName(value));
+        }
+
+        /**
+         * int(...) and float(...) are the EXPLICIT conversions, so they alone
+         * also accept numeric TEXT — substr results and NBT string tags have no
+         * other route into math. Everywhere else asNumber stays strict, which is
+         * what keeps {@code "3" + 1} a concatenation instead of a silent coercion.
+         */
+        private static Rational asNumberOrParse(Value value, String where) {
+            if (value instanceof Value.StringValue text) {
+                try {
+                    return Rational.parse(text.value().trim());
+                } catch (IllegalArgumentException notNumeric) {
+                    throw new ExpressionException(where + ": \"" + text.value() + "\" isn't a number");
+                }
+            }
+            return asNumber(value, where);
         }
 
         private static boolean asBool(Value value, String where) {

@@ -47,6 +47,28 @@ class ExpressionEvaluatorTest {
         assertEquals("2", ExpressionEvaluator.evaluate("true ? (false ? a : b) : a", ctx).displayString());
     }
 
+    /**
+     * int and float are the language's ONLY coercions — substr results and NBT
+     * string tags have no other way into math. Everything else stays strict, so
+     * text keeps concatenating rather than silently adding.
+     */
+    @Test
+    void intAndFloatConvertNumericText() {
+        assertEquals("7", eval("float(\"3.5\") * 2"));
+        assertEquals("43", eval("float(substr(\"level_42\", 6)) + 1"));
+        assertEquals("42", eval("int(\"42\")"));
+        assertEquals("3", eval("int(\"3.9\")"));      // still truncates
+        assertEquals("-3", eval("int(\"-3.9\")"));    // toward zero, not floor
+        assertEquals("5", eval("float(\"  5  \")"));  // surrounding space is fine
+
+        // non-numeric text fails at the source, naming the offender
+        ExpressionException ex = assertThrows(ExpressionException.class, () -> eval("float(\"abc\")"));
+        assertTrue(ex.getMessage().contains("abc"), ex.getMessage());
+
+        // and the coercion does NOT leak: + on text still concatenates
+        assertEquals("31", eval("\"3\" + 1"));
+    }
+
     @Test
     void powerOperator() {
         assertEquals("9", eval("3^2"));

@@ -74,6 +74,54 @@ class BuiltinFunctionsTest {
         }
     }
 
+    /**
+     * Every example that needs nothing but the evaluator actually RUNS.
+     *
+     * <p>The float(...) page advertised text-to-number conversion for a while
+     * before the function could do it — and since help examples are
+     * click-to-run, a wrong one is a broken promise, not a typo. World-dependent
+     * examples (registry sets, block reads, entity lookups, client.* variables)
+     * can't run here and are skipped; everything self-contained is checked.
+     */
+    @Test
+    void selfContainedCalcExamplesActuallyEvaluate() {
+        int checked = 0;
+        for (BuiltinFunctions.Doc doc : BuiltinFunctions.ALL) {
+            for (String example : java.util.List.of(doc.exampleSimple(), doc.exampleComposed())) {
+                String expression = selfContainedCalc(example);
+                if (expression == null) {
+                    continue;
+                }
+                checked++;
+                try {
+                    ExpressionEvaluator.evaluate(expression, new EvalContext(new Random(1)));
+                } catch (RuntimeException broken) {
+                    throw new AssertionError(doc.name() + ": documented example doesn't evaluate — "
+                            + example + " → " + broken.getMessage(), broken);
+                }
+            }
+        }
+        assertTrue(checked >= 15, "expected a meaningful sample of runnable examples, got " + checked);
+    }
+
+    /** The expression of a "/calc ..." example that needs no world, else null. */
+    private static String selfContainedCalc(String example) {
+        if (!example.startsWith("/calc ")) {
+            return null;
+        }
+        String expression = example.substring("/calc ".length());
+        if (expression.contains("client.") || expression.contains("#")) {
+            return null; // live variables and registry tags need a world
+        }
+        for (String needsWorld : java.util.List.of("blockset(", "itemset(", "effectset(", "entityset(",
+                "block(", "raycast", "entity(", "entities(", "nearest_entity(", "keys(", "slot(")) {
+            if (expression.contains(needsWorld)) {
+                return null;
+            }
+        }
+        return expression;
+    }
+
     @Test
     void findIsCaseInsensitiveAndMissesCleanly() {
         assertNotNull(BuiltinFunctions.find("BLOCKSET"));
