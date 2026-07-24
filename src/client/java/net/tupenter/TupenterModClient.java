@@ -34,6 +34,7 @@ import net.tupenter.config.TupenterConfig;
 import net.tupenter.command.ClientCommandRegistrar;
 import net.tupenter.command.ClientVariableProvider;
 import net.tupenter.command.KeyStateProvider;
+import net.tupenter.command.LifecycleEventProvider;
 import net.tupenter.command.EntityNbtVariableProvider;
 import net.tupenter.command.PlayersVariableProvider;
 import net.tupenter.command.TickScriptRunner;
@@ -234,12 +235,14 @@ public class TupenterModClient implements ClientModInitializer {
     private static final WorldVariableProvider WORLD_VARIABLES = new WorldVariableProvider();
     private static final PlayersVariableProvider PLAYERS_VARIABLES = new PlayersVariableProvider();
     private static final RealTimeVariableProvider REAL_VARIABLES = new RealTimeVariableProvider();
+    private static final LifecycleEventProvider LIFECYCLE_EVENTS = new LifecycleEventProvider();
 
     static {
         VARIABLE_REGISTRY.register(SESSION_VARIABLES);
         VARIABLE_REGISTRY.register(PERSISTENT_VARIABLES);
         VARIABLE_REGISTRY.register(CLIENT_VARIABLES);
         VARIABLE_REGISTRY.register(KEY_STATES);
+        VARIABLE_REGISTRY.register(LIFECYCLE_EVENTS);
         VARIABLE_REGISTRY.register(WORLD_VARIABLES);
         VARIABLE_REGISTRY.register(PLAYERS_VARIABLES);
         VARIABLE_REGISTRY.register(REAL_VARIABLES);
@@ -1461,6 +1464,7 @@ public class TupenterModClient implements ClientModInitializer {
             }
             SCRIPT_EXECUTOR.abortAll();
             TICK_SCRIPTS.reset();
+            LIFECYCLE_EVENTS.onJoin(); // fresh world: fire world.just_joined, drop any stale death edge
             // the fresh server sends its own command tree; any nodes a shadowing
             // alias displaced belonged to the OLD tree and must not be restored
             // into this one
@@ -1496,6 +1500,10 @@ public class TupenterModClient implements ClientModInitializer {
             // client.keypress.* sees "down now vs. down last tick" and an edge
             // fires exactly once per press.
             KEY_STATES.tick();
+
+            // Snapshot lifecycle edges (client.just_died / world.just_joined)
+            // AFTER scripts polled them, same as the key edges above.
+            LIFECYCLE_EVENTS.tick();
 
             // =========================================================
             // 0. GLOBAL INPUT HANDLING (Always runs)
@@ -2725,12 +2733,24 @@ public class TupenterModClient implements ClientModInitializer {
     /** The VarDocs of an enumerated subject, or null for dynamic subjects. */
     private static java.util.List<net.tupenter.script.VarDoc> subjectVarDocs(String subjectName) {
         return switch (subjectName) {
-            case "client" -> CLIENT_VARIABLES.docs();
-            case "world" -> WORLD_VARIABLES.docs();
+            case "client" -> withLifecycle("client.", CLIENT_VARIABLES.docs());
+            case "world" -> withLifecycle("world.", WORLD_VARIABLES.docs());
             case "players" -> PLAYERS_VARIABLES.docs();
             case "real" -> REAL_VARIABLES.docs();
             default -> null;
         };
+    }
+
+    /** A subject's own VarDocs plus the lifecycle edges that live under its namespace. */
+    private static java.util.List<net.tupenter.script.VarDoc> withLifecycle(
+            String prefix, java.util.List<net.tupenter.script.VarDoc> base) {
+        java.util.List<net.tupenter.script.VarDoc> merged = new java.util.ArrayList<>(base);
+        for (net.tupenter.script.VarDoc doc : LIFECYCLE_EVENTS.docs()) {
+            if (doc.name().startsWith(prefix)) {
+                merged.add(doc);
+            }
+        }
+        return merged;
     }
 
     /**
@@ -2817,7 +2837,8 @@ public class TupenterModClient implements ClientModInitializer {
                     "§bTick scripts (Mod Menu → Tupenter → Scripts):",
                     "§7Each armed line is wrapped in a loop — literally §f#while (true) (YOUR LINE && #wait 1t)§r — so the body runs once per tick (20x/s) while the master toggle is on. A walking mcfunction file.",
                     "§7Because it's ONE running loop, your §f#set§r/§f#setdefault§r values persist across ticks (a counter keeps counting) and — committed at each tick — show up in /tupenter vars. Use §f#local§r for throwaway values you don't want kept.",
-                    "§7Budget:§r a body pass can only send §fMax Commands Per Tick§r commands (Mod Menu → Scripts, default 16). A body that places more spills across ticks — a big loop (e.g. a ring of setblocks) looks §oskeletal§r at speed until you raise it.",
+                    "§7Budget:§r a body pass can only send §fMax Commands Per Tick§r commands (Mod Menu → Scripts, default 48). A body that places more spills across ticks — a big loop (e.g. a ring of setblocks) looks §oskeletal§r at speed until you raise it.",
+                    "§7Events are edges:§r there's no callback — you test a one-tick boolean. §fclient.just_died§r fires the tick you die, §fworld.just_joined§r on your first pass in a world; §fclient.keypress.<key>§r on a press. #if (client.just_died) (/echo died at $client.pos$).",
                     "§7Guard them:§r #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying) — unguarded commands flood multiplayer chat.",
                     "§7#wait works inside:§r the loop resumes after it, so #wait paces a script (/effect … && #wait 3s) and $markers$ after a wait re-read live state. #while is allowed too.",
                     "§7Name them:§r start a script with §fname =§r (like a custom command, no params): restock = /clear && #wait 1s. Then toggle from chat: /tupenter scripts enable|disable restock.",

@@ -659,7 +659,8 @@ class HelpScreensTest {
     private static Set<String> enumeratedVariables() {
         Set<String> names = new TreeSet<>(new RealTimeVariableProvider().names());
         Pattern registered = Pattern.compile("\"((?:client|world|players)\\.[a-z0-9_.]+)\"");
-        for (String provider : List.of("ClientVariableProvider", "WorldVariableProvider", "PlayersVariableProvider")) {
+        for (String provider : List.of("ClientVariableProvider", "WorldVariableProvider", "PlayersVariableProvider",
+                "LifecycleEventProvider")) {
             Matcher name = registered.matcher(
                     source(Path.of("src", "client", "java", "net", "tupenter", "command", provider + ".java")));
             while (name.find()) {

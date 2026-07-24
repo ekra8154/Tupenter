@@ -736,6 +736,32 @@ class ExpressionEvaluatorTest {
         assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("block(\"a b c\")", blockContext()));
     }
 
+    // --- loaded(x, y, z) ---
+
+    @Test
+    void loadedTestsChunkPresenceAndNeverErrors() {
+        // a reader that "has" only y >= 0; below that the chunk reads as unloaded (null)
+        BlockReader partial = (x, y, z) -> y >= 0 ? "minecraft:stone" : null;
+        EvalContext ctx = new EvalContext(new Random(7), VariableProvider.EMPTY, TagResolver.NONE, partial);
+
+        assertEquals("true", ExpressionEvaluator.evaluate("loaded(0, 5, 0)", ctx).displayString());
+        assertEquals("false", ExpressionEvaluator.evaluate("loaded(0, -5, 0)", ctx).displayString());
+        // both spellings, decimals floor
+        assertEquals("true", ExpressionEvaluator.evaluate("loaded(\"0 5 0\")", ctx).displayString());
+        assertEquals("false", ExpressionEvaluator.evaluate("loaded(0.9, -0.5, 0.2)", ctx).displayString());
+
+        // it's the guard block(...) needs: where a chunk is unloaded, loaded() is
+        // false and block() never runs, so nothing errors
+        assertEquals("minecraft:stone",
+                ExpressionEvaluator.evaluate("loaded(0,5,0) ? block(0,5,0) : \"n/a\"", ctx).displayString());
+        assertEquals("n/a",
+                ExpressionEvaluator.evaluate("loaded(0,-5,0) ? block(0,-5,0) : \"n/a\"", ctx).displayString());
+
+        // with no world at all, loaded() is simply false (never throws like block())
+        EvalContext noWorld = new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE, BlockReader.NONE);
+        assertEquals("false", ExpressionEvaluator.evaluate("loaded(0, 0, 0)", noWorld).displayString());
+    }
+
     // --- pick ---
 
     @Test
