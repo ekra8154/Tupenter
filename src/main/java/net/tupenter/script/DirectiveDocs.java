@@ -100,7 +100,7 @@ public final class DirectiveDocs {
                         "§7Bare name is normal§r — #local hit, then hit in the condition and hit inside entity(...); $r$ only where it substitutes into command text.",
                         "§7The choosing rule:§r #local by default; #set only when the value must OUTLIVE the line."),
                 doc("setdefault", Group.VARIABLES, "#setdefault name = value",
-                        "set only if not already defined — idempotent init", null, true,
+                        "guarantee a variable exists: create it if absent, keep it as-is if present", null, true,
                         "#setdefault maxy = 80 && /echo building up to $maxy$",
                         "#setdefault runs = 0 && #set runs = runs + 1 && /echo run $runs$ this session",
                         "§7Already defined§r means session, saved, or live — an existing value always wins.",
