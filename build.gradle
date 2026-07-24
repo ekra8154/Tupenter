@@ -1,6 +1,7 @@
 plugins {
 	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
 	id 'maven-publish'
+	id 'jacoco'
 }
 
 version = project.mod_version
@@ -51,6 +52,24 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    finalizedBy jacocoTestReport
+}
+
+// Coverage measures the LANGUAGE, not the mod wiring: net.tupenter.script is
+// the parser, evaluator and executor, and it's Minecraft-free, so every line of
+// it is reachable from a plain JUnit run. The client source set is Minecraft
+// wiring that only runs in game — it isn't on the test classpath at all, so it
+// never enters these numbers and can't dilute them.
+jacoco {
+    toolVersion = "0.8.13"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        html.required = true
+        xml.required = true
+    }
 }
 
 processResources {

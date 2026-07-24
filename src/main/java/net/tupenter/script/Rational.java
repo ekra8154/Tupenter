@@ -129,6 +129,17 @@ public final class Rational implements Comparable<Rational> {
         return truncated.intValue();
     }
 
+    /**
+     * The value with NOTHING rounded away — "1/3", not "0.3333333333333333".
+     * toCommandString has to produce something a server will accept, so it
+     * settles for 16 decimal places; this is for storage that has to come back
+     * as the same number, and it reads back through the evaluator as the
+     * division it looks like.
+     */
+    String toExactString() {
+        return isWhole() ? numerator.toString() : numerator + "/" + denominator;
+    }
+
     String toCommandString() {
         BigDecimal numeratorDecimal = new BigDecimal(numerator);
         BigDecimal denominatorDecimal = new BigDecimal(denominator);

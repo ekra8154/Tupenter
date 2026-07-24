@@ -78,6 +78,13 @@ public final class PersistentVariableStore implements VariableProvider {
         if (value instanceof Value.StringValue string) {
             return '"' + string.value().replace("\\", "\\\\").replace("\"", "\\\"") + '"';
         }
+        if (value instanceof Value.NumberValue number) {
+            // displayString rounds to 16 places to stay command-safe, which would
+            // make a saved 1/3 come back as 0.3333333333333333 — a different
+            // number. Exactness is the one thing this math promises, so a
+            // variable must not lose it just by outliving the session.
+            return number.value().toExactString();
+        }
         return value.displayString();
     }
 }
