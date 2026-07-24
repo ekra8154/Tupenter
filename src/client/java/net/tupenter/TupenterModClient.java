@@ -127,6 +127,31 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /**
+     * True only while a send the USER drove is in flight: typing a line and
+     * pressing Enter (which always routes through ChatScreen.handleChatInput)
+     * or a resend. Every command funnels through the same sendCommand/send, so
+     * by the time the mixins see it the origin is gone — this is how we get it
+     * back. Another mod firing a command straight into sendCommand from a
+     * keybind (CommandKeys and the like) passes through neither path, so its
+     * sends are still evaluated and sent (a macro's $marker$ still works), but
+     * they stay OUT of your resend history. Set at exactly two places:
+     * MixinChatScreen's handleChatInput hook, and the resend queue drain below.
+     */
+    private static boolean userDrivenSend = false;
+
+    public static boolean isUserDrivenSend() {
+        return userDrivenSend;
+    }
+
+    public static void beginUserDrivenSend() {
+        userDrivenSend = true;
+    }
+
+    public static void endUserDrivenSend() {
+        userDrivenSend = false;
+    }
+
+    /**
      * Client-side commands (/tupenter, /calc, /echo, custom commands) exist
      * only in the client dispatcher — sending them as packets makes the
      * SERVER error. Anything that re-sends a stored command string (resend
@@ -1207,6 +1232,11 @@ public class TupenterModClient implements ClientModInitializer {
 
     /** Adds to resend history bypassing the recording toggle and filter (#stage, #record). */
     public static void forceAddToHistory(String msg) {
+        // history is YOURS — only what you typed/resent, never another mod's
+        // programmatic send (see userDrivenSend)
+        if (!userDrivenSend) {
+            return;
+        }
         if (messageHistory.isEmpty() || !messageHistory.get(messageHistory.size() - 1).equals(msg)) {
             messageHistory.add(msg);
             if (messageHistory.size() > 50) {
@@ -1220,6 +1250,10 @@ public class TupenterModClient implements ClientModInitializer {
     public static List<String> lockedBatch = new ArrayList<>(); // For toggle mode locking
 
     public static void updateLastMessage(String msg) {
+        // only record sends the USER drove — typing/resend set userDrivenSend;
+        // a keybind mod firing straight into sendCommand does not, so its
+        // commands still run but don't land in your resend history
+        if (!userDrivenSend) return;
         if (!TupenterConfig.INSTANCE.recordHistory) return;
         if (msg == null || msg.trim().isEmpty()) return;
 
@@ -1689,10 +1723,18 @@ public class TupenterModClient implements ClientModInitializer {
 
                 while (!pendingQueue.isEmpty()) {
                     String msg = pendingQueue.poll();
-                    if (msg.startsWith("/")) {
-                        dispatchStoredCommand(client, msg.substring(1));
-                    } else {
-                         client.player.connection.sendChat(msg);
+                    // a resend is user-driven — it belongs in history like the
+                    // original did (see userDrivenSend); scope it tight so the
+                    // flag never leaks across the delay-returns below
+                    beginUserDrivenSend();
+                    try {
+                        if (msg.startsWith("/")) {
+                            dispatchStoredCommand(client, msg.substring(1));
+                        } else {
+                            client.player.connection.sendChat(msg);
+                        }
+                    } finally {
+                        endUserDrivenSend();
                     }
 
                     if (!pendingQueue.isEmpty()) {

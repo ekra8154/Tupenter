@@ -95,6 +95,24 @@ public abstract class MixinChatScreen extends Screen {
         return message.length() <= limit ? message : message.substring(0, limit);
     }
 
+    /**
+     * handleChatInput is THE path a typed line takes to the server (vanilla
+     * Enter and Tupenter's own Ctrl+Space both call it). Marking the send as
+     * user-driven here is what lets the history writers tell your typing apart
+     * from another mod firing a command straight into sendCommand — see
+     * {@link net.tupenter.TupenterModClient#isUserDrivenSend()}. The send is
+     * synchronous inside this method, so HEAD/RETURN bracket it exactly.
+     */
+    @Inject(method = "handleChatInput", at = @At("HEAD"))
+    private void tupenter$markUserSendStart(String message, boolean addToRecentChat, CallbackInfo ci) {
+        net.tupenter.TupenterModClient.beginUserDrivenSend();
+    }
+
+    @Inject(method = "handleChatInput", at = @At("RETURN"))
+    private void tupenter$markUserSendEnd(String message, boolean addToRecentChat, CallbackInfo ci) {
+        net.tupenter.TupenterModClient.endUserDrivenSend();
+    }
+
     @Inject(method = "mouseClicked", at = @At("HEAD"))
     private void tupenter$selectionStart(MouseButtonEvent event, boolean doubleClick, CallbackInfoReturnable<Boolean> cir) {
         if (event.button() == 0) {
