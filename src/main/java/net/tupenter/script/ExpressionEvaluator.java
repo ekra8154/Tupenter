@@ -522,7 +522,6 @@ final class ExpressionEvaluator {
                 case "effectset" -> tagMembers("effectset", TagResolver.TagKind.EFFECT, args);
                 case "entityset" -> tagMembers("entityset", TagResolver.TagKind.ENTITY, args);
                 case "block" -> blockAt(args);
-                case "loaded" -> loadedAt(args);
                 case "simulated" -> simulatedAt(args);
                 case "vec" -> vec(args);
                 case "component" -> component(args);
@@ -925,32 +924,18 @@ final class ExpressionEvaluator {
             long[] position = blockPosArgs(args, "block");
             String id = context.blocks().blockAt(position[0], position[1], position[2]);
             if (id == null) {
-                throw new ExpressionException("block(...): that position isn't loaded (or there's no world)"
-                        + " — guard it with loaded(...) if it might be");
+                throw new ExpressionException("block(...): can't read there — no world, or a chunk the client doesn't have");
             }
             return Value.of(id);
         }
 
         /**
-         * loaded(x, y, z) or loaded("x y z") — true if that position sits in a
-         * chunk the client currently has, false if it's unloaded (or there's no
-         * world). Unlike block(...), it never errors on a miss, so it's the
-         * guard: #if (loaded(grave)) (block(grave) ...). A despawn timer uses it
-         * to pause while the grave chunk is out of view.
-         */
-        private Value loadedAt(List<Value> args) {
-            long[] position = blockPosArgs(args, "loaded");
-            return Value.of(context.blocks().blockAt(position[0], position[1], position[2]) != null);
-        }
-
-        /**
          * simulated(x, y, z) or simulated("x y z") — true if the server is
          * ticking entities at that position (its chunk is within the server's
-         * simulation distance of you), false otherwise, and — like loaded(...) —
-         * never errors. This is what actually governs item despawn / mob
-         * spawning, unlike loaded(...), which only reports what your client has
-         * rendered. On a shared server it sees only YOUR simulation, not a
-         * distant teammate's.
+         * simulation distance of you), false otherwise, and never errors. This
+         * is what actually governs item despawn / mob spawning, unlike block(...)
+         * which reflects only what your client has received. On a shared server
+         * it sees only YOUR simulation, not a distant teammate's.
          */
         private Value simulatedAt(List<Value> args) {
             long[] position = blockPosArgs(args, "simulated");
@@ -958,7 +943,7 @@ final class ExpressionEvaluator {
             return Value.of(simulated != null && simulated);
         }
 
-        /** The shared x/y/z parsing for block(...) / loaded(...): three numbers or one vec3, floored. */
+        /** The shared x/y/z parsing for block(...) / simulated(...): three numbers or one vec3, floored. */
         private long[] blockPosArgs(List<Value> args, String fn) {
             long[] position = new long[3];
             if (args.size() == 1 && args.get(0) instanceof Value.StringValue string) {

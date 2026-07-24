@@ -736,41 +736,16 @@ class ExpressionEvaluatorTest {
         assertThrows(ExpressionException.class, () -> ExpressionEvaluator.evaluate("block(\"a b c\")", blockContext()));
     }
 
-    // --- loaded(x, y, z) ---
-
-    @Test
-    void loadedTestsChunkPresenceAndNeverErrors() {
-        // a reader that "has" only y >= 0; below that the chunk reads as unloaded (null)
-        BlockReader partial = (x, y, z) -> y >= 0 ? "minecraft:stone" : null;
-        EvalContext ctx = new EvalContext(new Random(7), VariableProvider.EMPTY, TagResolver.NONE, partial);
-
-        assertEquals("true", ExpressionEvaluator.evaluate("loaded(0, 5, 0)", ctx).displayString());
-        assertEquals("false", ExpressionEvaluator.evaluate("loaded(0, -5, 0)", ctx).displayString());
-        // both spellings, decimals floor
-        assertEquals("true", ExpressionEvaluator.evaluate("loaded(\"0 5 0\")", ctx).displayString());
-        assertEquals("false", ExpressionEvaluator.evaluate("loaded(0.9, -0.5, 0.2)", ctx).displayString());
-
-        // it's the guard block(...) needs: where a chunk is unloaded, loaded() is
-        // false and block() never runs, so nothing errors
-        assertEquals("minecraft:stone",
-                ExpressionEvaluator.evaluate("loaded(0,5,0) ? block(0,5,0) : \"n/a\"", ctx).displayString());
-        assertEquals("n/a",
-                ExpressionEvaluator.evaluate("loaded(0,-5,0) ? block(0,-5,0) : \"n/a\"", ctx).displayString());
-
-        // with no world at all, loaded() is simply false (never throws like block())
-        EvalContext noWorld = new EvalContext(new Random(1), VariableProvider.EMPTY, TagResolver.NONE, BlockReader.NONE);
-        assertEquals("false", ExpressionEvaluator.evaluate("loaded(0, 0, 0)", noWorld).displayString());
-    }
-
     // --- simulated(x, y, z) ---
 
     @Test
     void simulatedReportsServerTickingAndNeverErrors() {
-        // a reader that "simulates" only y >= 0 (a stand-in for the sim-distance test)
+        // a reader where everything is rendered but only y >= 0 is being ticked —
+        // the point being that block() can read a chunk that simulated() calls frozen
         BlockReader reader = new BlockReader() {
             @Override
             public String blockAt(long x, long y, long z) {
-                return "minecraft:stone"; // everything is rendered here
+                return "minecraft:stone";
             }
 
             @Override
@@ -782,9 +757,9 @@ class ExpressionEvaluatorTest {
 
         assertEquals("true", ExpressionEvaluator.evaluate("simulated(0, 5, 0)", ctx).displayString());
         assertEquals("false", ExpressionEvaluator.evaluate("simulated(0, -5, 0)", ctx).displayString());
-        // both spellings; the point that a chunk can be loaded but NOT simulated
-        assertEquals("true", ExpressionEvaluator.evaluate("loaded(0, -5, 0)", ctx).displayString());
+        // both spellings; block() still reads the frozen chunk fine
         assertEquals("false", ExpressionEvaluator.evaluate("simulated(\"0 -5 0\")", ctx).displayString());
+        assertEquals("minecraft:stone", ExpressionEvaluator.evaluate("block(0, -5, 0)", ctx).displayString());
 
         // a block-only stub (no simulated override) reports false, never throws
         BlockReader blockOnly = (x, y, z) -> "minecraft:stone";

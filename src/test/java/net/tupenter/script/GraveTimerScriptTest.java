@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The seeded "gravetimer" showcase script, exercised as pure logic so its
  * control flow is verified without dying in-game. It leans on the lifecycle
- * edge {@code client.just_died}, {@code loaded(...)}/{@code block(...)} and
+ * edge {@code client.just_died}, {@code simulated(...)}/{@code block(...)} and
  * {@code real.timestamp}; the death branch marks where you died, then a
  * 5-minute despawn countdown announces at falling thresholds and PAUSES while
  * the grave chunk is unloaded.
