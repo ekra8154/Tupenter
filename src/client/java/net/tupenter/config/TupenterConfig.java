@@ -422,6 +422,9 @@ public class TupenterConfig {
                 System.err.println("Failed to load Tupenter config, using defaults for this session: " + e.getMessage());
             }
         } else {
+            // First run — no config on disk yet. Seed the shipped examples so the
+            // Scripting tab isn't empty, then write them out.
+            DefaultExamples.seed(INSTANCE);
             save();
         }
     }
