@@ -963,6 +963,16 @@ public final class ScriptParser {
             }
             changed = true;
             if (ticks > 0) {
+                // A #wait is a durability boundary: everything before it has
+                // already run. Commit the session #set/#setdefault writes now so
+                // they show in /tupenter vars and survive — a persistent tick
+                // loop never reaches the end-of-script commit, so without this
+                // its session variables would live only in this walker's scope.
+                // Streaming only (sink != null); eager lines keep whole-line
+                // rollback and commit once at the end.
+                if (sink != null) {
+                    commitSession();
+                }
                 emit(Script.SendStatement.waitFor((int) ticks, realtime));
             }
         }

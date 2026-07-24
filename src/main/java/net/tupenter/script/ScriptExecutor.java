@@ -365,7 +365,15 @@ public final class ScriptExecutor {
                             instance.waitUntilGameTime = clock + statement.waitTicks();
                         }
                     }
-                    case NOTICE -> sender.info(statement.content());
+                    case NOTICE -> {
+                        // a persistent tick loop (id 0) runs every tick forever, so a
+                        // #set notice would spam chat endlessly — tick scripts stay
+                        // quiet. An interactive one-shot script still shows its
+                        // "$x$ = ..." feedback, which is the whole point there.
+                        if (instance.id != 0) {
+                            sender.info(statement.content());
+                        }
+                    }
                 }
 
                 // completion is detectable without a pull for list-backed

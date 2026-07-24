@@ -2815,7 +2815,9 @@ public class TupenterModClient implements ClientModInitializer {
         String[] lines = switch (topic) {
             case "scripts" -> new String[]{
                     "§bTick scripts (Mod Menu → Tupenter → Scripts):",
-                    "§7Each armed line runs as its own loop — one body pass per tick (20x/s) — while the master toggle is on. A walking mcfunction file.",
+                    "§7Each armed line is wrapped in a loop — literally §f#while (true) (YOUR LINE && #wait 1t)§r — so the body runs once per tick (20x/s) while the master toggle is on. A walking mcfunction file.",
+                    "§7Because it's ONE running loop, your §f#set§r/§f#setdefault§r values persist across ticks (a counter keeps counting) and — committed at each tick — show up in /tupenter vars. Use §f#local§r for throwaway values you don't want kept.",
+                    "§7Budget:§r a body pass can only send §fMax Commands Per Tick§r commands (Mod Menu → Scripts, default 16). A body that places more spills across ticks — a big loop (e.g. a ring of setblocks) looks §oskeletal§r at speed until you raise it.",
                     "§7Guard them:§r #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying) — unguarded commands flood multiplayer chat.",
                     "§7#wait works inside:§r the loop resumes after it, so #wait paces a script (/effect … && #wait 3s) and $markers$ after a wait re-read live state. #while is allowed too.",
                     "§7Name them:§r start a script with §fname =§r (like a custom command, no params): restock = /clear && #wait 1s. Then toggle from chat: /tupenter scripts enable|disable restock.",

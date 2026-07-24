@@ -57,6 +57,33 @@ class ScriptExecutorTest {
         return new ScriptExecutor(sender, ScriptExecutor.limits(() -> perTick, () -> perScript, () -> concurrent));
     }
 
+    private static Script withNotice(String noticeText, String command) {
+        return Script.ofStatements(command, List.of(
+                Script.SendStatement.notice(noticeText),
+                new Script.SendStatement(command, Script.Kind.COMMAND, false)), Script.HistoryMode.NORMAL);
+    }
+
+    /**
+     * A tick loop runs forever, so a #set notice would spam chat every tick —
+     * persistent loops (submitted via trySubmit, id 0) stay quiet. An
+     * interactive one-shot (submit, id != 0) still shows its "$x$ = ..."
+     * feedback, which is the whole point there. This is the rainbowring
+     * counter-spam fix.
+     */
+    @Test
+    void tickLoopsSuppressNoticesButInteractiveScriptsShowThem() {
+        RecordingSender interactive = new RecordingSender();
+        executor(interactive, 16, 1000, 8).submit(withNotice("$x$ = 5", "say hi"));
+        assertEquals(List.of("$x$ = 5"), interactive.infos, "an interactive script shows #set feedback");
+
+        RecordingSender loop = new RecordingSender();
+        ScriptExecutor executor = executor(loop, 16, 1000, 8);
+        executor.trySubmit(withNotice("$rt$ = 1", "setblock ~ ~ ~ stone"));
+        executor.tick();
+        assertTrue(loop.infos.isEmpty(), "a tick loop's #set notices never reach chat: " + loop.infos);
+        assertTrue(loop.sent.contains("/setblock ~ ~ ~ stone"), "but its commands still send");
+    }
+
     @Test
     void smallScriptDrainsImmediatelyOnSubmit() {
         RecordingSender sender = new RecordingSender();
@@ -387,6 +414,27 @@ class ScriptExecutorTest {
         assertEquals(List.of("$x$ = 5"), sender.infos, "the #set notice arrived through the stream");
         assertEquals("5", store.resolve("x").orElseThrow().displayString());
         assertTrue(executor.isIdle());
+    }
+
+    @Test
+    void lazySetCommitsToSessionAtEachWaitBoundaryNotJustAtTheEnd() {
+        // A persistent tick loop never reaches the end-of-script commit, so a
+        // #set/#setdefault inside it would be invisible to /tupenter vars if we
+        // only committed at the end. Committing at each #wait boundary makes the
+        // write visible while the loop is still running — the value is in the
+        // store BEFORE the script finishes.
+        SessionVariableStore store = new SessionVariableStore();
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        ScriptParser.ParseResult result = ScriptParser.parse(
+                "#set $x$ = 7 && /say a && #wait 5t && /say b", lazyOptions(store));
+        executor.submit(result.script());
+
+        assertEquals(List.of("/say a"), sender.sent, "only the pre-wait send has happened");
+        assertFalse(executor.isIdle(), "the script is parked on the #wait, not finished");
+        assertEquals("7", store.resolve("x").orElseThrow().displayString(),
+                "the #set is already visible in the session store at the wait boundary");
     }
 
     @Test
