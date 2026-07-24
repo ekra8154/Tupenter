@@ -29,11 +29,10 @@ class GraveTimerScriptTest {
 
     /** The body exactly as seeded (name prefix stripped, as the tick runner runs it). */
     private static final String BODY =
-            "#setdefault grave = \"\" && #setdefault graveleft = -1 && #setdefault gravestamp = 0 && #setdefault gravesaid = 999 && #setdefault gravepaused = false && #if (client.just_died) (#set grave = client.blockpos && #local isvoid = block(grave) == \"minecraft:void_air\" && #if (isvoid) (/echo &cYou died in the void - nothing to recover && #set graveleft = -1) #else (#set graveleft = 300 && #set gravestamp = real.timestamp && #set gravesaid = 300 && #set gravepaused = false)) && #if (client.just_respawned && graveleft > 0) (/echo &7Grave at &f$grave$&7 - items despawn in &e$floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$&7 (pauses while that chunk is unsimulated)) && #if (graveleft > 0 && simulated(grave)) (#if (gravepaused) (/echo &aGrave simulated again - &e$floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$&a left && #set gravepaused = false) && #set graveleft = graveleft - (real.timestamp - gravestamp) && #set gravestamp = real.timestamp && #local now = floor(graveleft) && #if (now < gravesaid) (#set gravesaid = now && #if (client.health > 0 && (now == 120 || now == 60 || now == 30 || (now <= 10 && now >= 1))) (/echo &e$floor(now / 60)$:$now % 60 < 10 ? \"0\" : \"\"$$now % 60$ &7until your items despawn) && #if (now <= 0) (/echo &cYour items have despawned && #set graveleft = -1))) && #if (graveleft > 0 && !simulated(grave)) (#set gravestamp = real.timestamp && #if (!gravepaused) (/echo &8Grave chunk unsimulated - despawn timer paused at $floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$ && #set gravepaused = true))";
+            "#setdefault grave = \"\" && #setdefault graveleft = -1 && #setdefault gravestamp = 0 && #setdefault gravesaid = 999 && #setdefault gravepaused = false && #setdefault gravereported = true && #if (client.just_died) (#set grave = client.blockpos && #local isvoid = block(grave) == \"minecraft:void_air\" && #if (isvoid) (/echo &cYou died in the void - nothing to recover && #set graveleft = -1) #else (#set graveleft = 300 && #set gravestamp = real.timestamp && #set gravesaid = 300 && #set gravepaused = false && #set gravereported = false)) && #if (graveleft > 0 && !gravereported && client.health > 0) (/echo &7Died at &f$grave$&7 - items despawn in about &e$floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$&7 (paused while that chunk is unloaded) && #set gravereported = true) && #if (graveleft > 0 && simulated(grave)) (#if (gravepaused) (/echo &aGrave chunk loaded again - about &e$floor(graveleft / 60)$:$graveleft % 60 < 10 ? \"0\" : \"\"$$graveleft % 60$&a left && #set gravepaused = false) && #set graveleft = graveleft - (real.timestamp - gravestamp) && #set gravestamp = real.timestamp && #local now = floor(graveleft) && #if (now < gravesaid) (#set gravesaid = now && #if (client.health > 0 && (now == 120 || now == 60 || now == 30 || (now <= 10 && now >= 1))) (/echo &7about &e$floor(now / 60)$:$now % 60 < 10 ? \"0\" : \"\"$$now % 60$&7 until items may despawn) && #if (now <= 0) (/echo &cItems have likely despawned by now, if not picked up && #set graveleft = -1))) && #if (graveleft > 0 && !simulated(grave)) (#set gravestamp = real.timestamp && #if (!gravepaused) (/echo &8Timer paused - items will not despawn as long as nothing loads the chunk && #set gravepaused = true))";
 
     // The mutable "world" the stubs read — the harness sets these before each tick.
     private boolean justDied;
-    private boolean justRespawned;
     private String blockpos = "10 64 20";
     private String blockId = "minecraft:air"; // what block(grave) returns
     private boolean simulated = true;         // what simulated(grave) returns
@@ -49,15 +48,13 @@ class GraveTimerScriptTest {
         variables.register(new VariableProvider() {
             @Override
             public Set<String> names() {
-                return Set.of("client.just_died", "client.just_respawned", "client.blockpos",
-                        "client.health", "real.timestamp");
+                return Set.of("client.just_died", "client.blockpos", "client.health", "real.timestamp");
             }
 
             @Override
             public Optional<Value> resolve(String name) {
                 return switch (name.toLowerCase(java.util.Locale.ROOT)) {
                     case "client.just_died" -> Optional.of(Value.of(justDied));
-                    case "client.just_respawned" -> Optional.of(Value.of(justRespawned));
                     case "client.blockpos" -> Optional.of(Value.of(blockpos));
                     case "client.health" -> Optional.of(Value.ofNumber((long) health));
                     case "real.timestamp" -> Optional.of(Value.ofNumber(timestamp));
@@ -95,7 +92,7 @@ class GraveTimerScriptTest {
         justDied = false;
         List<String> sends = tick();
         assertEquals("-1", num("graveleft"), "no countdown yet");
-        assertTrue(sends.stream().noneMatch(s -> s.contains("despawn") || s.contains("Grave") || s.contains("paused")),
+        assertTrue(sends.stream().noneMatch(s -> s.contains("despawn") || s.contains("Died") || s.contains("paused")),
                 "silent before a death: " + sends);
     }
 
@@ -117,32 +114,35 @@ class GraveTimerScriptTest {
     }
 
     @Test
-    void theCoordsAreAnnouncedOnRespawnNotWhileStillOnTheDeathScreen() {
+    void theCoordsAreAnnouncedOnceYouAreAliveAgainNotWhileStillOnTheDeathScreen() {
         justDied = false;
         tick();
 
-        // die, then sit on the death screen for 8 seconds — no coords announced yet
+        // die, then sit on the death screen for 8 seconds — no coords yet (health 0)
         justDied = true;
         blockpos = "128 70 -64";
         health = 0;
         timestamp = 1000;
         List<String> atDeath = tick();
-        assertTrue(atDeath.stream().noneMatch(s -> s.contains("Grave at")),
+        assertTrue(atDeath.stream().noneMatch(s -> s.contains("Died at")),
                 "nothing announced on the death screen: " + atDeath);
 
         justDied = false;
         timestamp = 1008;
         tick(); // still dead, timer ticking down quietly
 
-        // respawn: NOW the grave is announced, showing the time already elapsed
-        justRespawned = true;
+        // respawn (alive again): NOW the grave is announced, with the time elapsed
         health = 20;
         timestamp = 1008;
         List<String> onRespawn = tick();
-        assertTrue(onRespawn.stream().anyMatch(s -> s.contains("Grave at") && s.contains("128 70 -64")),
-                "announced on respawn: " + onRespawn);
+        assertTrue(onRespawn.stream().anyMatch(s -> s.contains("Died at") && s.contains("128 70 -64")),
+                "announced once alive: " + onRespawn);
         assertTrue(onRespawn.stream().anyMatch(s -> s.contains("4:52")),
                 "shows the 8s already spent (5:00 -> 4:52): " + onRespawn);
+
+        // and it doesn't repeat on later alive ticks
+        timestamp = 1010;
+        assertTrue(tick().stream().noneMatch(s -> s.contains("Died at")), "reported only once");
     }
 
     @Test
@@ -219,7 +219,7 @@ class GraveTimerScriptTest {
         simulated = true;
         timestamp = 1201;
         List<String> resumed = tick();
-        assertTrue(resumed.stream().anyMatch(s -> s.contains("simulated again")), "announced resume: " + resumed);
+        assertTrue(resumed.stream().anyMatch(s -> s.contains("loaded again")), "announced resume: " + resumed);
         assertEquals("299", num("graveleft"), "the 200s pause wasn't charged");
     }
 
