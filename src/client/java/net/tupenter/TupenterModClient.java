@@ -1339,13 +1339,8 @@ public class TupenterModClient implements ClientModInitializer {
                                     .then(literal("flow").executes(context -> runHelpCommand(context, "flow")))
                                     .then(literal("prefixes").executes(context -> runHelpCommand(context, "prefixes")))
                                     .then(literal("scripts").executes(context -> runHelpCommand(context, "scripts")))
+                                    // the ONE list page; a single command opens by bare name (/tupenter help echo)
                                     .then(literal("commands").executes(context -> runCommandHelp(context, "all")))
-                                    .then(literal("command")
-                                            .executes(context -> runCommandHelp(context, "all"))
-                                            .then(argument("name", StringArgumentType.word())
-                                                    .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
-                                                            new String[]{"all", "tupenter", "customcommand", "customfunction", "echo", "echohud", "calc", "unroll"}, b))
-                                                    .executes(context -> runCommandHelp(context, StringArgumentType.getString(context, "name")))))
                                     .then(literal("functions").executes(TupenterModClient::runFunctionsIndexCommand))
                                     // any function or custom definition by name: /tupenter help blockset
                                     .then(argument("name", StringArgumentType.word())
@@ -2214,6 +2209,16 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /**
+     * The mod's own commands, which answer to a BARE name like everything else
+     * (/tupenter help echo) — there's no "help command &lt;name&gt;" qualifier any
+     * more, just the /tupenter help commands list for discovery. Resolved ahead
+     * of your custom commands, so a same-named alias of yours loses here and is
+     * still reachable via /customcommand &lt;name&gt;.
+     */
+    private static final java.util.List<String> MOD_COMMAND_PAGES = java.util.List.of(
+            "tupenter", "customcommand", "customfunction", "echo", "echohud", "calc", "unroll");
+
+    /**
      * Autocomplete for /tupenter help &lt;name&gt;. Two rules keep it from burying
      * the front door: (1) it stays SILENT on an empty prefix — the ~9 topic
      * literals (expressions, variables, functions, ...) carry the bare
@@ -2244,6 +2249,7 @@ public class TupenterModClient implements ClientModInitializer {
         for (net.tupenter.script.SubjectDocs.Subject subject : net.tupenter.script.SubjectDocs.ALL) {
             names.add(subject.name()); // the subject page is where individual vars are browsed
         }
+        names.addAll(MOD_COMMAND_PAGES); // the mod's own commands answer to bare names too
         names.addAll(CustomFunctionManager.getFunctionMap().keySet());
         names.addAll(CommandAliasManager.getAliasMap().keySet());
         return names;
@@ -2381,7 +2387,7 @@ public class TupenterModClient implements ClientModInitializer {
         if (doc != null) {
             return renderFunctionPage(context, doc);
         }
-        if (java.util.Set.of("all", "tupenter", "customcommand", "customfunction", "echo", "echohud", "calc", "unroll").contains(name)) {
+        if (MOD_COMMAND_PAGES.contains(name)) {
             return runCommandHelp(context, name);
         }
         net.tupenter.script.DirectiveDocs.Doc directive = net.tupenter.script.DirectiveDocs.find(name);
@@ -2524,15 +2530,18 @@ public class TupenterModClient implements ClientModInitializer {
         String taste = "#set $x$ = rand(1,10) && /give @s stick $x$ && /echo got $x$!";
         beginHelpPage();
         helpLine("§bTupenter help — pick a topic:");
+        // commands first: "what can I even type" is where everyone starts, and
+        // it's how you find /tupenter itself
+        helpLine(navRow("commands", "everything the mod adds — start here", "/tupenter help commands"));
+        helpLine(navRow("custom commands", "make your own /commands (typed params, autocomplete)", "/customcommand help"));
+        helpLine(navRow("custom functions", "write your own min()-style functions for expressions", "/customfunction help"));
         helpLine(navRow("expressions", "the $...$ language: math, text, logic, random, lists, world", "/tupenter help expressions"));
-        helpLine(navRow("functions", "every function at a glance — /tupenter help <name> opens any one", "/tupenter help functions"));
+        helpLine(navRow("functions", "every built-in function at a glance", "/tupenter help functions"));
         helpLine(navRow("variables", "#set, #local, client.*/world.*/nbt paths, groups", "/tupenter help variables"));
         helpLine(navRow("flow", "&& chains, #repeat, #for, #foreach, #if/#elseif, #while", "/tupenter help flow"));
         helpLine(navRow("prefixes", "#silent, #norecord, #stage, /echo", "/tupenter help prefixes"));
         helpLine(navRow("scripts", "the every-tick Scripts tab", "/tupenter help scripts"));
-        helpLine(navRow("commands", "the mod's commands, each with a detail page", "/tupenter help command"));
-        helpLine(navRow("custom commands", "make your own /commands (typed params, autocomplete)", "/customcommand help"));
-        helpLine(navRow("custom functions", "write your own min()-style functions for expressions", "/customfunction help"));
+        helpLine("§8Anything by name: /tupenter help <command | function | directive | variable> — e.g. help echo, help blockset, help local");
         helpLine(Component.literal("Quick taste: ").withStyle(ChatFormatting.GRAY).append(suggestLink(taste, taste)));
         endHelpPage();
         return 1;
@@ -2596,7 +2605,7 @@ public class TupenterModClient implements ClientModInitializer {
                 shorthands.append(doc.shorthand()).append(" = ").append(doc.canonical());
             }
         }
-        helpLine(navRow("/echo <text>", "show text only to yourself — &-colors, evaluates $...$", "/tupenter help command echo"));
+        helpLine(navRow("/echo <text>", "show text only to yourself — &-colors, evaluates $...$", "/tupenter help echo"));
         helpLine("§7Shorthands:§r " + shorthands + " · prefixes combine: #norecord #silent /say hi");
         helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
         endHelpPage();
@@ -2755,7 +2764,7 @@ public class TupenterModClient implements ClientModInitializer {
         return sendHelpPage(lines, runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
     }
 
-    /** /tupenter help command [name] — brief overview, or one command in depth. */
+    /** /tupenter help commands — the list; one command in depth comes via bare-name resolution. */
     private static int runCommandHelp(CommandContext<FabricClientCommandSource> context, String rawName) {
         String name = rawName.toLowerCase(java.util.Locale.ROOT);
         if (name.startsWith("/")) {
@@ -2764,13 +2773,13 @@ public class TupenterModClient implements ClientModInitializer {
         if (name.equals("all") || name.equals("commands")) {
             beginHelpPage();
             helpLine("§bCommands Tupenter adds (all client-side) — click one for its page:");
-            helpLine(navRow("/tupenter", "running · abort · scripts · vars · var save/delete · dump · help", "/tupenter help command tupenter"));
-            helpLine(navRow("/customcommand", "add · update · remove · list — make your own commands", "/tupenter help command customcommand"));
-            helpLine(navRow("/customfunction", "add · update · remove · list — your own $name(...)$ expression functions", "/tupenter help command customfunction"));
-            helpLine(navRow("/echo <text>", "local-only output, &-colors, evaluates $...$", "/tupenter help command echo"));
-            helpLine(navRow("/echohud <text>", "same, on the action bar (auto-fades)", "/tupenter help command echohud"));
-            helpLine(navRow("/calc <expr>", "local calculator · /$ expr $ is the top-down shorthand", "/tupenter help command calc"));
-            helpLine(navRow("/unroll <line>", "dry-run debugger", "/tupenter help command unroll"));
+            helpLine(navRow("/tupenter", "running · abort · scripts · vars · var save/delete · dump · help", "/tupenter help tupenter"));
+            helpLine(navRow("/customcommand", "add · update · remove · list — make your own commands", "/tupenter help customcommand"));
+            helpLine(navRow("/customfunction", "add · update · remove · list — your own $name(...)$ expression functions", "/tupenter help customfunction"));
+            helpLine(navRow("/echo <text>", "local-only output, &-colors, evaluates $...$", "/tupenter help echo"));
+            helpLine(navRow("/echohud <text>", "same, on the action bar (auto-fades)", "/tupenter help echohud"));
+            helpLine(navRow("/calc <expr>", "local calculator · /$ expr $ is the top-down shorthand", "/tupenter help calc"));
+            helpLine(navRow("/unroll <line>", "dry-run debugger", "/tupenter help unroll"));
             helpLine("§7Keybinds (Options → Controls):§r resend key (default R) · open config · toggle message tracking");
             helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
             endHelpPage();
@@ -2785,7 +2794,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7vars [group]§r — variables overview, or one group with live values",
                     "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
                     "§7dump [client|target] [path]§r — BROWSE entity NBT: click a branch to open it, click a value to put its $variable$ in your chat bar, breadcrumb walks back up (the data behind client.nbt.* / client.target.nbt.*)",
-                    "§7help <topic>§r — topics: expressions [math|text|logic|random|lists|world], variables, flow, prefixes, scripts, functions, command [name] — or any FUNCTION name: help blockset",
+                    "§7help <topic>§r — topics: commands, expressions [math|text|logic|random|lists|world], variables, flow, prefixes, scripts, functions · §7help <name>§r opens ANY single thing by name — a command (help echo), function (help blockset), directive (help local), or variable (help client.vehicle)",
             };
             case "customcommand" -> new String[]{
                     "§b/customcommand — make your own commands:",
@@ -2810,7 +2819,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Formats:§r &l §lbold§r§7 · &o §oitalic§r§7 · &n §nunderline§r§7 · &m §mstrike§r§7 · &k obfuscated · &r reset",
                     "§7\\&§r prints a literal & · codes work from variables too: #set $ok$ = \"&aOK\"",
                     "§7Example:§r /echo &ahp $client.health$ &7/ 20",
-                    "§7Sibling:§r /echohud — same thing, but on the action bar (above the hotbar): /tupenter help command echohud",
+                    "§7Sibling:§r /echohud — same thing, but on the action bar (above the hotbar): /tupenter help echohud",
             };
             case "echohud" -> new String[]{
                     "§b/echohud <text> — like /echo, but on the action bar (above the hotbar). Nothing is sent:",
@@ -2836,10 +2845,11 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Example: /unroll /blink 200 — see exactly what /blink would send.",
             };
             default -> new String[]{
-                    "§cNo command page for '" + rawName + "' — try: all, tupenter, customcommand, customfunction, echo, echohud, calc, unroll",
+                    "§cNo command page for '" + rawName + "' — try: " + String.join(", ", MOD_COMMAND_PAGES)
+                            + " · see them all: /tupenter help commands",
             };
         };
-        return sendHelpPage(lines, runLink("« all commands", ChatFormatting.DARK_GRAY, "/tupenter help command"));
+        return sendHelpPage(lines, runLink("« all commands", ChatFormatting.DARK_GRAY, "/tupenter help commands"));
     }
 
     /** How many list entries one dump page shows before pointing you at direct indexing. */
