@@ -1462,6 +1462,33 @@ class ScriptParserTest {
     }
 
     @Test
+    void aliasBodyHistoryPrefixSurvivesLazyExecution() {
+        // A custom command can decide its own history so you don't have to type
+        // the prefix every time. History is a whole-LINE property, and the lazy
+        // path fixes it BEFORE walking the body — so without the peek the
+        // prefix is parsed and silently discarded. Both paths must agree.
+        Map<String, String> aliases = Map.of(
+                "once", "= #norecord /say one-shot",
+                "always", "= #record /say keep me",
+                "quiet", "= #silent #norecord /say hush");
+
+        assertEquals(Script.HistoryMode.SKIP, parse("once", aliases).script().history());
+        assertEquals(Script.HistoryMode.FORCE, parse("always", aliases).script().history());
+
+        ScriptParser.Options lazy = options(aliases).withLazyExecution(true);
+        assertEquals(Script.HistoryMode.SKIP, ScriptParser.parse("once", lazy).script().history());
+        assertEquals(Script.HistoryMode.FORCE, ScriptParser.parse("always", lazy).script().history());
+        // a #silent run before it doesn't hide the history prefix behind it
+        assertEquals(Script.HistoryMode.SKIP, ScriptParser.parse("quiet", lazy).script().history());
+
+        // NARROW by design: mid-chain, one command can't claim the whole line
+        assertEquals(Script.HistoryMode.NORMAL,
+                ScriptParser.parse("say hi && /once", lazy).script().history());
+        // a plain line still isn't a script at all — nothing to attribute history to
+        assertFalse(ScriptParser.parse("say hi", lazy).changed());
+    }
+
+    @Test
     void lastHistoryPrefixWins() {
         assertEquals(Script.HistoryMode.FORCE, parse("#norecord #record say hi").script().history());
         assertEquals(Script.HistoryMode.SKIP, parse("#record #norecord say hi").script().history());

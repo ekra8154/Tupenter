@@ -351,8 +351,11 @@ public final class ScriptParser {
         // behave byte-identically to before.
         if (options.lazyExecution() && (silent || history != Script.HistoryMode.NORMAL || alwaysScript
                 || needsLazyWalk(input, options))) {
+            // A custom command's body may open with #norecord/#record, but this
+            // path fixes the history mode BEFORE the body is walked — so peek it.
             return ParseResult.script(
-                    Script.lazy(originalLine, new LazyWalk(input, silent, options), history), List.of());
+                    Script.lazy(originalLine, new LazyWalk(input, silent, options),
+                            aliasBodyHistory(input, options, history)), List.of());
         }
 
         Walker walker = new Walker(options);
@@ -378,6 +381,64 @@ public final class ScriptParser {
         walker.commitSession();
 
         return ParseResult.script(Script.ofStatements(originalLine, walker.sends, walker.history), walker.notices);
+    }
+
+    /**
+     * The history mode a bare custom-command invocation's body asks for, else
+     * {@code fallback}.
+     *
+     * <p>Every alias invocation takes the lazy path, which hands the history
+     * mode to {@link Script#lazy} before the coroutine walks anything — so the
+     * walker's own handling of a body-leading {@code #norecord}/{@code #record}
+     * set a field nobody read back: the prefix was parsed and discarded.
+     * {@code #silent} survives that because silence rides along on each emitted
+     * statement, while history is a whole-LINE property that has to be known up
+     * front. Hence this peek.
+     *
+     * <p>Deliberately NARROW — one bare invocation only. Letting a mid-chain
+     * segment claim the whole line's history would be action at a distance, and
+     * the same reasoning keeps nested aliases out of scope.
+     */
+    private static Script.HistoryMode aliasBodyHistory(String input, Options options, Script.HistoryMode fallback) {
+        List<Stmt> statements;
+        try {
+            statements = scanStatements(input, options.chainingEnabled());
+        } catch (ParseAbort abort) {
+            return fallback; // let the walker report the real error
+        }
+        if (statements.size() != 1 || !(statements.get(0) instanceof RawStmt raw)) {
+            return fallback;
+        }
+        String command = stripLeadingSlash(raw.text().trim());
+        int separator = findFirstWhitespace(command);
+        String name = (separator >= 0 ? command.substring(0, separator) : command).toLowerCase(Locale.ROOT);
+        AliasDefinition definition = options.aliases().get(name);
+        if (definition == null) {
+            return fallback;
+        }
+
+        // mirrors the walker's own prefix run, so both paths agree on last-wins
+        Script.HistoryMode history = fallback;
+        String body = definition.body().trim();
+        while (body.startsWith("#")) {
+            String word = firstWord(body).toLowerCase(Locale.ROOT);
+            if (word.equals(SILENT)) {
+                String after = body.substring(SILENT.length()).trim();
+                if (after.startsWith("(")) {
+                    break; // group form — scopes to statements, never the line
+                }
+                body = after;
+            } else if (word.equals(NORECORD)) {
+                history = Script.HistoryMode.SKIP;
+                body = body.substring(NORECORD.length()).trim();
+            } else if (word.equals(RECORD)) {
+                history = Script.HistoryMode.FORCE;
+                body = body.substring(RECORD.length()).trim();
+            } else {
+                break;
+            }
+        }
+        return history;
     }
 
     /**
