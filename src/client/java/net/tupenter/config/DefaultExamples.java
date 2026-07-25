@@ -102,6 +102,35 @@ public final class DefaultExamples {
             "restockReminder =\n"
             + "#if (world.time == 2000) (/echo &aVillager morning restock!)";
 
+    static final String NIGHT_VISION =
+            "nightVision =\n"
+            + "#if (client.keypress.g) (\n"
+            + "  #if (contains(client.effects, \"minecraft:night_vision\")) (\n"
+            + "    /effect clear @s night_vision)\n"
+            + "  #else (\n"
+            + "    /effect give @s night_vision infinite 0 true))";
+
+    // Copper detection by name rather than by tag: #minecraft:copper only exists
+    // from 26.x, so a tag here would silently match nothing on older versions.
+    // The name test also picks up copper added later (bars, chains, chests,
+    // golem statues) with no edit. Excludes the copper-named blocks that can't
+    // be waxed: the two ores, raw_copper_block, and 26.x's copper torches.
+    static final String WAXED_STATUS =
+            "waxedStatus =\n"
+            + "#setdefault waxcheck = false &&\n"
+            + "#if (client.keypress.left_bracket) (\n"
+            + "  #set waxcheck = !waxcheck &&\n"
+            + "  /echohud $waxcheck ? \"&aWax check ON\" : \"&8Wax check off\"$) &&\n"
+            + "#if (waxcheck && client.target.hit == \"block\") (\n"
+            + "  #local id = client.target.block &&\n"
+            + "  #if (replace(id, \"copper\", \"\") != id\n"
+            + "       && replace(id, \"_ore\", \"\") == id\n"
+            + "       && replace(id, \"raw_\", \"\") == id\n"
+            + "       && replace(id, \"torch\", \"\") == id) (\n"
+            + "    #local name = replace(id, \"minecraft:\", \"\") &&\n"
+            + "    #if (replace(id, \"waxed_\", \"\") == id) (/echohud &cNOT WAXED &7- $name$)\n"
+            + "    #else (/echohud &aWAXED &7- $name$)))";
+
     static final String ELYTRA_WARNING =
             "elytraWarning =\n"
             + "#if (client.slot.armor.chest.id == \"minecraft:elytra\" && client.slot.armor.chest.durability < 70) (/echohud &cElytra: &f$client.slot.armor.chest.durability$&c / 432 left)";
@@ -159,7 +188,9 @@ public final class DefaultExamples {
                 new TupenterConfig.GlobalScript("ex-despawn", ITEM_DESPAWN_TIMER),
                 new TupenterConfig.GlobalScript("ex-creeper", CREEPER_ALERT),
                 new TupenterConfig.GlobalScript("ex-restock", RESTOCK_REMINDER),
-                new TupenterConfig.GlobalScript("ex-elytra", ELYTRA_WARNING));
+                new TupenterConfig.GlobalScript("ex-elytra", ELYTRA_WARNING),
+                new TupenterConfig.GlobalScript("ex-nightvision", NIGHT_VISION),
+                new TupenterConfig.GlobalScript("ex-waxed", WAXED_STATUS));
     }
 
     /**
