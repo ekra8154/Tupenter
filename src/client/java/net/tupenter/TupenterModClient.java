@@ -1368,6 +1368,8 @@ public class TupenterModClient implements ClientModInitializer {
                                             .then(argument("name", StringArgumentType.word())
                                                     .suggests(TupenterModClient::suggestScriptNames)
                                                     .executes(context -> runSetArmedByName(context, false)))))
+                            .then(literal("reference")
+                                    .executes(TupenterModClient::runReferenceCommand))
                             .then(literal("vars")
                                     .executes(context -> runVarsCommand(context, null))
                                     .then(argument("group", StringArgumentType.word())
@@ -2189,6 +2191,31 @@ public class TupenterModClient implements ClientModInitializer {
      * subject help pages link back to their live group. Vars pages are pager
      * pages too, so inspecting doesn't pile up in chat.
      */
+    /** Every registered variable's doc — the vocabulary the reference enumerates. */
+    private static java.util.List<net.tupenter.script.VarDoc> allVariableDocs() {
+        java.util.List<net.tupenter.script.VarDoc> docs = new java.util.ArrayList<>(CLIENT_VARIABLES.docs());
+        docs.addAll(WORLD_VARIABLES.docs());
+        docs.addAll(LIFECYCLE_EVENTS.docs());
+        docs.addAll(PLAYERS_VARIABLES.docs());
+        docs.addAll(REAL_VARIABLES.docs());
+        return docs;
+    }
+
+    /**
+     * /tupenter reference — the whole scripting reference (the same text as
+     * SCRIPTING.md, generated from the same registries) onto the clipboard,
+     * for pasting anywhere you'd rather read or search it.
+     */
+    private static int runReferenceCommand(CommandContext<FabricClientCommandSource> context) {
+        String reference = net.tupenter.script.ScriptingReference.render(allVariableDocs());
+        Minecraft.getInstance().keyboardHandler.setClipboard(reference);
+        long lines = reference.lines().count();
+        context.getSource().sendFeedback(Component.literal("Copied the full scripting reference to your clipboard — "
+                        + lines + " lines, every directive, function, parameter type and variable.")
+                .withStyle(ChatFormatting.GREEN));
+        return 1;
+    }
+
     private static int runVarsCommand(CommandContext<FabricClientCommandSource> context, String group) {
         if (group != null) {
             String prefix = group.toLowerCase(java.util.Locale.ROOT) + ".";
@@ -2890,7 +2917,7 @@ public class TupenterModClient implements ClientModInitializer {
         if (name.equals("all") || name.equals("commands")) {
             beginHelpPage();
             helpLine("§bCommands Tupenter adds (all client-side) — click one for its page:");
-            helpLine(navRow("/tupenter", "running · abort · scripts · vars · var save/delete · dump · help", "/tupenter help tupenter"));
+            helpLine(navRow("/tupenter", "running · abort · scripts · vars · var save/delete · dump · reference · help", "/tupenter help tupenter"));
             helpLine(navRow("/customcommand", "add · update · remove · list — make your own commands", "/tupenter help customcommand"));
             helpLine(navRow("/customfunction", "add · update · remove · list — your own $name(...)$ expression functions", "/tupenter help customfunction"));
             helpLine(navRow("/echo <text>", "local-only output, &-colors, evaluates $...$", "/tupenter help echo"));
@@ -2911,6 +2938,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7vars [group]§r — variables overview, or one group with live values",
                     "§7var save <name>§r — make a #set variable persistent · §7var delete <name>§r — remove it",
                     "§7dump [client|target] [path]§r — BROWSE entity NBT: click a branch to open it, click a value to put its $variable$ in your chat bar, breadcrumb walks back up (the data behind client.nbt.* / client.target.nbt.*)",
+                    "§7reference§r — copy the ENTIRE scripting reference to your clipboard: every directive, function, parameter type and variable, plus the model and the gotchas. The same text as SCRIPTING.md, generated from the same registries this help reads.",
                     "§7help <topic>§r — topics: commands, expressions [math|text|logic|random|lists|world], variables, flow, prefixes, scripts, functions · §7help <name>§r opens ANY single thing by name — a command (help echo), function (help blockset), directive (help local), or variable (help client.vehicle)",
             };
             case "customcommand" -> new String[]{

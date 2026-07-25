@@ -16,6 +16,10 @@ Tupenter records what you send and replays it on a keybind (default `R`):
 
 ## The scripting layer
 
+*A tour follows. For the complete reference — every directive, function,
+parameter type and variable — see **[SCRIPTING.md](SCRIPTING.md)**, or run
+`/tupenter reference` in game to copy it to your clipboard.*
+
 Three things to learn:
 
 | Syntax | Meaning |
@@ -365,6 +369,12 @@ algorithms, and functions may recurse. A body computes a value — it can
 never send a command, which is what `/customcommand` is for.
 
 ## Reference
+
+**[SCRIPTING.md](SCRIPTING.md) is the complete reference** — the model, every
+directive, every built-in function, every parameter type, every variable, and
+the gotchas, in one file. It is generated from the same registries the in-game
+help reads, so it is never out of date. `/tupenter reference` copies the whole
+thing to your clipboard.
 
 - `/tupenter help` — in-game quick reference (every command, directive,
   function and variable documents itself, with runnable examples)
