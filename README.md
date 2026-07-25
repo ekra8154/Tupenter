@@ -35,7 +35,7 @@ A line is a command (`/...`), a directive (`#...`), or plain chat.
 ### `#wait` — pause mid-line
 
 ```
-/attribute @s minecraft:jump_strength base set 30 && #wait 2t && /tp @s $client.target_block$
+/attribute @s minecraft:jump_strength base set 30 && #wait 2t && /tp @s $client.target.blockpos$
 ```
 
 `#wait 10t / 1.5s / 3d` (ticks/seconds/days, or bare ticks) pauses the
@@ -53,7 +53,7 @@ stops everything.
 /give @s diamond $3s$                          → 192   (s = stacks of 64)
 /give @s stick $rand(1, 64)$                   → random amount, inclusive
 /summon $pick("zombie" | "skeleton" | "creeper")$    → random choice (options are expressions; quote literal text)
-/tp @s ~ ~$client.y > 60 ? 10 : 0$ ~           → conditional value
+/tp @s ~ ~$client.pos.y > 60 ? 10 : 0$ ~           → conditional value
 /say $client.health < 5 ? "help!" : "fine"$    → strings, comparisons
 ```
 
@@ -66,12 +66,12 @@ World reads: `block(x, y, z)` (or `block("x y z")`) returns the block id at
 a position, read from **your client's copy of the world** — no server round
 trip, no delay, so `#if`/`#else` handle "is that block air?" instantly
 (this is `/execute if block` folded into the expression world). Loaded
-chunks only. `$client.target_hit$` ("block"/"entity"/"miss") tells you
-whether the crosshair actually found something; `$client.target_block$` now
+chunks only. `$client.target.hit$` ("block"/"entity"/"miss") tells you
+whether the crosshair actually found something; `$client.target.blockpos$` now
 errors on a miss instead of quietly returning the ray's endpoint.
 
 ```
-#if ($client.target_hit$ == "block") (/tp @s $client.target_block$)
+#if ($client.target.hit$ == "block") (/tp @s $client.target.blockpos$)
 #else (/echo &cnothing in range)
 ```
 
@@ -94,7 +94,7 @@ registry. Either way it's a plain list, so `rand(list)`, `len(list)`,
 ternary's `:`.) A **concrete id** makes a one-element set —
 `blockset("stone")` is `[minecraft:stone]` — so a block-or-blockset
 parameter feeds the same functions either way, and `contains(list, v)`
-tests membership: `contains(blockset(#minecraft:logs), block(client.target_block))`.
+tests membership: `contains(blockset(#minecraft:logs), block(client.target.blockpos))`.
 
 `nth(list, i)` (0-based) plus the `%` operator (floored modulo) make lists
 cyclable — a custom command that steps through the wool colors, one block
@@ -106,6 +106,31 @@ woolstep = #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset("#minecraft:woo
 
 (`#set $i$ = 0` once to start it; `/tupenter var save i` keeps the counter
 across sessions.)
+
+**Vectors.** A `"x y z"` string *is* a vec3, so anything positional composes:
+`vadd` / `vsub` / `scale` / `mag` / `dist` / `normalize` / `dot` / `cross`,
+plus `vec(x, y, z)` to build one and `component(v, "x")` to read an axis.
+`client.look` is your aim as a unit vector and `client.motion` is your
+velocity, which is all the trigonometry most scripts need:
+
+```
+/summon arrow $vadd(client.eye_pos, scale(client.look, 1.5))$    → just in front of your eyes
+/echo $round(dist(client.pos, spawn))$ blocks from spawn
+```
+
+**Entities and rays.** `raycast(dist)` returns where your look hits (or
+`"miss"`), `raycast_entity(dist)` what it hits; `entities(radius[, type])`
+lists nearby UUIDs and `nearest_entity(radius[, type])` finds the closest;
+`entity(uuid, field[, fallback])` reads one — `type`, `name`, `health`,
+`pos`, `nbt.<path>`. The fallback is what keeps a tick script from faulting
+when something wanders out of range.
+
+**Is it loaded, is it running?** `block(x, y, z)` reads your client's copy
+of the world (a chunk you've never received reads as
+`"minecraft:void_air"`), while `simulated(x, y, z)` answers a different
+question: is the *server* ticking entities there? That's what governs item
+despawn, mob spawning and crop growth, and it's often a shorter radius than
+what you can see.
 
 ### Variables
 
@@ -123,19 +148,27 @@ across sessions.)
   (`$...$` always evaluates its inside, everywhere).
 - `/tupenter var save <name>` promotes one to the config file forever;
   `/tupenter var delete <name>` removes it.
-- Live client state: `$client.x$` `$client.y$` `$client.z$` (`bx/by/bz` for
-  block coords), `yaw` `pitch` `health` `food` `air` `name` `dimension`
-  `held_item` `target_block` `target_hit` `target_entity` — plus
-  environment (`biome`, `light`/`light_block`/`light_sky`, `facing`,
-  `chunk_x`/`chunk_z`), movement (`speed`, `speed_y`, `on_ground`,
-  `sneaking`, `sprinting`, `swimming`, `flying`, `gliding`), stats
-  (`max_health`, `absorption`, `armor`, `saturation`, `xp_level`,
-  `xp_progress`), hazards (`in_water`, `underwater`, `in_lava`, `on_fire`,
-  `fall_distance`), inventory (`slot`, `offhand_item`, `held_count`,
-  `held_durability`), `effects` (a list — `#foreach` it), `riding`/`vehicle`,
-  and session (`gamemode`, `ping`, `fps`, `uuid`) — and
-  `$world.difficulty$` `time` `time_total` `day` `raining` `thundering`
-  `moon_phase` `spawn` `min_y` `max_y` `key`.
+- Live client state: `$client.pos$` (+ `.x/.y/.z`), `blockpos`, `eye_pos`,
+  `look`, `yaw` `pitch` `facing` `health` `food` `air` `name` `dimension` —
+  plus environment (`biome`, `light`/`light_block`/`light_sky`,
+  `chunk_x`/`chunk_z`), movement (`motion`, `speed`, `speed_xz`, `on_ground`,
+  `sneaking`, `sprinting`, `swimming`, `flying`, `gliding`,
+  `fall_distance`), stats (`max_health`, `absorption`, `armor`,
+  `saturation`, `xp_level`, `xp_progress`), hazards (`in_water`,
+  `underwater`, `in_lava`, `on_fire`), `effects` (a list — `#foreach` it),
+  `riding`, and session (`gamemode`, `ping`, `fps`, `uuid`,
+  `selected_slot`). Computed subjects hang off their own roots:
+  `client.target.*` (`hit`, `blockpos`, `block`, `type`, `name`, `health`,
+  `uuid`), `client.held.*` / `client.offhand.*` / `client.slot.<n>.*`,
+  and `client.vehicle.*`. World state is `$world.difficulty$` `time`
+  `time_total` `day` `raining` `thundering` `moon_phase` `spawn` `min_y`
+  `max_y` `frozen` `tickrate` `key`; wall-clock is `$real.timestamp$`
+  `hour` `minute` `second` `day_of_week`. `/tupenter vars` lists every one
+  live, and `/tupenter help <name>` documents it.
+- **Events are one-tick edges** you poll, since a script *is* a loop:
+  `$client.just_died$`, `$client.just_respawned$`, `$world.just_joined$`,
+  and `$client.keypress.<key>$` each read true for exactly the tick their
+  transition happens.
 - **Everything else** via raw NBT paths: `$client.nbt.Pos.1$`,
   `$client.nbt.Inventory.0.id$`, `$target.nbt.Health$` (entity under your
   crosshair). Browse paths with `/tupenter dump [client|target] [path]`.
@@ -147,13 +180,13 @@ across sessions.)
 #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~)
 #foreach $mob$ in (zombie | skeleton | creeper) (/summon $mob$ ~ ~ ~)
 #foreach $n$ in range(1, 10) (/give @s stick $n$)
-#if ($client.y$ > 60) (/say high!) #elseif ($client.y$ > 30) (/say mid) #else (/say low)
+#if ($client.pos.y$ > 60) (/say high!) #elseif ($client.pos.y$ > 30) (/say mid) #else (/say low)
 ```
 
 Groups nest and can contain `&&` chains. Every loop is capped
 (`Max Loop Iterations`, default 100) and every script is bounded
 (`Max Commands Per Script`, default 1000; sends are throttled to
-`Max Commands Per Tick`, default 16, as kick protection). `/tupenter abort`
+`Max Commands Per Tick`, default 48, as kick protection). `/tupenter abort`
 stops everything.
 
 ### Chat-bar highlighting
@@ -180,7 +213,7 @@ click-events. Toggle: *Selectable Chat Text*.
 #silent /time set day && /weather clear          (whole line)
 #repeat 5 (#silent (/give @s stick) && /say hi)  (just part of it)
 #norecord /msg friend secret                     (kept out of resend history)
-/echo &amy y is &e$client.y$                     (shown only to you, sends nothing; &-codes color it)
+/echo &amy y is &e$client.pos.y$                     (shown only to you, sends nothing; &-codes color it)
 #unstage 2                                       (drop the newest 2 resend-history entries)
 ```
 
@@ -261,12 +294,47 @@ scripts` shows what's armed where you stand.
 
 ```
 #if ($client.nbt.Health$ < 6) (/give @s totem_of_undying)
-#if ($client.y$ > $maxy$) (/tp @s ~ $maxy$ ~)      ← update $maxy$ live with #set
+#if ($client.pos.y$ > $maxy$) (/tp @s ~ $maxy$ ~)      ← update $maxy$ live with #set
 ```
+
+Each armed line is wrapped in a loop — literally
+`#while (true) (YOUR LINE && #wait 1t)` — so it's *one* long-running script,
+not a fresh parse each tick. That's why `#set`/`#setdefault` values persist
+across ticks (a counter keeps counting) and `#wait` composes naturally. Use
+`#setdefault` for knobs you want to retune live: it creates the variable if
+absent and leaves it alone if not, so a later `#set radius = 8` typed in
+chat wins and the loop reads the new value on its next pass.
 
 **Fair warning**: an unguarded command in a tick script fires 20×/second —
 on a multiplayer server that is chat-spam machinery. Guard with `#if`, or
 play where `sendCommandFeedback` is off.
+
+### Batteries included
+
+A fresh install ships with working examples so nothing starts empty — five
+custom commands, ready to use:
+
+| Command | What it does |
+|---|---|
+| `/blink [maxdistance]` | teleport to where you're looking, stopping at walls |
+| `/ironkit` | a full set of iron gear |
+| `/portalcalc [pos] [dim]` | convert coordinates between the Nether and Overworld |
+| `/tickfreeze` | toggle `/tick freeze` |
+| `/launch <entity> [speed] [no_gravity]` | hurl an entity where you're looking |
+
+…and five tick scripts, all **disabled by default** — flip one on in
+Mod Menu → Scripts:
+
+| Script | What it does |
+|---|---|
+| `rainbowTunnel` | press `]` and fly: a spiralling wool tunnel follows your motion, lit by glowstone (every block is placed with `keep`, so it never overwrites a build) |
+| `itemDespawnTimer` | marks where you died and counts down your items' 5 minutes — pausing whenever that chunk isn't simulated |
+| `creeperAlert` | warns once, with the distance, when a creeper gets within 8 blocks (survival only) |
+| `elytraWarning` | a durability heads-up before your elytra gives out |
+| `restockReminder` | villagers restock at dawn |
+
+They double as documentation: read them to see vectors, events, timers, and
+edge-detection in practice.
 
 ### Local calculator
 
@@ -281,9 +349,25 @@ just marks the line as script.) Resending re-rolls — history keeps the
 original `/$...$` form. pick options are expressions, so picks nest:
 `/$pick(pick("say hi" | "say yo") | "say nah")$`.
 
+### Custom functions
+
+`/customfunction add <name> <params> = <expression>` defines a value function
+you call inside `$...$`, alongside the built-ins:
+
+```
+/customfunction add midpoint <a:vec3> <b:vec3> = scale(vadd(a, b), 0.5)
+/tp @s $midpoint(client.pos, spawn)$
+```
+
+Parameters are typed like custom-command ones (a `<p:vec3>` also binds
+`p.x`/`p.y`/`p.z`), bodies may use `#if`/`#for`/`#while`/`#return` for real
+algorithms, and functions may recurse. A body computes a value — it can
+never send a command, which is what `/customcommand` is for.
+
 ## Reference
 
-- `/tupenter help` — in-game quick reference
+- `/tupenter help` — in-game quick reference (every command, directive,
+  function and variable documents itself, with runnable examples)
 - `/unroll <line>` — dry-run debugger: prints what a line unrolls to,
   color-coded by kind (command/chat/echo), without sending anything
 - `/tupenter abort` — stop all running scripts
@@ -294,8 +378,14 @@ original `/$...$` form. pick options are expressions, so picks nest:
 
 ```
 gradlew build      # builds the mod + runs the unit test suite
-gradlew test       # parser/evaluator/executor tests (125+)
+gradlew test       # parser/evaluator/executor tests (600+)
 gradlew runClient  # dev-launch the client
 ```
+
+The scripting core (`net.tupenter.script`) is deliberately free of any
+Minecraft import, so the language is testable as plain Java — the suite
+covers it to 90% branches, and the help screens are generated from doc
+registries that the tests check against the real implementation, so
+documentation can't drift from behaviour without failing the build.
 
 Design notes live in [docs/SCRIPTING_DESIGN.md](docs/SCRIPTING_DESIGN.md).
