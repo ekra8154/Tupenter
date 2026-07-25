@@ -19,10 +19,11 @@ range it wasn't compiled for.
 | tupenter-26.1.x | version/26.1.x | 26.1.x | 25 |
 | tupenter-1.21.11 | version/1.21.11 | 1.21.11 | 21 |
 | tupenter-1.21.9-1.21.10 | version/1.21.9-1.21.10 | 1.21.9, 1.21.10 | 21 |
+| tupenter-1.21.6-1.21.8 | version/1.21.6-1.21.8 | 1.21.6, 1.21.7, 1.21.8 | 21 |
 
-Four branches is the floor. Every adjacent pair breaks on something the mod
-actually touches, so no two of these ranges can share a jar — each boundary
-below was confirmed by compiling, not inferred.
+Five branches covering eight Minecraft versions. Every adjacent pair breaks on
+something the mod actually touches, so no two of these ranges can share a jar —
+each boundary below was confirmed by compiling, not inferred.
 
 **Don't take another mod's branch layout as evidence about this one.**
 effortless-crafting splits 1.21.9 from 1.21.10; Tupenter doesn't need to,
@@ -44,9 +45,12 @@ so identical class bytes mean identical intermediary references.
 | 1.21.11 | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.141.3+1.21.11| 17.0.0          | 21.11.153 |
 | 1.21.10 | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.138.4+1.21.10| 16.0.0-rc.1     | 20.0.149  |
 | 1.21.9  | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.134.1+1.21.9 | 16.0.1          | 20.0.149  |
+| 1.21.8  | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.136.1+1.21.8 | 15.0.2          | 19.0.147  |
+| 1.21.7  | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.129.0+1.21.7 | 15.0.2          | 19.0.147  |
+| 1.21.6  | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.128.2+1.21.6 | 15.0.2          | 19.0.147  |
 
-The 1.21.9-1.21.10 branch pins the *top* of its range; swap those four values to
-build the other member.
+Range branches pin the *top* of their range; swap those four values to build
+another member.
 
 `fabric.mod.json` declares a loader *floor*, not the exact build version, so the
 26.2 jar says `>=0.19.2` while building against 0.19.3.
@@ -61,6 +65,16 @@ Never hand-write the predicate — one property, or the jar can lie about itself
 
 - **1.21.10 → 1.21.9**: nothing. The source compiles unchanged and the remapped
   jars are byte-identical, so one jar serves both.
+- **1.21.9 → 1.21.8**: the **input rework**. `KeyEvent`/`MouseButtonEvent`/
+  `CharacterEvent` don't exist below 1.21.9, so handlers take primitives again
+  and the predicates that hung off the events become statics on `Screen`
+  (`isCopy`, `isPaste`, `hasControlDown`, `hasShiftDown`). Twelve signatures,
+  four of them mixin injection points. Also `KeyMapping.Category` → a String
+  category (same translation key, so the lang file is unchanged),
+  `InputConstants.isKeyDown` takes the raw GLFW handle rather than the `Window`,
+  `LevelData.getRespawnData()` → `getSpawnPos()`, `EditBox.addFormatter` →
+  `setFormatter`, and `GameProfile.name()` → `getName()` (it became a record in
+  1.21.9's authlib).
 - **1.21.10 → 1.21.11**: Mojang's registry rename pass. `ResourceLocation` →
   `Identifier`, `ResourceLocationArgument` → `IdentifierArgument`,
   `ResourceKey.location()` → `identifier()`. Note `TagKey.location()` was **not**
@@ -112,6 +126,11 @@ range**. Specific things to check:
   highlight, `ScriptEditBox`'s syntax overdraw, all three Mod Menu list entries,
   and the HUD panel. These compile and the mixins apply, but pixel placement was
   not verified.
+- **1.21.6–1.21.8**: everything input-driven, since that whole layer was
+  rewritten by hand — chat click-drag selection and Ctrl+C, Ctrl+Space send,
+  Ctrl+scroll history, auto-close brackets in the chat bar, and the script
+  editor's Tab/Enter/undo/redo handling. Also check the keybind category shows
+  as "Tupenter" in Controls, and that `world.spawn` reads correctly.
 - **26.x**: `world.time` / `world.day`, which now read `getDefaultClockTime()`
   (the per-dimension clock) rather than the old single `dayTime` field. Vanilla
   syncs one value across dimensions, so this should be identical — worth
@@ -125,20 +144,12 @@ Compiled the 1.21.10 source against each older version in a throwaway worktree.
 Nothing below is built yet — this is scope, recorded so it doesn't have to be
 rediscovered.
 
-| Target | Errors | Files | New breaks |
+| Target | Errors | Files | Status |
 |---|---|---|---|
-| 1.21.9 | 0 | 0 | none — already merged into the 1.21.9-1.21.10 branch |
-| 1.21.6–1.21.8 | 26 | 6 | input rework |
-| 1.21.5 | 36 | 9 | the above, plus three more |
+| 1.21.9 | 0 | 0 | **done** — merged into the 1.21.9-1.21.10 branch |
+| 1.21.6–1.21.8 | 26 | 6 | **done** — its own branch |
+| 1.21.5 | 36 | 9 | not built |
 
-1.21.6 and 1.21.8 produce **identical** error sets, so those three versions are
-one range.
-
-- **1.21.9 → 1.21.8**: `KeyEvent`/`MouseButtonEvent`/`CharacterEvent` don't exist
-  (12 signatures, 4 of them mixin injection points); `KeyMapping.Category` → the
-  old String category; `InputConstants.isKeyDown` takes a `long` not a `Window`;
-  `LevelData.getRespawnData()` missing (that's `world.spawn` and `.x/.y/.z`);
-  `EditBox.addFormatter` → the older `setFormatter`.
 - **1.21.6 → 1.21.5**: `graphics.pose()` is a `PoseStack`, not a
   `Matrix3x2fStack` — `pushMatrix/popMatrix` → `pushPose/popPose` with different
   arity, which the chat-selection highlight depends on. `TagValueOutput` doesn't
