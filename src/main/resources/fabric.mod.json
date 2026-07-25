@@ -7,6 +7,11 @@
 	"authors": [
 		"ekra8154"
 	],
+	"contact": {
+		"homepage": "https://github.com/ekra8154/Tupenter",
+		"sources": "https://github.com/ekra8154/Tupenter",
+		"issues": "https://github.com/ekra8154/Tupenter/issues"
+	},
 	"license": "MIT",
 	"icon": "assets/tupenter/icon.png",
 	"environment": "client",
