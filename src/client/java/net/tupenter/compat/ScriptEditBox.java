@@ -27,8 +27,7 @@ import org.lwjgl.glfw.GLFW;
  */
 public class ScriptEditBox extends MultiLineEditBox {
 
-    private static final int TEXT_COLOR = -2039584;   // vanilla defaults
-    private static final int CURSOR_COLOR = -3092272;
+    private static final int TEXT_COLOR = -2039584;   // vanilla default
 
     private final Font editorFont;
     private final boolean definition;
@@ -43,8 +42,12 @@ public class ScriptEditBox extends MultiLineEditBox {
     }
 
     public ScriptEditBox(Font font, int width, int height, boolean definition, boolean perLine) {
-        super(font, 0, 0, width, height, CommonComponents.EMPTY, CommonComponents.EMPTY,
-                TEXT_COLOR, true, CURSOR_COLOR, true, true);
+        // 1.21.6 added the styling arguments (text colour, cursor colour, and the
+        // background/decoration flags) to this constructor. At 1.21.5 they aren't
+        // configurable — but the values we pass on newer versions ARE the vanilla
+        // defaults, so the box looks the same either way. TEXT_COLOR stays: the
+        // syntax overdraw below still draws with it.
+        super(font, 0, 0, width, height, CommonComponents.EMPTY, CommonComponents.EMPTY);
         this.editorFont = font;
         this.definition = definition;
         this.perLine = perLine;

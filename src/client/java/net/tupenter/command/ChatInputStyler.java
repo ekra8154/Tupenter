@@ -1048,17 +1048,18 @@ public final class ChatInputStyler {
         if (connection == null) {
             return;
         }
-        CommandDispatcher<ClientSuggestionProvider> dispatcher = connection.getCommands();
+        // 1.21.6 narrowed this dispatcher's type to ClientSuggestionProvider
+        CommandDispatcher<net.minecraft.commands.SharedSuggestionProvider> dispatcher = connection.getCommands();
         ClientSuggestionProvider source = connection.getSuggestionsProvider();
 
         // parse the segment in full-line coordinates: reader over the line
         // truncated at the segment end, cursor just past the segment's '/'
         StringReader reader = new StringReader(full.substring(0, trimmedEnd(full, segment)));
         reader.setCursor(segment.textStart() + 1);
-        ParseResults<ClientSuggestionProvider> parse = dispatcher.parse(reader, source);
+        ParseResults<net.minecraft.commands.SharedSuggestionProvider> parse = dispatcher.parse(reader, source);
 
         int argIndex = 0;
-        for (ParsedCommandNode<ClientSuggestionProvider> node : parse.getContext().getLastChild().getNodes()) {
+        for (ParsedCommandNode<net.minecraft.commands.SharedSuggestionProvider> node : parse.getContext().getLastChild().getNodes()) {
             if (node.getNode() instanceof ArgumentCommandNode<?, ?>) {
                 StringRange range = node.getRange();
                 fill(styles, range.getStart(), Math.min(range.getEnd(), segment.end()),

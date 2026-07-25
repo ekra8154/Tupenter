@@ -276,9 +276,13 @@ public final class ChatSelection {
         int visible = Math.min(lines.size() - scroll, chat.getLinesPerPage());
         int chatBottom = (int) Math.floor((graphics.guiHeight() - 40) / scale);
 
-        graphics.pose().pushMatrix();
-        graphics.pose().scale((float) scale, (float) scale);
-        graphics.pose().translate(4.0f, 0.0f);
+        // 1.21.6 swapped GuiGraphics.pose() from the 3D PoseStack to a 2D
+        // Matrix3x2fStack. Same transform, older spelling: push/popPose, and the
+        // scale/translate calls take a z component (identity here — this is flat
+        // GUI space).
+        graphics.pose().pushPose();
+        graphics.pose().scale((float) scale, (float) scale, 1.0f);
+        graphics.pose().translate(4.0f, 0.0f, 0.0f);
 
         for (int row = 0; row < visible; row++) {
             int index = row + scroll;
@@ -298,6 +302,6 @@ public final class ChatSelection {
             }
         }
 
-        graphics.pose().popMatrix();
+        graphics.pose().popPose();
     }
 }

@@ -1,7 +1,10 @@
 accessWidener v2 named
 
-# ScriptEditBox (syntax-highlighted script editor) extends MultiLineEditBox:
-# the constructor is package-private and the text field drives line layout
-accessible method net/minecraft/client/gui/components/MultiLineEditBox <init> (Lnet/minecraft/client/gui/Font;IIIILnet/minecraft/network/chat/Component;Lnet/minecraft/network/chat/Component;IZIZZ)V
+# ScriptEditBox (syntax-highlighted script editor) extends MultiLineEditBox and
+# drives line layout through the text field.
+#
+# No constructor entry here: 1.21.6 made the constructor package-private (and
+# added the styling arguments), but at 1.21.5 the 7-argument form is already
+# public, so widening it would name a descriptor that doesn't exist.
 accessible field net/minecraft/client/gui/components/MultiLineEditBox textField Lnet/minecraft/client/gui/components/MultilineTextField;
 accessible class net/minecraft/client/gui/components/MultilineTextField$StringView

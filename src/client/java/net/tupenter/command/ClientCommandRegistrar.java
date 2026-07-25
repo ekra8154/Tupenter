@@ -286,17 +286,24 @@ public final class ClientCommandRegistrar {
         installedServerNodes.clear();
     }
 
-    /** Suggestion-only tree for the vanilla command tree (drives tab-complete). */
-    private static LiteralArgumentBuilder<ClientSuggestionProvider> buildSuggestionNode(String name, AliasDefinition definition, CommandBuildContext buildContext) {
-        LiteralArgumentBuilder<ClientSuggestionProvider> node = LiteralArgumentBuilder.literal(name);
+    /**
+     * Suggestion-only tree for the vanilla command tree (drives tab-complete).
+     *
+     * <p>Typed to SharedSuggestionProvider because that is what
+     * ClientPacketListener.getCommands() is parameterised with at 1.21.5; 1.21.6
+     * narrowed it to ClientSuggestionProvider. The tree itself is generic, so
+     * only the type argument differs.
+     */
+    private static LiteralArgumentBuilder<SharedSuggestionProvider> buildSuggestionNode(String name, AliasDefinition definition, CommandBuildContext buildContext) {
+        LiteralArgumentBuilder<SharedSuggestionProvider> node = LiteralArgumentBuilder.literal(name);
 
         if (definition.params().isEmpty()) {
-            node.then(RequiredArgumentBuilder.<ClientSuggestionProvider, String>argument("args", StringArgumentType.greedyString()));
+            node.then(RequiredArgumentBuilder.<SharedSuggestionProvider, String>argument("args", StringArgumentType.greedyString()));
             return node;
         }
 
-        for (ArgumentBuilder<ClientSuggestionProvider, ?> branch
-                : ClientCommandRegistrar.<ClientSuggestionProvider>paramBranches(definition, buildContext, 0, null, null)) {
+        for (ArgumentBuilder<SharedSuggestionProvider, ?> branch
+                : ClientCommandRegistrar.<SharedSuggestionProvider>paramBranches(definition, buildContext, 0, null, null)) {
             node.then(branch);
         }
         return node;
