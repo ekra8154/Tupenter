@@ -389,3 +389,8 @@ registries that the tests check against the real implementation, so
 documentation can't drift from behaviour without failing the build.
 
 Design notes live in [docs/SCRIPTING_DESIGN.md](docs/SCRIPTING_DESIGN.md).
+
+## License
+
+[MIT](LICENSE) — use it, fork it, ship it in a modpack; just keep the
+copyright notice.

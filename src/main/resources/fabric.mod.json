@@ -5,13 +5,9 @@
 	"name": "Tupenter",
 	"description": "Resend chat and commands on a keybind, and script them: && chaining, inline math, variables, loops, conditionals, and custom commands with real autocomplete — all client-side.",
 	"authors": [
-		"Me!"
+		"ekra8154"
 	],
-	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
-	},
-	"license": "CC0-1.0",
+	"license": "MIT",
 	"icon": "assets/tupenter/icon.png",
 	"environment": "client",
 	"entrypoints": {
