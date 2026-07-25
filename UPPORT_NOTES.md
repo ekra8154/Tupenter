@@ -20,8 +20,9 @@ range it wasn't compiled for.
 | tupenter-1.21.11 | version/1.21.11 | 1.21.11 | 21 |
 | tupenter-1.21.9-1.21.10 | version/1.21.9-1.21.10 | 1.21.9, 1.21.10 | 21 |
 | tupenter-1.21.6-1.21.8 | version/1.21.6-1.21.8 | 1.21.6, 1.21.7, 1.21.8 | 21 |
+| tupenter-1.21.5 | version/1.21.5 | 1.21.5 | 21 |
 
-Five branches covering eight Minecraft versions. Every adjacent pair breaks on
+Six branches covering nine Minecraft versions. Every adjacent pair breaks on
 something the mod actually touches, so no two of these ranges can share a jar —
 each boundary below was confirmed by compiling, not inferred.
 
@@ -48,6 +49,7 @@ so identical class bytes mean identical intermediary references.
 | 1.21.8  | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.136.1+1.21.8 | 15.0.2          | 19.0.147  |
 | 1.21.7  | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.129.0+1.21.7 | 15.0.2          | 19.0.147  |
 | 1.21.6  | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.128.2+1.21.6 | 15.0.2          | 19.0.147  |
+| 1.21.5  | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.128.2+1.21.5 | 14.0.2          | 18.0.145  |
 
 Range branches pin the *top* of their range; swap those four values to build
 another member.
@@ -82,6 +84,16 @@ Never hand-write the predicate — one property, or the jar can lie about itself
   removed (moon moved to a data-driven timeline with a `MoonPhase` enum that has
   no current-phase lookup). `ChatComponent.getScale/getWidth` went public →
   private.
+- **1.21.6 → 1.21.5**: `GuiGraphics.pose()` is a `PoseStack`, not the 2D
+  `Matrix3x2fStack` — `pushMatrix/popMatrix` → `pushPose/popPose`, and
+  `scale`/`translate` regain a z component. Entity NBT predates the `ValueOutput`
+  abstraction: `saveWithoutId(CompoundTag)` writes into the tag and returns it,
+  so `TagValueOutput`/`ProblemReporter` disappear. `MultiLineEditBox`'s
+  constructor takes 7 arguments instead of 12 and is already public, so the
+  styling arguments go (they were the vanilla defaults anyway) **and the access
+  widener drops its `<init>` entry** — leaving it in would name a descriptor that
+  doesn't exist. `ClientPacketListener.getCommands()` is parameterised with
+  `SharedSuggestionProvider`; 1.21.6 narrowed it to `ClientSuggestionProvider`.
 - **1.21.11 → 26.1**: the toolchain and GUI rewrite. Java 21 → 25; loom 1.16
   makes Mojang mappings the default, which drops `modImplementation` entirely and
   requires the access widener to declare `official` rather than `named`. GUI goes
@@ -110,7 +122,9 @@ injection failures**.
 Separately, every mixin target was **javap-checked against each version's jar** —
 all `@Inject`/`@Accessor`/`@Invoker` members, the four `@Redirect` INVOKE call
 sites *inside* `CommandSuggestions.updateCommandInfo`, and the
-`MultiLineEditBox.<init>` access-widener descriptor. This matters because those
+`MultiLineEditBox.<init>` access-widener descriptor (which the 1.21.5 branch
+deliberately no longer widens — loom's own `validateAccessWidener` covers it
+there). This matters because those
 are runtime failures, not compile errors: a stale `@Redirect` builds fine and
 then hard-crashes the game at launch.
 
@@ -126,6 +140,9 @@ range**. Specific things to check:
   highlight, `ScriptEditBox`'s syntax overdraw, all three Mod Menu list entries,
   and the HUD panel. These compile and the mixins apply, but pixel placement was
   not verified.
+- **1.21.5**: entity NBT — `entity(...)` and `client.nbt.*` — since that path
+  changed rather than just its signature. Also the chat-selection highlight
+  (the transform was rewritten) and the Mod Menu script editor's appearance.
 - **1.21.6–1.21.8**: everything input-driven, since that whole layer was
   rewritten by hand — chat click-drag selection and Ctrl+C, Ctrl+Space send,
   Ctrl+scroll history, auto-close brackets in the chat bar, and the script
@@ -144,25 +161,22 @@ Compiled the 1.21.10 source against each older version in a throwaway worktree.
 Nothing below is built yet — this is scope, recorded so it doesn't have to be
 rediscovered.
 
-| Target | Errors | Files | Status |
-|---|---|---|---|
-| 1.21.9 | 0 | 0 | **done** — merged into the 1.21.9-1.21.10 branch |
-| 1.21.6–1.21.8 | 26 | 6 | **done** — its own branch |
-| 1.21.5 | 36 | 9 | not built |
+## How far down this could go
 
-- **1.21.6 → 1.21.5**: `graphics.pose()` is a `PoseStack`, not a
-  `Matrix3x2fStack` — `pushMatrix/popMatrix` → `pushPose/popPose` with different
-  arity, which the chat-selection highlight depends on. `TagValueOutput` doesn't
-  exist, so entity NBT reads go back to the old save API — that's `entity(...)`
-  and `client.nbt.*`, real behaviour rather than a signature swap. The Fabric
-  client command API returns a different node type. And the `MultiLineEditBox`
-  constructor takes 7 arguments instead of 12 (and is already public), so the
-  access-widener entry becomes invalid and `ScriptEditBox` loses the parameters
-  that set its text and cursor colours.
+1.21.5 is the current floor, and it was chosen rather than forced — nothing
+below it has been probed. The measured survey that produced these branches
+stopped there.
 
-The fragile part came back clean: `ChatComponent`'s private fields, `ChatScreen`'s
-hooks and all four `@Redirect` sites inside `updateCommandInfo` are intact all
-the way down to 1.21.5. The only structural casualty is that constructor.
+The fragile part held all the way down: `ChatComponent`'s private fields,
+`ChatScreen`'s hooks and all four `@Redirect` sites inside `updateCommandInfo`
+are intact across every version from 1.21.5 to 26.2. The only structural
+casualty in the whole descent was the `MultiLineEditBox` constructor.
+
+Per effortless-crafting's notes the next boundaries are the inventory equipment
+refactor at 1.21.4 and the recipe-display system at 1.21.2 — but that is a
+*hypothesis about a different mod*, not a finding about this one. Tupenter reads
+no recipes, and its slot access may or may not care. Compile against 1.21.4 to
+find out.
 
 ## Open items
 
