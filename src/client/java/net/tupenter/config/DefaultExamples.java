@@ -83,9 +83,26 @@ public final class DefaultExamples {
     static final String IRONKIT =
             "ironkit \"a full set of iron gear\" = /give @s minecraft:iron_sword && /give @s minecraft:iron_pickaxe && /give @s minecraft:iron_axe && /give @s minecraft:shield && /give @s minecraft:iron_shovel && /give @s minecraft:iron_hoe && /give @s minecraft:iron_boots && /give @s minecraft:iron_leggings && /give @s minecraft:iron_chestplate && /give @s minecraft:iron_helmet";
 
+    static final String PORTALCALC =
+            "portalcalc <p:blockpos=~ ~ ~> <dim:to_overworld,to_nether=$client.dimension == \"minecraft:the_nether\" ? \"to_overworld\" : \"to_nether\"$> = /echo $dim$: $floor(dim == \"to_nether\" ? p.x / 8 : p.x * 8)$ $p.y$ $floor(dim == \"to_nether\" ? p.z / 8 : p.z * 8)$";
+
+    static final String TICKFREEZE =
+            "tickfreeze \"toggle time freeze\" = #if (world.frozen) (/tick unfreeze) #else (/tick freeze)";
+
+    static final String LAUNCH =
+            "launch <entity:entity> <speed:float=5.0> <no_gravity:bool=false> \"Launch an entity where you're looking, at <speed> blocks/sec\" =\n"
+            + "  #local e = entity\n"
+            + "  && #local mv = scale(client.look, speed)\n"
+            + "  && #local pos = vadd(client.eye_pos, scale(client.look, 1.5))\n"
+            + "  && #local ms = component(mv, \"x\") + \"d,\" + component(mv, \"y\") + \"d,\" + component(mv, \"z\") + \"d\"\n"
+            + "  && #local n = no_gravity ? \",NoGravity:1b\" : \"\"\n"
+            + "  && #if (e == \"minecraft:fireball\") (/summon $e$ $pos$ {Motion:[$ms$],ExplosionPower:50b$n$})\n"
+            + "     #elseif (e == \"minecraft:ender_pearl\") (/summon $e$ $pos$ {Motion:[$ms$],Owner:$client.uuid_nbt$$n$})\n"
+            + "     #else (/summon $e$ $pos$ {Motion:[$ms$]$n$})";
+
     /** Custom-command definitions, in stored "name <decls> \"desc\" = body" form. */
     public static List<String> aliases() {
-        return List.of(BLINK, IRONKIT);
+        return List.of(BLINK, IRONKIT, PORTALCALC, TICKFREEZE, LAUNCH);
     }
 
     /** Tick-script definitions, each "name = body". Fixed ids so a reseed is stable. */

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -78,19 +79,25 @@ class DefaultExamplesTest {
     }
 
     @Test
-    void bothSeededCommandsParseWithTheirExpectedSignatures() {
+    void everySeededCommandParsesWithItsExpectedSignature() {
         TupenterConfig.INSTANCE.aliases = new java.util.ArrayList<>(DefaultExamples.aliases());
         Map<String, AliasDefinition> parsed = CommandAliasManager.getAliasMap();
 
-        assertTrue(parsed.containsKey("blink"), "blink parsed: " + parsed.keySet());
-        assertEquals(1, parsed.get("blink").params().size(), "blink takes one optional distance");
-        assertTrue(parsed.containsKey("ironkit"), "ironkit parsed: " + parsed.keySet());
-        assertEquals(0, parsed.get("ironkit").params().size(), "ironkit takes no params");
+        // all five come back — a body that failed to parse would be silently
+        // dropped by parseDefinition and show up as a missing key here
+        assertEquals(Set.of("blink", "ironkit", "portalcalc", "tickfreeze", "launch"),
+                parsed.keySet(), "every seeded command parsed");
+
+        assertEquals(1, parsed.get("blink").params().size(), "blink: optional distance");
+        assertEquals(0, parsed.get("ironkit").params().size(), "ironkit: no params");
+        assertEquals(2, parsed.get("portalcalc").params().size(), "portalcalc: pos + dimension");
+        assertEquals(0, parsed.get("tickfreeze").params().size(), "tickfreeze: no params");
+        assertEquals(3, parsed.get("launch").params().size(), "launch: entity, speed, no_gravity");
     }
 
     @Test
     void theCustomCommandNamesCollideWithNothing() {
-        for (String name : new String[]{"blink", "ironkit"}) {
+        for (String name : new String[]{"blink", "ironkit", "portalcalc", "tickfreeze", "launch"}) {
             assertNull(CommandAliasManager.vanillaShadowWarning(name),
                     name + " must not shadow a vanilla command");
             assertTrue(!CommandAliasManager.MOD_COMMANDS.contains(name),
