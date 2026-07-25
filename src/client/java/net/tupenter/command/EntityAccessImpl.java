@@ -4,7 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.phys.AABB;
@@ -163,7 +163,7 @@ public final class EntityAccessImpl implements EntityAccess {
         if (trimmed.isEmpty()) {
             return null;
         }
-        ResourceLocation id = ResourceLocation.tryParse(trimmed);
+        Identifier id = Identifier.tryParse(trimmed);
         if (id == null) {
             throw new ExpressionException("entities/nearest_entity: '" + type + "' isn't a valid entity id");
         }

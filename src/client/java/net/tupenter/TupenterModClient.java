@@ -27,7 +27,7 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.tupenter.command.CommandAliasManager;
 import net.tupenter.command.CustomFunctionManager;
 import net.tupenter.config.TupenterConfig;
@@ -983,7 +983,7 @@ public class TupenterModClient implements ClientModInitializer {
         @Override
         public String lookup(TagKind kind, String id) {
             net.minecraft.client.multiplayer.ClientPacketListener connection = Minecraft.getInstance().getConnection();
-            net.minecraft.resources.ResourceLocation location = net.minecraft.resources.ResourceLocation.tryParse(id);
+            net.minecraft.resources.Identifier location = net.minecraft.resources.Identifier.tryParse(id);
             if (connection == null || location == null) {
                 return null;
             }
@@ -1010,17 +1010,17 @@ public class TupenterModClient implements ClientModInitializer {
         net.minecraft.core.Registry<T> registry = connection.registryAccess().lookupOrThrow(registryKey);
         java.util.List<String> ids = new java.util.ArrayList<>();
         if (tagId == null) {
-            for (net.minecraft.resources.ResourceLocation id : registry.keySet()) {
+            for (net.minecraft.resources.Identifier id : registry.keySet()) {
                 ids.add(id.toString());
             }
             return ids;
         }
-        net.minecraft.resources.ResourceLocation location = net.minecraft.resources.ResourceLocation.tryParse(tagId);
+        net.minecraft.resources.Identifier location = net.minecraft.resources.Identifier.tryParse(tagId);
         if (location == null) {
             return ids;
         }
         for (var holder : registry.getTagOrEmpty(net.minecraft.tags.TagKey.create(registryKey, location))) {
-            holder.unwrapKey().ifPresent(key -> ids.add(key.location().toString()));
+            holder.unwrapKey().ifPresent(key -> ids.add(key.identifier().toString()));
         }
         return ids;
     }
@@ -1310,7 +1310,7 @@ public class TupenterModClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
-		KeyMapping.Category tupenterCategory = new KeyMapping.Category(ResourceLocation.fromNamespaceAndPath("tupenter", "general"));
+		KeyMapping.Category tupenterCategory = new KeyMapping.Category(Identifier.fromNamespaceAndPath("tupenter", "general"));
 
 		resendKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 			"key.tupenter.resend",

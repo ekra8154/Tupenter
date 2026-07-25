@@ -73,11 +73,11 @@ public final class ClientVariableProvider implements VariableProvider {
         register(POSITION, "client.eye_pos.x", "the x of client.eye_pos (full precision)", player -> Value.ofNumber(player.getEyePosition().x));
         register(POSITION, "client.eye_pos.y", "the y of client.eye_pos (full precision)", player -> Value.ofNumber(player.getEyePosition().y));
         register(POSITION, "client.eye_pos.z", "the z of client.eye_pos (full precision)", player -> Value.ofNumber(player.getEyePosition().z));
-        register(POSITION, "client.dimension", "the dimension you're in", player -> Value.of(player.level().dimension().location().toString()));
+        register(POSITION, "client.dimension", "the dimension you're in", player -> Value.of(player.level().dimension().identifier().toString()));
 
         // position context
         register(ENVIRONMENT, "client.biome", "the biome at your feet", player -> player.level().getBiome(player.blockPosition()).unwrapKey()
-                .map(key -> Value.of(key.location().toString()))
+                .map(key -> Value.of(key.identifier().toString()))
                 .orElseThrow(() -> new ExpressionException("client.biome: unregistered biome")));
         register(ENVIRONMENT, "client.light", "combined light level where you stand, 0-15", player -> Value.ofNumber(player.level().getMaxLocalRawBrightness(player.blockPosition())));
         register(ENVIRONMENT, "client.light_block", "block-light only (torches, lava, ...)", player -> Value.ofNumber(
@@ -127,7 +127,7 @@ public final class ClientVariableProvider implements VariableProvider {
         register(VITALS, "client.effects", "your active effect ids — a LIST for #foreach", player -> {
             java.util.List<Value> ids = new java.util.ArrayList<>();
             for (net.minecraft.world.effect.MobEffectInstance effect : player.getActiveEffects()) {
-                effect.getEffect().unwrapKey().ifPresent(key -> ids.add(Value.of(key.location().toString())));
+                effect.getEffect().unwrapKey().ifPresent(key -> ids.add(Value.of(key.identifier().toString())));
             }
             return new Value.ListValue(java.util.List.copyOf(ids));
         });

@@ -2,6 +2,7 @@ package net.tupenter.command;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.level.MoonPhase;
 import net.tupenter.script.ExpressionException;
 import net.tupenter.script.Value;
 import net.tupenter.script.VarDoc;
@@ -34,8 +35,8 @@ public final class WorldVariableProvider implements VariableProvider {
         register("world.day", "the day count", level -> Value.ofNumber(level.getDayTime() / 24000L));
         register("world.raining", "raining?", level -> Value.of(level.isRaining()));
         register("world.thundering", "thundering?", level -> Value.of(level.isThundering()));
-        register("world.moon_phase", "the moon phase, 0-7 (0 = full)", level -> Value.ofNumber(level.getMoonPhase()));
-        register("world.dimension", "this world's dimension id", level -> Value.of(level.dimension().location().toString()));
+        register("world.moon_phase", "the moon phase, 0-7 (0 = full)", level -> Value.ofNumber(moonPhase(level)));
+        register("world.dimension", "this world's dimension id", level -> Value.of(level.dimension().identifier().toString()));
         register("world.spawn", "the world spawn — \"x y z\" (+ .x/.y/.z)", level -> {
             net.minecraft.core.BlockPos pos = level.getLevelData().getRespawnData().pos();
             return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
@@ -63,6 +64,18 @@ public final class WorldVariableProvider implements VariableProvider {
 
     private void register(String name, String blurb, Function<ClientLevel, Value> reader) {
         variables.put(name, new Entry(blurb, reader));
+    }
+
+    /**
+     * 1.21.11 replaced {@code Level.getMoonPhase()} with a data-driven timeline
+     * and a {@link MoonPhase} enum that has no "what phase is it now" lookup — so
+     * the arithmetic vanilla used to do lives here instead. This reproduces the
+     * old {@code DimensionType.moonPhase(long)} exactly, double-modulo and all,
+     * so a negative day time still yields 0-7 rather than a negative index.
+     */
+    private static int moonPhase(ClientLevel level) {
+        long phase = level.getDayTime() / MoonPhase.PHASE_LENGTH;
+        return (int) ((phase % MoonPhase.COUNT + MoonPhase.COUNT) % MoonPhase.COUNT);
     }
 
     /** Every variable's doc, in registration order — the world subject page renders from this. */

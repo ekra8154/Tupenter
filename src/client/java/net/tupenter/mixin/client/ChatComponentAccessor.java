@@ -31,4 +31,13 @@ public interface ChatComponentAccessor {
 
     @Invoker("getLineHeight")
     int tupenter$lineHeight();
+
+    // getScale/getWidth were public through 1.21.10 and went private at 1.21.11.
+    // Reaching them through the accessor works on both, so the call sites don't
+    // have to care which version they're compiled against.
+    @Invoker("getScale")
+    double tupenter$scale();
+
+    @Invoker("getWidth")
+    int tupenter$width();
 }

@@ -118,7 +118,7 @@ public final class ChatSelection {
             return null;
         }
 
-        double scale = chat.getScale();
+        double scale = access.tupenter$scale();
         int lineHeight = access.tupenter$lineHeight();
         double localX = screenX / scale - 4.0;
         // rows counted UP from the bottom edge at guiHeight - 40, in line units
@@ -133,7 +133,7 @@ public final class ChatSelection {
             if (row < 0 || row >= visible) {
                 return null;
             }
-            int width = (int) Math.floor(chat.getWidth() / scale);
+            int width = (int) Math.floor(access.tupenter$width() / scale);
             if (localX < -4 || localX > width) {
                 return null;
             }
@@ -270,7 +270,7 @@ public final class ChatSelection {
             return;
         }
 
-        double scale = chat.getScale();
+        double scale = access.tupenter$scale();
         int lineHeight = access.tupenter$lineHeight();
         int scroll = access.tupenter$scrollPos();
         int visible = Math.min(lines.size() - scroll, chat.getLinesPerPage());

@@ -24,8 +24,8 @@ import net.minecraft.commands.arguments.AngleArgument;
 import net.minecraft.commands.arguments.ColorArgument;
 import net.minecraft.commands.arguments.DimensionArgument;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.IdentifierArgument;
 import net.minecraft.commands.arguments.ResourceArgument;
-import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.commands.arguments.TimeArgument;
 import net.minecraft.commands.arguments.blocks.BlockPredicateArgument;
 import net.minecraft.commands.arguments.blocks.BlockStateArgument;
@@ -172,7 +172,7 @@ public final class ClientCommandRegistrar {
             case TIME -> TimeArgument.time();
             case DIMENSION -> DimensionArgument.dimension(); // suggests the dimensions the client knows
             case COLOR -> ColorArgument.color();
-            case ID -> ResourceLocationArgument.id();
+            case ID -> IdentifierArgument.id();
             case ITEM -> ItemArgument.item(buildContext);      // registry tab-complete incl. [components]
             case BLOCK -> BlockStateArgument.block(buildContext); // registry tab-complete incl. [states]
             case ITEMSET -> ItemPredicateArgument.itemPredicate(buildContext);      // item OR #tag
