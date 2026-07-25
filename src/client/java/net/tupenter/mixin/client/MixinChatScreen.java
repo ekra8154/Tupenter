@@ -4,8 +4,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.tupenter.command.ChatSelection;
 import org.spongepowered.asm.mixin.Mixin;
@@ -55,9 +53,9 @@ public abstract class MixinChatScreen extends Screen {
 
     private static boolean tupenter$ctrlHeld() {
         com.mojang.blaze3d.platform.Window window = net.minecraft.client.Minecraft.getInstance().getWindow();
-        return window != null && (com.mojang.blaze3d.platform.InputConstants.isKeyDown(window,
+        return window != null && (com.mojang.blaze3d.platform.InputConstants.isKeyDown(window.getWindow(),
                         com.mojang.blaze3d.platform.InputConstants.KEY_LCONTROL)
-                || com.mojang.blaze3d.platform.InputConstants.isKeyDown(window,
+                || com.mojang.blaze3d.platform.InputConstants.isKeyDown(window.getWindow(),
                         com.mojang.blaze3d.platform.InputConstants.KEY_RCONTROL));
     }
 
@@ -113,32 +111,35 @@ public abstract class MixinChatScreen extends Screen {
         net.tupenter.TupenterModClient.endUserDrivenSend();
     }
 
+    // Pre-1.21.9 input: mouse and key handlers take primitives, and the
+    // convenience predicates that hung off the event objects are statics on
+    // Screen instead.
     @Inject(method = "mouseClicked", at = @At("HEAD"))
-    private void tupenter$selectionStart(MouseButtonEvent event, boolean doubleClick, CallbackInfoReturnable<Boolean> cir) {
-        if (event.button() == 0) {
-            ChatSelection.onMouseDown(this.minecraft, event.x(), event.y());
+    private void tupenter$selectionStart(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
+        if (button == 0) {
+            ChatSelection.onMouseDown(this.minecraft, mouseX, mouseY);
         }
     }
 
     @Override
-    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-        if (event.button() == 0) {
-            ChatSelection.onMouseDrag(this.minecraft, event.x(), event.y());
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (button == 0) {
+            ChatSelection.onMouseDrag(this.minecraft, mouseX, mouseY);
         }
-        return super.mouseDragged(event, dragX, dragY);
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     @Override
-    public boolean mouseReleased(MouseButtonEvent event) {
-        if (event.button() == 0) {
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0) {
             ChatSelection.onMouseUp();
         }
-        return super.mouseReleased(event);
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
-    private void tupenter$copySelection(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
-        if (event.isCopy() && ChatSelection.copyToClipboard(this.minecraft)) {
+    private void tupenter$copySelection(int key, int scancode, int modifiers, CallbackInfoReturnable<Boolean> cir) {
+        if (net.minecraft.client.gui.screens.Screen.isCopy(key) && ChatSelection.copyToClipboard(this.minecraft)) {
             cir.setReturnValue(true);
         }
     }
@@ -150,9 +151,10 @@ public abstract class MixinChatScreen extends Screen {
      * keeps the space out of the box. Off falls straight through to a space.
      */
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
-    private void tupenter$ctrlSpaceSend(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+    private void tupenter$ctrlSpaceSend(int key, int scancode, int modifiers, CallbackInfoReturnable<Boolean> cir) {
         if (net.tupenter.config.TupenterConfig.INSTANCE.ctrlSpaceSend
-                && event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE && event.hasControlDown()) {
+                && key == org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE
+                && net.minecraft.client.gui.screens.Screen.hasControlDown()) {
             this.handleChatInput(this.input.getValue(), true);
             this.minecraft.setScreen(null);
             cir.setReturnValue(true);

@@ -518,17 +518,17 @@ public class ModMenuIntegration implements ModMenuApi {
             this.singleBox = new net.minecraft.client.gui.components.EditBox(
                     Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty()) {
                 @Override
-                public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+                public boolean keyPressed(int key, int scancode, int modifiers) {
                     // a multi-line paste into the collapsed box would lose its
                     // newlines — expand and paste into the real editor instead
-                    if (event.isPaste()) {
+                    if (net.minecraft.client.gui.screens.Screen.isPaste(key)) {
                         String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
                         if (clip.indexOf('\n') >= 0 || clip.indexOf('\r') >= 0) {
                             pasteMultiline(clip);
                             return true;
                         }
                     }
-                    return super.keyPressed(event);
+                    return super.keyPressed(key, scancode, modifiers);
                 }
             };
             this.singleBox.setMaxLength(4000);
@@ -536,7 +536,8 @@ public class ModMenuIntegration implements ModMenuApi {
             this.singleBox.setValue(joined);
             this.singleBox.moveCursorToStart(false); // show the start, not the tail
             this.collapsedMirror = joined;
-            this.singleBox.addFormatter(this::styleCollapsed);
+            // pre-1.21.9 EditBox holds a single formatter rather than a list
+            this.singleBox.setFormatter(this::styleCollapsed);
 
             this.wrapButton = Button.builder(wrapLabel(), button -> toggleWrap())
                     .bounds(0, 0, 20, 20)
@@ -647,9 +648,9 @@ public class ModMenuIntegration implements ModMenuApi {
          * focuses the one actually hit.
          */
         @Override
-        public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
             blurAllEditorBoxes();
-            return super.mouseClicked(event, doubleClick);
+            return super.mouseClicked(mouseX, mouseY, button);
         }
 
         void blurBoxes() {
@@ -795,9 +796,9 @@ public class ModMenuIntegration implements ModMenuApi {
         }
 
         @Override
-        public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
             blurAllEditorBoxes();
-            return super.mouseClicked(event, doubleClick);
+            return super.mouseClicked(mouseX, mouseY, button);
         }
 
         private List<net.minecraft.client.gui.components.AbstractWidget> allWidgets() {

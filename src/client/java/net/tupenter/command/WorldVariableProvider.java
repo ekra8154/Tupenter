@@ -36,13 +36,15 @@ public final class WorldVariableProvider implements VariableProvider {
         register("world.thundering", "thundering?", level -> Value.of(level.isThundering()));
         register("world.moon_phase", "the moon phase, 0-7 (0 = full)", level -> Value.ofNumber(level.getMoonPhase()));
         register("world.dimension", "this world's dimension id", level -> Value.of(level.dimension().location().toString()));
+        // 1.21.9 bundled spawn pos/angle into a RespawnData record; below that
+        // LevelData exposes the position directly.
         register("world.spawn", "the world spawn — \"x y z\" (+ .x/.y/.z)", level -> {
-            net.minecraft.core.BlockPos pos = level.getLevelData().getRespawnData().pos();
+            net.minecraft.core.BlockPos pos = level.getLevelData().getSpawnPos();
             return Value.of(pos.getX() + " " + pos.getY() + " " + pos.getZ());
         });
-        register("world.spawn.x", "the x of world.spawn", level -> Value.ofNumber(level.getLevelData().getRespawnData().pos().getX()));
-        register("world.spawn.y", "the y of world.spawn", level -> Value.ofNumber(level.getLevelData().getRespawnData().pos().getY()));
-        register("world.spawn.z", "the z of world.spawn", level -> Value.ofNumber(level.getLevelData().getRespawnData().pos().getZ()));
+        register("world.spawn.x", "the x of world.spawn", level -> Value.ofNumber(level.getLevelData().getSpawnPos().getX()));
+        register("world.spawn.y", "the y of world.spawn", level -> Value.ofNumber(level.getLevelData().getSpawnPos().getY()));
+        register("world.spawn.z", "the z of world.spawn", level -> Value.ofNumber(level.getLevelData().getSpawnPos().getZ()));
         register("world.time_total", "total world ticks — never wraps", level -> Value.ofNumber(level.getGameTime()));
         register("world.min_y", "the lowest buildable y", level -> Value.ofNumber(level.getMinY()));
         register("world.max_y", "the highest buildable y", level -> Value.ofNumber(level.getMaxY()));

@@ -6,9 +6,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.MultilineTextField;
 import net.minecraft.client.gui.components.Whence;
-import net.minecraft.client.input.CharacterEvent;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Style;
 import net.tupenter.command.ChatInputStyler;
@@ -82,12 +80,12 @@ public class ScriptEditBox extends MultiLineEditBox {
     // no per-line gate here — just the opt-in setting. Same chars as the chat bar.
     private static final String AUTO_BRACKET_CHARS = "([{)]}\"$";
 
+    // Pre-1.21.9 input: primitives instead of CharacterEvent/KeyEvent/
+    // MouseButtonEvent, and the modifier predicates come from Screen.
     @Override
-    public boolean charTyped(CharacterEvent event) {
+    public boolean charTyped(char codepoint, int modifiers) {
         ensureHistory();
-        int codepoint = event.codepoint();
-        if (autoBracketEnabled() && codepoint <= Character.MAX_VALUE
-                && AUTO_BRACKET_CHARS.indexOf((char) codepoint) >= 0) {
+        if (autoBracketEnabled() && AUTO_BRACKET_CHARS.indexOf(codepoint) >= 0) {
             int cursor = this.textField.cursor();
             int selStart = cursor;
             int selEnd = cursor;
@@ -96,14 +94,14 @@ public class ScriptEditBox extends MultiLineEditBox {
                 selStart = sel.beginIndex();
                 selEnd = sel.endIndex();
             }
-            AutoBracket.Edit edit = AutoBracket.onChar(getValue(), selStart, selEnd, (char) codepoint);
+            AutoBracket.Edit edit = AutoBracket.onChar(getValue(), selStart, selEnd, codepoint);
             if (edit != null) {
                 applyEdit(edit);
                 recordUndo();
                 return true;
             }
         }
-        boolean handled = super.charTyped(event);
+        boolean handled = super.charTyped(codepoint, modifiers);
         if (handled) {
             recordUndo();
         }
@@ -111,28 +109,29 @@ public class ScriptEditBox extends MultiLineEditBox {
     }
 
     @Override
-    public boolean keyPressed(KeyEvent event) {
+    public boolean keyPressed(int key, int scancode, int modifiers) {
         ensureHistory();
-        if (event.hasControlDown() && !event.hasShiftDown() && event.key() == GLFW.GLFW_KEY_Z) {
+        boolean ctrl = Screen.hasControlDown();
+        boolean shift = Screen.hasShiftDown();
+        if (ctrl && !shift && key == GLFW.GLFW_KEY_Z) {
             applyRestore(undoHistory.undo());
             return true;
         }
-        if (event.hasControlDown() && (event.key() == GLFW.GLFW_KEY_Y
-                || (event.hasShiftDown() && event.key() == GLFW.GLFW_KEY_Z))) {
+        if (ctrl && (key == GLFW.GLFW_KEY_Y || (shift && key == GLFW.GLFW_KEY_Z))) {
             applyRestore(undoHistory.redo());
             return true;
         }
-        if (event.key() == InputConstants.KEY_TAB) {
+        if (key == InputConstants.KEY_TAB) {
             this.textField.insertText("  ");
             recordUndo();
             return true;
         }
-        if (event.key() == InputConstants.KEY_RETURN || event.key() == InputConstants.KEY_NUMPADENTER) {
+        if (key == InputConstants.KEY_RETURN || key == InputConstants.KEY_NUMPADENTER) {
             this.textField.insertText("\n" + currentLineIndent());
             recordUndo();
             return true;
         }
-        if (event.key() == GLFW.GLFW_KEY_BACKSPACE && autoBracketEnabled() && !this.textField.hasSelection()) {
+        if (key == GLFW.GLFW_KEY_BACKSPACE && autoBracketEnabled() && !this.textField.hasSelection()) {
             AutoBracket.Edit edit = AutoBracket.onBackspace(getValue(), this.textField.cursor());
             if (edit != null) {
                 applyEdit(edit);
@@ -140,7 +139,7 @@ public class ScriptEditBox extends MultiLineEditBox {
                 return true;
             }
         }
-        boolean handled = super.keyPressed(event);
+        boolean handled = super.keyPressed(key, scancode, modifiers);
         if (handled) {
             recordUndo(); // typing, delete, paste, cut, select-all-then-type, …
         }
@@ -148,8 +147,8 @@ public class ScriptEditBox extends MultiLineEditBox {
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        boolean handled = super.mouseClicked(event, doubleClick);
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        boolean handled = super.mouseClicked(mouseX, mouseY, button);
         recordUndo(); // a click that moves the caret ends the current undo group
         return handled;
     }

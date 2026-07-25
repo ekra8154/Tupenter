@@ -3,8 +3,6 @@ package net.tupenter.mixin.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
-import net.minecraft.client.input.CharacterEvent;
-import net.minecraft.client.input.KeyEvent;
 import net.tupenter.config.TupenterConfig;
 import net.tupenter.script.AutoBracket;
 import org.lwjgl.glfw.GLFW;
@@ -26,20 +24,20 @@ public abstract class MixinEditBox {
 
     private static final String CHARS = "([{)]}\"$";
 
+    // Pre-1.21.9 input: raw primitives instead of CharacterEvent/KeyEvent.
     @Inject(method = "charTyped", at = @At("HEAD"), cancellable = true)
-    private void tupenter$autoBracketChar(CharacterEvent event, CallbackInfoReturnable<Boolean> cir) {
+    private void tupenter$autoBracketChar(char codepoint, int modifiers, CallbackInfoReturnable<Boolean> cir) {
         if (!tupenter$active()) {
             return;
         }
-        int codepoint = event.codepoint();
-        if (codepoint > Character.MAX_VALUE || CHARS.indexOf((char) codepoint) < 0) {
+        if (CHARS.indexOf(codepoint) < 0) {
             return;
         }
         EditBox self = (EditBox) (Object) this;
         int cursor = self.getCursorPosition();
         int highlight = ((EditBoxAccessor) self).tupenter$highlightPos();
         AutoBracket.Edit edit = AutoBracket.onChar(self.getValue(),
-                Math.min(cursor, highlight), Math.max(cursor, highlight), (char) codepoint);
+                Math.min(cursor, highlight), Math.max(cursor, highlight), codepoint);
         if (edit == null) {
             return;
         }
@@ -48,8 +46,8 @@ public abstract class MixinEditBox {
     }
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
-    private void tupenter$autoBracketBackspace(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
-        if (event.key() != GLFW.GLFW_KEY_BACKSPACE || !tupenter$active()) {
+    private void tupenter$autoBracketBackspace(int key, int scancode, int modifiers, CallbackInfoReturnable<Boolean> cir) {
+        if (key != GLFW.GLFW_KEY_BACKSPACE || !tupenter$active()) {
             return;
         }
         EditBox self = (EditBox) (Object) this;

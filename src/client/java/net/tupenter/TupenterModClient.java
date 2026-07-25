@@ -1310,7 +1310,11 @@ public class TupenterModClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
-		KeyMapping.Category tupenterCategory = new KeyMapping.Category(ResourceLocation.fromNamespaceAndPath("tupenter", "general"));
+		// KeyMapping.Category arrived at 1.21.9. Below it a category is just the
+		// translation key of the controls-screen heading — and it's the same key
+		// the Category(namespace, path) form resolves to, so the lang file needs
+		// no separate entry.
+		String tupenterCategory = "key.category.tupenter.general";
 
 		resendKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 			"key.tupenter.resend",

@@ -99,7 +99,8 @@ public final class KeyStateProvider implements VariableProvider {
         }
         Integer code = PHYSICAL.get(suffix);
         if (code != null && mc.getWindow() != null) {
-            return InputConstants.isKeyDown(mc.getWindow(), code);
+            // pre-1.21.9 isKeyDown takes the raw GLFW window handle, not the Window
+            return InputConstants.isKeyDown(mc.getWindow().getWindow(), code);
         }
         return false;
     }

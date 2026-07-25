@@ -56,7 +56,8 @@ public final class PlayersVariableProvider implements VariableProvider {
 
         List<String> playerNames = new ArrayList<>();
         for (PlayerInfo info : connection.getOnlinePlayers()) {
-            playerNames.add(info.getProfile().name());
+            // GameProfile became a record in the authlib that ships with 1.21.9
+            playerNames.add(info.getProfile().getName());
         }
         playerNames.sort(String::compareToIgnoreCase);
 
