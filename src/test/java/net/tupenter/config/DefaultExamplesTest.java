@@ -110,7 +110,8 @@ class DefaultExamplesTest {
     @Test
     void everySeededScriptIsDisarmedEverywhere() {
         DefaultExamples.seed(TupenterConfig.INSTANCE);
-        assertEquals(5, TupenterConfig.INSTANCE.globalScripts.size(), "all five scripts seeded");
+        assertEquals(DefaultExamples.globalScripts().size(), TupenterConfig.INSTANCE.globalScripts.size(),
+                "every defined script is seeded, none dropped");
         assertTrue(TupenterConfig.INSTANCE.worldScripts.isEmpty(), "no world arms anything");
         assertTrue(TupenterConfig.INSTANCE.armedScriptLines("world:anywhere").isEmpty(),
                 "nothing runs until the player enables it");
@@ -125,6 +126,7 @@ class DefaultExamplesTest {
 
         assertEquals(java.util.List.of("mine \"kept\" = /say hi"), config.aliases,
                 "the user's own command is left alone");
-        assertEquals(5, config.globalScripts.size(), "the empty script list still gets seeded");
+        assertEquals(DefaultExamples.globalScripts().size(), config.globalScripts.size(),
+                "the empty script list still gets seeded");
     }
 }

@@ -271,7 +271,7 @@ a one-tick boolean you test:
 
 ```
 #if (client.just_died) (/echo died at $client.blockpos$)
-#if (client.keypress.g) (/togglenightvision)
+#if (client.keypress.g) (/effect give @s night_vision infinite 0 true)
 ```
 
 `client.just_died`, `client.just_respawned`, `world.just_joined` and
