@@ -876,7 +876,7 @@ public class ModMenuIntegration implements ModMenuApi {
     /** Rebuild the config screen WITHOUT losing the tab or the scroll position. */
     private static void reopenScreen(int tabIndex) {
         double scroll = 0;
-        if (Minecraft.getInstance().screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen old
+        if (Minecraft.getInstance().gui.screen() instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen old
                 && old.listWidget != null) {
             scroll = old.listWidget.getScroll();
         }
@@ -884,14 +884,14 @@ public class ModMenuIntegration implements ModMenuApi {
         if (screen instanceof me.shedaniel.clothconfig2.gui.AbstractConfigScreen cloth) {
             cloth.selectedCategoryIndex = tabIndex;
         }
-        Minecraft.getInstance().setScreen(screen); // init() runs synchronously in here
+        Minecraft.getInstance().gui.setScreen(screen); // init() runs synchronously in here
         if (screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth) {
             // capYPosition clamps to getMaxScroll(), which is 0 until the list
             // has laid out on its first render — restoring now would snap us to
             // the top. Defer to the next main-thread pass, after that frame.
             double target = scroll;
             Minecraft.getInstance().execute(() -> {
-                if (Minecraft.getInstance().screen == cloth && cloth.listWidget != null) {
+                if (Minecraft.getInstance().gui.screen() == cloth && cloth.listWidget != null) {
                     cloth.listWidget.capYPosition(target); // clamps if the list shrank
                 }
             });

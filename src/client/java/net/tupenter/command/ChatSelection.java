@@ -111,7 +111,7 @@ public final class ChatSelection {
     // =====================================================================
 
     private static Pos hitTest(Minecraft minecraft, double screenX, double screenY, boolean strict) {
-        ChatComponent chat = minecraft.gui.getChat();
+        ChatComponent chat = minecraft.gui.hud.getChat();
         ChatComponentAccessor access = (ChatComponentAccessor) chat;
         List<GuiMessage.Line> lines = access.tupenter$trimmedMessages();
         if (lines.isEmpty()) {
@@ -228,7 +228,7 @@ public final class ChatSelection {
      * end line up to endChar.
      */
     private static String selectedText(Minecraft minecraft) {
-        ChatComponentAccessor access = (ChatComponentAccessor) minecraft.gui.getChat();
+        ChatComponentAccessor access = (ChatComponentAccessor) minecraft.gui.hud.getChat();
         List<GuiMessage.Line> lines = access.tupenter$trimmedMessages();
         Range range = range(lines);
         if (range == null) {
@@ -261,7 +261,7 @@ public final class ChatSelection {
         if (!hasSelection()) {
             return;
         }
-        ChatComponent chat = minecraft.gui.getChat();
+        ChatComponent chat = minecraft.gui.hud.getChat();
         ChatComponentAccessor access = (ChatComponentAccessor) chat;
         List<GuiMessage.Line> lines = access.tupenter$trimmedMessages();
         Range range = range(lines);

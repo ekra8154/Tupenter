@@ -644,7 +644,7 @@ public class TupenterModClient implements ClientModInitializer {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.options.hideGui) {
+        if (mc.gui.hud.isHidden()) {
             return;
         }
         Font font = mc.font;
@@ -1542,7 +1542,7 @@ public class TupenterModClient implements ClientModInitializer {
             
             // Handle Config
             while (configKey.consumeClick()) {
-                client.setScreen(ModMenuIntegration.createScreen(client.screen));
+                client.gui.setScreen(ModMenuIntegration.createScreen(client.gui.screen()));
             }
             
             // Handle History Recording Toggle
@@ -1647,9 +1647,9 @@ public class TupenterModClient implements ClientModInitializer {
             // 2. DELAY MANAGEMENT
             // =========================================================
             // Grace Period
-            if (client.screen instanceof ChatScreen) {
+            if (client.gui.screen() instanceof ChatScreen) {
                 lastChatCloseTime = 0;
-            } else if (lastChatCloseTime == 0 && client.screen == null) {
+            } else if (lastChatCloseTime == 0 && client.gui.screen() == null) {
                 lastChatCloseTime = System.currentTimeMillis();
             }
             boolean gracePeriodActive = (System.currentTimeMillis() - lastChatCloseTime) < 500L;
@@ -2378,7 +2378,7 @@ public class TupenterModClient implements ClientModInitializer {
     private static final List<Component> HELP_PAGE_LINES = new ArrayList<>();
 
     private static void beginHelpPage() {
-        net.minecraft.client.gui.components.ChatComponent chat = Minecraft.getInstance().gui.getChat();
+        net.minecraft.client.gui.components.ChatComponent chat = Minecraft.getInstance().gui.hud.getChat();
         if (!HELP_PAGE_LINES.isEmpty()) {
             // identity, not equals — we delete the exact component instances we added
             java.util.Set<Component> previous = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
@@ -2393,7 +2393,7 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static void helpLine(Component line) {
         HELP_PAGE_LINES.add(line);
-        Minecraft.getInstance().gui.getChat().addClientSystemMessage(line);
+        Minecraft.getInstance().gui.hud.getChat().addClientSystemMessage(line);
     }
 
     private static void helpLine(String line) {
@@ -2417,7 +2417,7 @@ public class TupenterModClient implements ClientModInitializer {
         if (clickable) {
             helpLine("§8§oHover a line to see what clicking it does.");
         }
-        Minecraft.getInstance().gui.getChat().resetChatScroll();
+        Minecraft.getInstance().gui.hud.getChat().resetChatScroll();
     }
 
     private static boolean hasClick(Component component) {
@@ -3230,7 +3230,7 @@ public class TupenterModClient implements ClientModInitializer {
         if (text == null) {
             return 0;
         }
-        Minecraft.getInstance().gui.setOverlayMessage(Component.literal(text), false);
+        Minecraft.getInstance().gui.hud.setOverlayMessage(Component.literal(text), false);
         return 1;
     }
 

@@ -21,7 +21,7 @@ import net.minecraft.client.multiplayer.ClientSuggestionProvider;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.AngleArgument;
-import net.minecraft.commands.arguments.ColorArgument;
+import net.minecraft.commands.arguments.TeamColorArgument;
 import net.minecraft.commands.arguments.DimensionArgument;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.IdentifierArgument;
@@ -171,7 +171,10 @@ public final class ClientCommandRegistrar {
             case ANGLE -> AngleArgument.angle();
             case TIME -> TimeArgument.time();
             case DIMENSION -> DimensionArgument.dimension(); // suggests the dimensions the client knows
-            case COLOR -> ColorArgument.color();
+            // 26.2 renamed ColorArgument -> TeamColorArgument and its value type
+            // to TeamColor. Only parsing and completion matter here: the script
+            // receives the raw literal via rawArgument(), not the parsed value.
+            case COLOR -> TeamColorArgument.teamColor();
             case ID -> IdentifierArgument.id();
             case ITEM -> ItemArgument.item(buildContext);      // registry tab-complete incl. [components]
             case BLOCK -> BlockStateArgument.block(buildContext); // registry tab-complete incl. [states]

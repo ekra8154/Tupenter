@@ -75,7 +75,7 @@ public abstract class MixinEditBox {
     private boolean tupenter$active() {
         if (!TupenterConfig.INSTANCE.autoCloseBrackets
                 || !TupenterConfig.INSTANCE.enhancedCommandParsingEnabled
-                || !(Minecraft.getInstance().screen instanceof ChatScreen)) {
+                || !(Minecraft.getInstance().gui.screen() instanceof ChatScreen)) {
             return false;
         }
         String line = ((EditBox) (Object) this).getValue().stripLeading();

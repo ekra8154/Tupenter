@@ -90,7 +90,7 @@ public final class KeyStateProvider implements VariableProvider {
     /** Is this key/bind held right now? False while a screen is open (chat, menus). */
     private boolean isDown(String suffix) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.screen != null) {
+        if (mc.gui.screen() != null) {
             return false; // don't let typing in chat trigger binds
         }
         KeyMapping bind = bindsByName().get(suffix);

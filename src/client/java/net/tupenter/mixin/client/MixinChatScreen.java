@@ -154,7 +154,7 @@ public abstract class MixinChatScreen extends Screen {
         if (net.tupenter.config.TupenterConfig.INSTANCE.ctrlSpaceSend
                 && event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE && event.hasControlDown()) {
             this.handleChatInput(this.input.getValue(), true);
-            this.minecraft.setScreen(null);
+            this.minecraft.gui.setScreen(null);
             cir.setReturnValue(true);
         }
     }
