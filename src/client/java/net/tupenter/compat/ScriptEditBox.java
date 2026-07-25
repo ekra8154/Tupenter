@@ -2,7 +2,7 @@ package net.tupenter.compat;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.MultilineTextField;
 import net.minecraft.client.gui.components.Whence;
@@ -53,8 +53,8 @@ public class ScriptEditBox extends MultiLineEditBox {
     }
 
     @Override
-    protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        super.renderContents(graphics, mouseX, mouseY, partialTick);
+    protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        super.extractContents(graphics, mouseX, mouseY, partialTick);
 
         String value = getValue();
         if (value.isEmpty()) {
@@ -70,7 +70,7 @@ public class ScriptEditBox extends MultiLineEditBox {
         int y = getInnerTop();
         for (MultilineTextField.StringView line : this.textField.iterateLines()) {
             if (withinContentAreaTopBottom(y, y + editorFont.lineHeight)) {
-                graphics.drawString(editorFont,
+                graphics.text(editorFont,
                         ChatInputStyler.sequence(value, styleCache, line.beginIndex(), line.endIndex()),
                         getInnerLeft(), y, TEXT_COLOR, true);
             }

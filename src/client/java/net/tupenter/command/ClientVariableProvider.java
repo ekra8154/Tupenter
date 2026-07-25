@@ -84,8 +84,8 @@ public final class ClientVariableProvider implements VariableProvider {
                 player.level().getBrightness(net.minecraft.world.level.LightLayer.BLOCK, player.blockPosition())));
         register(ENVIRONMENT, "client.light_sky", "sky-light only (before darkness and weather)", player -> Value.ofNumber(
                 player.level().getBrightness(net.minecraft.world.level.LightLayer.SKY, player.blockPosition())));
-        register(ENVIRONMENT, "client.chunk_x", "your chunk's x", player -> Value.ofNumber(player.chunkPosition().x));
-        register(ENVIRONMENT, "client.chunk_z", "your chunk's z", player -> Value.ofNumber(player.chunkPosition().z));
+        register(ENVIRONMENT, "client.chunk_x", "your chunk's x", player -> Value.ofNumber(player.chunkPosition().x()));
+        register(ENVIRONMENT, "client.chunk_z", "your chunk's z", player -> Value.ofNumber(player.chunkPosition().z()));
 
         // movement + orientation
         register(MOVEMENT, "client.speed", "how fast you're moving, blocks/sec (full 3D)", player -> {

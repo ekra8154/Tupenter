@@ -6,9 +6,9 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.ChatFormatting;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,7 +18,7 @@ import java.util.Queue;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.screens.ChatScreen;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.network.chat.Component;
@@ -58,8 +58,8 @@ import net.tupenter.compat.ModMenuIntegration;
 import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.platform.InputConstants;
 
-import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
-import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 public class TupenterModClient implements ClientModInitializer {
 	public static String lastMessage = "";
@@ -161,7 +161,7 @@ public class TupenterModClient implements ClientModInitializer {
      * @return true when the command was executed client-side
      */
     public static boolean tryExecuteClientCommand(String command) {
-        var dispatcher = net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.getActiveDispatcher();
+        var dispatcher = net.fabricmc.fabric.api.client.command.v2.ClientCommands.getActiveDispatcher();
         Minecraft client = Minecraft.getInstance();
         if (dispatcher == null || client.getConnection() == null) {
             return false;
@@ -639,7 +639,7 @@ public class TupenterModClient implements ClientModInitializer {
     private static final int HUD_GRAY = 0xFF9AA0A6;   // notes
 
     /** Draws the running-scripts panel top-left while the HUD is toggled on. */
-    private static void renderRunningHud(GuiGraphics graphics, DeltaTracker tickCounter) {
+    private static void renderRunningHud(GuiGraphicsExtractor graphics, DeltaTracker tickCounter) {
         if (!runningHudVisible) {
             return;
         }
@@ -696,7 +696,7 @@ public class TupenterModClient implements ClientModInitializer {
 
         int ty = y + pad;
         for (int i = 0; i < texts.size(); i++) {
-            graphics.drawString(font, texts.get(i), x + pad, ty, colors.get(i));
+            graphics.text(font, texts.get(i), x + pad, ty, colors.get(i));
             ty += lineH;
         }
     }
@@ -1251,7 +1251,7 @@ public class TupenterModClient implements ClientModInitializer {
         if (first.isEmpty() || CommandAliasManager.hasAlias(first)) {
             return;
         }
-        var dispatcher = net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.getActiveDispatcher();
+        var dispatcher = net.fabricmc.fabric.api.client.command.v2.ClientCommands.getActiveDispatcher();
         if (dispatcher == null || dispatcher.getRoot().getChild(first) == null) {
             return; // a normal server command — the packet path records it
         }
@@ -1312,21 +1312,21 @@ public class TupenterModClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		KeyMapping.Category tupenterCategory = new KeyMapping.Category(Identifier.fromNamespaceAndPath("tupenter", "general"));
 
-		resendKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+		resendKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 			"key.tupenter.resend",
 			InputConstants.Type.KEYSYM,
 			GLFW.GLFW_KEY_R,
 			tupenterCategory
 		));
 
-		configKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+		configKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 			"key.tupenter.config",
 			InputConstants.Type.KEYSYM,
 			InputConstants.UNKNOWN.getValue(),
 			tupenterCategory
 		));
 
-		recordHistoryKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+		recordHistoryKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 			"key.tupenter.toggle_recording",
 			InputConstants.Type.KEYSYM,
 			InputConstants.UNKNOWN.getValue(),
@@ -1510,7 +1510,11 @@ public class TupenterModClient implements ClientModInitializer {
 		TupenterConfig.load();
 		PERSISTENT_VARIABLES.load(TupenterConfig.INSTANCE.persistentVariables);
 
-		HudRenderCallback.EVENT.register(TupenterModClient::renderRunningHud);
+		// 26.x replaced the single HUD callback with a registry of named HUD
+		// elements; addLast keeps the panel drawing after vanilla's, as before.
+		HudElementRegistry.addLast(
+				Identifier.fromNamespaceAndPath("tupenter", "running_scripts"),
+				TupenterModClient::renderRunningHud);
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
@@ -1558,7 +1562,7 @@ public class TupenterModClient implements ClientModInitializer {
                     .withStyle(ChatFormatting.WHITE)
                     .append(status);
                     
-                client.player.displayClientMessage(msg, true);
+                client.player.sendOverlayMessage(msg);
             }
 
             // =========================================================
@@ -1608,7 +1612,7 @@ public class TupenterModClient implements ClientModInitializer {
                     Component msg = Component.translatable("tupenter.toggle.prefix")
                         .withStyle(ChatFormatting.WHITE)
                         .append(status);
-                    client.player.displayClientMessage(msg, true);
+                    client.player.sendOverlayMessage(msg);
                  }
             } else if (TupenterConfig.INSTANCE.resendMode == TupenterConfig.ResendMode.PRESS_AND_HOLD) {
                  // For Hold mode, we rely on isDown() later
@@ -2389,7 +2393,7 @@ public class TupenterModClient implements ClientModInitializer {
 
     private static void helpLine(Component line) {
         HELP_PAGE_LINES.add(line);
-        Minecraft.getInstance().gui.getChat().addMessage(line);
+        Minecraft.getInstance().gui.getChat().addClientSystemMessage(line);
     }
 
     private static void helpLine(String line) {
@@ -3471,14 +3475,14 @@ public class TupenterModClient implements ClientModInitializer {
     private static void sendLocalCalcFeedback(Component component) {
         Minecraft client = Minecraft.getInstance();
         if (client.player != null) {
-            client.player.displayClientMessage(component, false);
+            client.player.sendSystemMessage(component);
         }
     }
 
     private static void sendLocalCalcError(Component component) {
         Minecraft client = Minecraft.getInstance();
         if (client.player != null) {
-            client.player.displayClientMessage(component.copy().withStyle(ChatFormatting.RED), false);
+            client.player.sendSystemMessage(component.copy().withStyle(ChatFormatting.RED));
         }
     }
 

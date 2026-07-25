@@ -30,9 +30,9 @@ public final class WorldVariableProvider implements VariableProvider {
     private final Map<String, Entry> variables = new LinkedHashMap<>();
 
     public WorldVariableProvider() {
-        register("world.difficulty", "the difficulty setting", level -> Value.of(level.getDifficulty().getKey()));
-        register("world.time", "time of day in ticks, 0-23999", level -> Value.ofNumber(level.getDayTime() % 24000L));
-        register("world.day", "the day count", level -> Value.ofNumber(level.getDayTime() / 24000L));
+        register("world.difficulty", "the difficulty setting", level -> Value.of(level.getDifficulty().getSerializedName()));
+        register("world.time", "time of day in ticks, 0-23999", level -> Value.ofNumber(level.getDefaultClockTime() % 24000L));
+        register("world.day", "the day count", level -> Value.ofNumber(level.getDefaultClockTime() / 24000L));
         register("world.raining", "raining?", level -> Value.of(level.isRaining()));
         register("world.thundering", "thundering?", level -> Value.of(level.isThundering()));
         register("world.moon_phase", "the moon phase, 0-7 (0 = full)", level -> Value.ofNumber(moonPhase(level)));
@@ -74,7 +74,7 @@ public final class WorldVariableProvider implements VariableProvider {
      * so a negative day time still yields 0-7 rather than a negative index.
      */
     private static int moonPhase(ClientLevel level) {
-        long phase = level.getDayTime() / MoonPhase.PHASE_LENGTH;
+        long phase = level.getDefaultClockTime() / MoonPhase.PHASE_LENGTH;
         return (int) ((phase % MoonPhase.COUNT + MoonPhase.COUNT) % MoonPhase.COUNT);
     }
 

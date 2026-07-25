@@ -1,6 +1,6 @@
 package net.tupenter.mixin.client;
 
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -159,8 +159,11 @@ public abstract class MixinChatScreen extends Screen {
         }
     }
 
-    @Inject(method = "render", at = @At("TAIL"))
-    private void tupenter$selectionOverlay(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+    // 26.x replaced immediate-mode Screen.render with extractRenderState, which
+    // collects draw state for the retained-mode GUI renderer. Same hook point,
+    // same arguments, new name.
+    @Inject(method = "extractRenderState", at = @At("TAIL"))
+    private void tupenter$selectionOverlay(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         ChatSelection.render(graphics, this.minecraft);
     }
 

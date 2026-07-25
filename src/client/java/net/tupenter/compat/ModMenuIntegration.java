@@ -7,7 +7,7 @@ import me.shedaniel.clothconfig2.api.ConfigCategory;
 import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
 import me.shedaniel.clothconfig2.api.AbstractConfigListEntry;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
@@ -665,18 +665,18 @@ public class ModMenuIntegration implements ModMenuApi {
         }
 
         @Override
-        public void render(GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
+        public void extractRenderState(GuiGraphicsExtractor graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
             int cursor = x;
             for (net.minecraft.client.gui.components.AbstractWidget widget : leadingWidgets()) {
                 widget.setX(cursor);
                 widget.setY(y);
-                widget.render(graphics, mouseX, mouseY, partialTick);
+                widget.extractRenderState(graphics, mouseX, mouseY, partialTick);
                 cursor += widget.getWidth() + 4;
             }
 
             wrapButton.setX(cursor);
             wrapButton.setY(y);
-            wrapButton.render(graphics, mouseX, mouseY, partialTick);
+            wrapButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
             cursor += 24;
 
             int boxWidth = entryWidth - (cursor - x) - 24;
@@ -684,17 +684,17 @@ public class ModMenuIntegration implements ModMenuApi {
                 net.minecraft.client.gui.components.MultiLineEditBox box = ensureMultiBox(boxWidth);
                 box.setX(cursor);
                 box.setY(y);
-                box.render(graphics, mouseX, mouseY, partialTick);
+                box.extractRenderState(graphics, mouseX, mouseY, partialTick);
             } else {
                 singleBox.setX(cursor);
                 singleBox.setY(y + 1);
                 singleBox.setWidth(boxWidth);
-                singleBox.render(graphics, mouseX, mouseY, partialTick);
+                singleBox.extractRenderState(graphics, mouseX, mouseY, partialTick);
             }
 
             deleteButton.setX(x + entryWidth - 20);
             deleteButton.setY(y);
-            deleteButton.render(graphics, mouseX, mouseY, partialTick);
+            deleteButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
         }
 
         @Override
@@ -787,11 +787,11 @@ public class ModMenuIntegration implements ModMenuApi {
         }
 
         @Override
-        public void render(GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
+        public void extractRenderState(GuiGraphicsExtractor graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
             ScriptEditBox b = ensureBox(entryWidth);
             b.setX(x);
             b.setY(y);
-            b.render(graphics, mouseX, mouseY, partialTick);
+            b.extractRenderState(graphics, mouseX, mouseY, partialTick);
         }
 
         @Override
@@ -981,10 +981,10 @@ public class ModMenuIntegration implements ModMenuApi {
         }
 
         @Override
-        public void render(GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
+        public void extractRenderState(GuiGraphicsExtractor graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
             this.button.setX(x + (entryWidth / 2) - (this.button.getWidth() / 2));
             this.button.setY(y);
-            this.button.render(graphics, mouseX, mouseY, partialTick);
+            this.button.extractRenderState(graphics, mouseX, mouseY, partialTick);
         }
 
         @Override

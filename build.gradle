@@ -1,5 +1,5 @@
 plugins {
-	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
 	id 'maven-publish'
 	id 'jacoco'
 }
@@ -47,16 +47,20 @@ loom {
 
 dependencies {
 	// To change the versions see the gradle.properties file
+	// Loom 1.16 dropped modImplementation: with Mojang mappings the default,
+	// dependencies are no longer remapped, so these are plain configurations.
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings loom.officialMojangMappings()
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
 	// Fabric API
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // Mod Menu + Cloth Config
-    modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
-    modImplementation "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
+    // Mod Menu + Cloth Config — optional at runtime, so compile against them
+    // but never hard-depend (fabric.mod.json lists both under "suggests").
+    compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+    runtimeOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+    compileOnly "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
+    runtimeOnly "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
 
     // Unit tests (net.tupenter.script is pure Java, no Minecraft deps)
     testImplementation platform("org.junit:junit-bom:5.10.2")
@@ -163,14 +167,15 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 21
+	it.options.release = 25
 }
 
 java {
 	withSourcesJar()
 
-	sourceCompatibility = JavaVersion.VERSION_21
-	targetCompatibility = JavaVersion.VERSION_21
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
 }
 
 jar {

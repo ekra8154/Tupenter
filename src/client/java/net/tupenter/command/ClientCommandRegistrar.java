@@ -13,7 +13,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.context.ParsedCommandNode;
 import com.mojang.brigadier.tree.ArgumentCommandNode;
 import com.mojang.brigadier.tree.CommandNode;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -44,8 +44,8 @@ import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 
-import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
-import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 /**
  * Builds Brigadier trees for custom commands (typed params get real
@@ -229,7 +229,7 @@ public final class ClientCommandRegistrar {
     public static void registerDynamic(String name, AliasDefinition definition) {
         CommandBuildContext buildContext = currentBuildContext();
 
-        CommandDispatcher<FabricClientCommandSource> dispatcher = ClientCommandManager.getActiveDispatcher();
+        CommandDispatcher<FabricClientCommandSource> dispatcher = ClientCommands.getActiveDispatcher();
         if (dispatcher != null) {
             removeNode(dispatcher.getRoot(), name);
             dispatcher.register(buildAliasNode(name, definition, buildContext));
@@ -261,7 +261,7 @@ public final class ClientCommandRegistrar {
     /** Removes an alias from the live dispatchers. Best-effort (reflection). */
     public static boolean unregisterDynamic(String name) {
         boolean removed = false;
-        CommandDispatcher<FabricClientCommandSource> dispatcher = ClientCommandManager.getActiveDispatcher();
+        CommandDispatcher<FabricClientCommandSource> dispatcher = ClientCommands.getActiveDispatcher();
         if (dispatcher != null) {
             removed = removeNode(dispatcher.getRoot(), name);
         }

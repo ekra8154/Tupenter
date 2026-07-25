@@ -1,9 +1,9 @@
 package net.tupenter.command;
 
-import net.minecraft.client.GuiMessage;
+import net.minecraft.client.multiplayer.chat.GuiMessage;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.util.FormattedCharSequence;
 import net.tupenter.config.TupenterConfig;
@@ -257,7 +257,7 @@ public final class ChatSelection {
     // =====================================================================
 
     /** Draws the selection highlight; called after ChatScreen rendered the chat. */
-    public static void render(GuiGraphics graphics, Minecraft minecraft) {
+    public static void render(GuiGraphicsExtractor graphics, Minecraft minecraft) {
         if (!hasSelection()) {
             return;
         }
