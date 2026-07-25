@@ -19,6 +19,22 @@ def formatMinecraftSupportLabel = { String supportRange ->
 // then the mod's own version. Which build you're holding is unambiguous.
 def buildArchiveName = "${project.archives_base_name}-fabric-${formatMinecraftSupportLabel(project.minecraft_support_range)}"
 
+// The same property has to satisfy two grammars: a filename label, and a Fabric
+// version predicate. "1.21.9-1.21.10" reads fine in a filename but is NOT a
+// valid predicate — Fabric wants ">=1.21.9 <=1.21.10" — so derive it rather
+// than hand-maintaining a second copy. Two copies is how a jar ends up
+// declaring a range it wasn't built for, which is the whole thing this property
+// exists to prevent. Exact versions ("1.21.10") and x-ranges ("26.2.x") are
+// already valid predicates and pass through untouched.
+def toVersionPredicate = { String supportRange ->
+	def normalizedRange = supportRange.trim()
+	if (normalizedRange.contains('-')) {
+		def bounds = normalizedRange.split('-', 2)
+		return ">=${bounds[0].trim()} <=${bounds[1].trim()}"
+	}
+	return normalizedRange
+}
+
 version = project.mod_version
 group = project.maven_group
 
@@ -153,11 +169,13 @@ check.dependsOn jacocoTestCoverageVerification, jacocoClientCoverageVerification
 processResources {
 	inputs.property "version", project.version
 	inputs.property "minecraft_support_range", project.minecraft_support_range
+	inputs.property "minecraft_version_predicate", toVersionPredicate(project.minecraft_support_range)
 
 	filesMatching("fabric.mod.json") {
 		expand(
 			"version": inputs.properties.version,
-			"minecraft_support_range": inputs.properties.minecraft_support_range
+			"minecraft_support_range": inputs.properties.minecraft_support_range,
+			"minecraft_version_predicate": inputs.properties.minecraft_version_predicate
 		)
 	}
 }

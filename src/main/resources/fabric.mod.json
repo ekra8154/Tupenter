@@ -32,7 +32,7 @@
 	"accessWidener": "tupenter.accesswidener",
 	"depends": {
 		"fabricloader": ">=0.18.2",
-		"minecraft": "${minecraft_support_range}",
+		"minecraft": "${minecraft_version_predicate}",
 		"java": ">=21",
 		"fabric-api": "*"
 	},
