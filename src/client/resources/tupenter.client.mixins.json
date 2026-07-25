@@ -3,7 +3,6 @@
 	"package": "net.tupenter.mixin.client",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
-		"ExampleClientMixin",
 		"MixinConnection",
 		"MixinClientPacketListener",
 		"MixinCommandSuggestions",

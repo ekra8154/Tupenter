@@ -4,11 +4,26 @@ plugins {
 	id 'jacoco'
 }
 
+// The support range is a label as much as a version predicate, and it shows up
+// in a filename, so normalise how it reads: "26.2.x" -> "26.2.X", and trim each
+// side of an "A-B" range independently.
+def formatMinecraftSupportLabel = { String supportRange ->
+	def normalizedRange = supportRange.trim()
+	if (normalizedRange.contains('-')) {
+		return normalizedRange.split('-', 2).collect { it.trim().replaceAll(/(?i)\.x\b/, '.X') }.join('-')
+	}
+	return normalizedRange.replaceAll(/(?i)\.x\b/, '.X')
+}
+
+// tupenter-fabric-1.21.10-v1.0.0.jar — loader, then the versions it serves,
+// then the mod's own version. Which build you're holding is unambiguous.
+def buildArchiveName = "${project.archives_base_name}-fabric-${formatMinecraftSupportLabel(project.minecraft_support_range)}"
+
 version = project.mod_version
 group = project.maven_group
 
 base {
-	archivesName = project.archives_base_name
+	archivesName = buildArchiveName
 }
 
 repositories {
@@ -22,7 +37,7 @@ loom {
 	accessWidenerPath = file("src/main/resources/tupenter.accesswidener")
 
 	mods {
-		"modid" {
+		"tupenter" {
 			sourceSet sourceSets.main
 			sourceSet sourceSets.client
 		}
@@ -40,8 +55,8 @@ dependencies {
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     // Mod Menu + Cloth Config
-    modImplementation "com.terraformersmc:modmenu:16.0.0-rc.1"
-    modImplementation "me.shedaniel.cloth:cloth-config-fabric:20.0.149"
+    modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
+    modImplementation "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
 
     // Unit tests (net.tupenter.script is pure Java, no Minecraft deps)
     testImplementation platform("org.junit:junit-bom:5.10.2")
@@ -137,9 +152,13 @@ check.dependsOn jacocoTestCoverageVerification, jacocoClientCoverageVerification
 
 processResources {
 	inputs.property "version", project.version
+	inputs.property "minecraft_support_range", project.minecraft_support_range
 
 	filesMatching("fabric.mod.json") {
-		expand "version": inputs.properties.version
+		expand(
+			"version": inputs.properties.version,
+			"minecraft_support_range": inputs.properties.minecraft_support_range
+		)
 	}
 }
 
@@ -156,16 +175,29 @@ java {
 
 jar {
 	inputs.property "archivesName", project.base.archivesName
+	archiveVersion = "v${project.version}"
 
 	from("LICENSE") {
 		rename { "${it}_${inputs.properties.archivesName}"}
 	}
 }
 
+tasks.named("sourcesJar") {
+	archiveVersion = "v${project.version}"
+}
+
+// The remapped jars are what actually ship, and they'd otherwise re-derive the
+// version and drop the v-prefix set above. Matched by name rather than
+// referenced directly so the script still evaluates if loom stops registering
+// them.
+tasks.matching { it.name in ["remapJar", "remapSourcesJar"] }.configureEach {
+	archiveVersion = "v${project.version}"
+}
+
 publishing {
 	publications {
 		create("mavenJava", MavenPublication) {
-			artifactId = project.archives_base_name
+			artifactId = buildArchiveName
 			from components.java
 		}
 	}
