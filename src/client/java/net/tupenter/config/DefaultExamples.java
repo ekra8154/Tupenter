@@ -69,12 +69,9 @@ public final class DefaultExamples {
     static final String CREEPER_ALERT =
             "creeperAlert =\n"
             + "#setdefault creeperNear = false\n"
-            + "&& #local n = len(entities(16, \"minecraft:creeper\"))\n"
-            + "&& #if (n > 0\n"
-            + "    && !creeperNear) (/echo &cCreeper within 16 blocks! ($n$)\n"
-            + "    && #set creeperNear = true)\n"
-            + "&& #if (n == 0\n"
-            + "    && creeperNear) (#set creeperNear = false)";
+            + "&& #if (client.gamemode == \"survival\") (#local c = nearest_entity(8, \"minecraft:creeper\")\n"
+            + "    && #if (c != \"miss\" && !creeperNear) (#local d = round(dist(client.pos, entity(c, \"pos\", client.pos))) && /echo &cCreeper $d$ blocks away! && #set creeperNear = true)\n"
+            + "    && #if (c == \"miss\" && creeperNear) (#set creeperNear = false)) #else (#set creeperNear = false)";
 
     static final String RESTOCK_REMINDER =
             "restockReminder =\n"
