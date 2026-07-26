@@ -14,6 +14,7 @@
   "tooltip.tupenter.tick_script_toggle": "Arm or disarm this script FOR THE WORLD YOU ARE IN. Every world/server keeps its own on/off states — a script armed here stays off everywhere else.",
   "tooltip.tupenter.tick_script_toggle_locked": "Join a world to arm scripts — every world/server has its own on/off states, so there is nothing to toggle from the menu. Text edits still save.",
   "tooltip.tupenter.delete_script": "Delete this script (takes effect immediately). Deleting a Global script removes it from every world.",
+  "tooltip.tupenter.script_sends_to_server": "§eThis script contains server-side commands that might spam a server.§r Use with caution.",
   "text.tupenter.add_script": "+ Add Global Script",
   "tooltip.tupenter.add_script": "Adds a new Global script row (visible in every world, armed in none until you toggle it). WARNING: this reloads the screen — script text edits are kept, but unsaved changes in other tabs are discarded.",
   "text.tupenter.add_world_script": "+ Add Script for This World",
