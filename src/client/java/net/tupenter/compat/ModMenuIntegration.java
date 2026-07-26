@@ -905,6 +905,7 @@ public class ModMenuIntegration implements ModMenuApi {
      */
     private abstract static class ScriptRowEntry extends WrapRowEntry {
         private final Button toggleButton;
+        private final Button sendsWarning;
         private final boolean initialEnabled;
         private final boolean toggleLocked;
         boolean enabled;
@@ -927,6 +928,17 @@ public class ModMenuIntegration implements ModMenuApi {
                             toggleLocked ? "tooltip.tupenter.tick_script_toggle_locked" : "tooltip.tupenter.tick_script_toggle")))
                     .build();
             this.toggleButton.active = !toggleLocked;
+
+            // Shown only when the body contains a command that leaves the client.
+            // Deliberately no "safe" counterpart: the scan can prove a script
+            // sends, but never that it doesn't — a $...$ expression can produce a
+            // command name at run time. A reassuring badge would be a promise we
+            // can't keep, so the absence of this one means nothing was found.
+            this.sendsWarning = Button.builder(
+                            Component.literal("!").withStyle(net.minecraft.ChatFormatting.GOLD), button -> { })
+                    .bounds(0, 0, 20, 20)
+                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.script_sends_to_server")))
+                    .build();
         }
 
         private Component toggleLabel() {
@@ -938,9 +950,13 @@ public class ModMenuIntegration implements ModMenuApi {
                     : Component.literal("Off").withStyle(net.minecraft.ChatFormatting.RED);
         }
 
+        // Recomputed from the live text rather than the initial value, so the
+        // warning appears and disappears as you type rather than after a reopen.
         @Override
         List<net.minecraft.client.gui.components.AbstractWidget> leadingWidgets() {
-            return List.of(toggleButton);
+            return net.tupenter.command.ServerTrafficScan.sendsToServer(text())
+                    ? List.of(toggleButton, sendsWarning)
+                    : List.of(toggleButton);
         }
 
         @Override
