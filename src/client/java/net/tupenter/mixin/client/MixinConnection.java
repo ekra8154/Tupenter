@@ -53,7 +53,21 @@ public class MixinConnection {
             } else if (packet instanceof ServerboundChatCommandSignedPacket signed) {
                 command = signed.command();
             }
-            if (command != null && handleOutgoingCommand(command, ci)) {
+            // Only a command YOU originated is script input. isUserDrivenSend()
+            // covers exactly that: the chat bar (MixinChatScreen.handleChatInput)
+            // and the resend drain, which is why resend still re-evaluates
+            // $rand(1,6)$ on every replay. Tick scripts never reach here at all —
+            // they arrive already expanded, behind isForwardingScriptSend().
+            //
+            // Everything else is somebody else's string. A server's clickable
+            // [ACCEPT] button is a run_command click event, and CubeCraft's
+            // carries a literal "$-$"; treating that as an expression failed to
+            // parse and CANCELLED the send, so the button silently did nothing.
+            // Expanding it wouldn't be better than skipping it either — a server
+            // string like "$5$" would have quietly evaluated to "5" and altered
+            // the command. We don't own these, so we pass them through untouched.
+            if (command != null && TupenterModClient.isUserDrivenSend()
+                    && handleOutgoingCommand(command, ci)) {
                 return;
             }
 
