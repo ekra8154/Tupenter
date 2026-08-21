@@ -649,13 +649,22 @@ public class ModMenuIntegration implements ModMenuApi {
          */
         @Override
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            blurAllEditorBoxes();
+            blurEditorBoxesExceptAt(mouseX, mouseY);
             return super.mouseClicked(mouseX, mouseY, button);
         }
 
-        void blurBoxes() {
-            singleBox.setFocused(false);
-            if (multiBox != null) {
+        /**
+         * Blur this row's boxes UNLESS the click landed in one. Blurring the box
+         * that is about to be clicked strands it: the parent's setFocused(child)
+         * returns early when that child is already its focused one, so it never
+         * calls setFocused(true) to undo our blur. The caret then stays hidden
+         * and the box ignores drag-selection until you click a different box.
+         */
+        void blurBoxesExceptAt(double mouseX, double mouseY) {
+            if (!singleBox.isMouseOver(mouseX, mouseY)) {
+                singleBox.setFocused(false);
+            }
+            if (multiBox != null && !multiBox.isMouseOver(mouseX, mouseY)) {
                 multiBox.setFocused(false);
             }
         }
@@ -776,8 +785,8 @@ public class ModMenuIntegration implements ModMenuApi {
             }
         }
 
-        void blurBox() {
-            if (box != null) {
+        void blurBoxExceptAt(double mouseX, double mouseY) {
+            if (box != null && !box.isMouseOver(mouseX, mouseY)) {
                 box.setFocused(false);
             }
         }
@@ -797,7 +806,7 @@ public class ModMenuIntegration implements ModMenuApi {
 
         @Override
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            blurAllEditorBoxes();
+            blurEditorBoxesExceptAt(mouseX, mouseY);
             return super.mouseClicked(mouseX, mouseY, button);
         }
 
@@ -858,19 +867,23 @@ public class ModMenuIntegration implements ModMenuApi {
     private static final int TAB_ALIASES = 2;
     private static final int TAB_SCRIPTS = 3;
 
-    /** Exactly one editor cursor at a time, across every row and both tabs. */
-    private static void blurAllEditorBoxes() {
+    /**
+     * Exactly one editor cursor at a time, across every row and both tabs --
+     * but never blur the box the click actually landed in. See
+     * blurBoxesExceptAt for why blurring the clicked box strands it.
+     */
+    private static void blurEditorBoxesExceptAt(double mouseX, double mouseY) {
         for (WrapRowEntry row : commandRows) {
-            row.blurBoxes();
+            row.blurBoxesExceptAt(mouseX, mouseY);
         }
         for (WrapRowEntry row : globalScriptRows) {
-            row.blurBoxes();
+            row.blurBoxesExceptAt(mouseX, mouseY);
         }
         for (WrapRowEntry row : worldScriptRows) {
-            row.blurBoxes();
+            row.blurBoxesExceptAt(mouseX, mouseY);
         }
         if (presetBox != null) {
-            presetBox.blurBox();
+            presetBox.blurBoxExceptAt(mouseX, mouseY);
         }
     }
 
