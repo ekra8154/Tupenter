@@ -517,6 +517,7 @@ final class ExpressionEvaluator {
                 case "sqrt" -> sqrt(args);
                 case "rand" -> rand(args);
                 case "range" -> range(args);
+                case "list" -> listOf(args);
                 case "itemset" -> tagMembers("itemset", TagResolver.TagKind.ITEM, args);
                 case "blockset" -> tagMembers("blockset", TagResolver.TagKind.BLOCK, args);
                 case "effectset" -> tagMembers("effectset", TagResolver.TagKind.EFFECT, args);
@@ -524,6 +525,7 @@ final class ExpressionEvaluator {
                 case "block" -> blockAt(args);
                 case "simulated" -> simulatedAt(args);
                 case "vec" -> vec(args);
+                case "blockpos" -> blockpos(args);
                 case "component" -> component(args);
                 case "vadd" -> vecArith(args, "vadd", true);
                 case "vsub" -> vecArith(args, "vsub", false);
@@ -704,6 +706,31 @@ final class ExpressionEvaluator {
                 throw new ExpressionException("sqrt of a negative number");
             }
             return new Value.NumberValue(Rational.fromDouble(Math.sqrt(value.doubleValue())));
+        }
+
+        /**
+         * list(a, b, ...) — an explicit list, the literal counterpart to range().
+         * The (a | b | c) form only parses in a #foreach header; this works
+         * anywhere an expression does, so a list can live in a #local.
+         *
+         * <p>Nested lists FLATTEN. Not laziness: nothing downstream can consume a
+         * list-of-lists — #foreach would bind an element that is itself a list, and
+         * substituting it throws — so nesting could only ever produce a confusing
+         * error one step later. Flattening makes list(a, b) double as concatenation.
+         */
+        private Value listOf(List<Value> args) {
+            List<Value> values = new ArrayList<>();
+            for (Value arg : args) {
+                if (arg instanceof Value.ListValue nested) {
+                    values.addAll(nested.values());
+                } else {
+                    values.add(arg);
+                }
+                if (values.size() > 100000) {
+                    throw new ExpressionException("list(...) is too large");
+                }
+            }
+            return new Value.ListValue(values);
         }
 
         /** range(start, stop[, step]) — inclusive whole-number list for #foreach. */
@@ -970,6 +997,35 @@ final class ExpressionEvaluator {
                 throw new ExpressionException(fn + "(x, y, z) or " + fn + "(\"x y z\") — e.g. " + fn + "(client.target.blockpos)");
             }
             return position;
+        }
+
+        /**
+         * blockpos(x, y, z) · blockpos(v) — whole-number block coordinates.
+         *
+         * <p>FLOORS, matching the client.blockpos variable (Entity#blockPosition):
+         * the block a position is INSIDE. round() answers a different question —
+         * which block is NEAREST — and that is the right one when you're sampling
+         * geometry, which is why the rainbow-tunnel recipe still rounds explicitly.
+         * The gap is half a block, so mixing them up bends a shape without ever
+         * looking like an error.
+         *
+         * <p>The one-argument form is the point: blockpos(raycast(50)) says what
+         * round(component(v, "x")) three times over used to.
+         */
+        private Value blockpos(List<Value> args) {
+            Rational[] parts;
+            if (args.size() == 1) {
+                parts = asVec3(args.get(0), "blockpos(v)");
+            } else if (args.size() == 3) {
+                parts = new Rational[] {
+                        asNumber(args.get(0), "blockpos(x, y, z)"),
+                        asNumber(args.get(1), "blockpos(x, y, z)"),
+                        asNumber(args.get(2), "blockpos(x, y, z)")};
+            } else {
+                throw new ExpressionException("blockpos(x, y, z) or blockpos(v) takes three numbers or one vec3, "
+                        + "e.g. blockpos(1, 64, -3) or blockpos(client.pos)");
+            }
+            return vec3(parts[0].floor(), parts[1].floor(), parts[2].floor());
         }
 
         /** vec(x, y, z) — a vec3 value ("x y z"), the clean way to spell a literal position. */

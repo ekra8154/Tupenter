@@ -298,10 +298,10 @@ public class TupenterModClient implements ClientModInitializer {
         names.addAll(net.tupenter.command.SlotVariableProvider.completions(typed));
         names.addAll(net.tupenter.command.EntitySubjectProvider.completions(typed));
         names.addAll(java.util.List.of(
-                "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
+                "rand", "randf", "pick", "range", "list", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
-                "trim", "upper", "lower", "substr", "replace", "vec", "component", "raycast", "raycast_block",
+                "trim", "upper", "lower", "substr", "replace", "vec", "blockpos", "component", "raycast", "raycast_block",
                 "entity", "raycast_entity", "entities", "nearest_entity",
                 "slot"));
         names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too

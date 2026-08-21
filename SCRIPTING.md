@@ -851,6 +851,19 @@ one of the options you wrote, chosen at random
 
 ### Lists
 
+#### `list(a, b, ...)`
+
+exactly the values you name, as one list
+
+- The literal counterpart to range: range makes a RUN of numbers — list makes the exact values you name, of any type.
+- Works anywhere: the (a | b | c) form only parses in a #foreach header, so list(...) is how a list goes into a #local or #set.
+- Lists flatten: list(range(1, 3), 9) is 1 2 3 9, which makes list(a, b) double as "join these two lists".
+
+```
+/calc list(1, 2, 3)
+#foreach $b$ in list(blockpos(1, 2, 3), blockpos(-4, 5, 6)) (/setblock $b$ glowstone)
+```
+
 #### `range(start, stop[, step])`
 
 an inclusive whole-number list; step optional, direction automatic
@@ -977,6 +990,19 @@ three numbers as one vec3 value ("x y z")
 ```
 /calc vec(0, 64, 0)
 /echo ground below: $raycast(client.eye_pos, vec(0, -1, 0), 100)$
+```
+
+#### `blockpos(x, y, z) · blockpos(v)`
+
+whole block coordinates — floors a position to the block it's in
+
+- Whole numbers: blockpos(10.7, 64.2, -3.4) is 10 64 -4. /setblock and /fill reject decimals, so this is what makes a computed position usable.
+- Floors, like client.blockpos: the block a position is INSIDE. round(...) picks the NEAREST block instead — half a block away, and the right answer when you're plotting geometry.
+- One vec3 in: blockpos(raycast(50)) says what three round(component(v, "x")) calls used to. Already whole? It changes nothing.
+
+```
+/calc blockpos(10.7, 64.2, -3.4)
+/setblock $blockpos(raycast(50))$ minecraft:torch
 ```
 
 #### `component(v, axis)`
