@@ -21,6 +21,9 @@ public final class ConfigScreenAccess {
      * them. They live here rather than on the screen so a command can name a tab
      * without pulling Cloth onto the classpath (these are compile-time
      * constants, so reading one loads nothing at all).
+     *
+     * <p>All four are listed even though TAB_SCRIPTING has no caller — the
+     * sequence is the point, and an index of 2 means nothing on its own.
      */
     public static final int TAB_GENERAL = 0;
     public static final int TAB_SCRIPTING = 1;

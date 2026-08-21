@@ -1368,12 +1368,12 @@ public class TupenterModClient implements ClientModInitializer {
                                             .then(argument("name", StringArgumentType.word())
                                                     .suggests(TupenterModClient::suggestScriptNames)
                                                     .executes(context -> runSetArmedByName(context, false)))))
+                            // Only the two LIST tabs get a name. General and
+                            // Scripting are plain option pages you land on
+                            // anyway with a bare /tupenter menu, so naming them
+                            // would just be two more words to tab past.
                             .then(literal("menu")
                                     .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_GENERAL))
-                                    .then(literal("general")
-                                            .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_GENERAL)))
-                                    .then(literal("scripting")
-                                            .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_SCRIPTING)))
                                     // "customcommands" matches the tab's label, not the
                                     // internal name (the category key is ...aliases)
                                     .then(literal("customcommands")
@@ -2704,7 +2704,7 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine(navRow("flow", "&& chains, #repeat, #for, #foreach, #if/#elseif, #while", "/tupenter help flow"));
         helpLine(navRow("prefixes", "#silent, #norecord, #stage, /echo", "/tupenter help prefixes"));
         helpLine(navRow("scripts", "the every-tick Scripts tab", "/tupenter help scripts"));
-        helpLine(navRow("/tupenter menu", "open the settings — add general, scripting, customcommands or scripts to land on a tab", "/tupenter menu"));
+        helpLine(navRow("/tupenter menu", "open the settings — add customcommands or scripts to land on that tab", "/tupenter menu"));
         helpLine("§8Anything by name: /tupenter help <command | function | directive | variable> — e.g. help echo, help blockset, help local");
         helpLine(Component.literal("Quick taste: ").withStyle(ChatFormatting.GRAY).append(suggestLink(taste, taste)));
         endHelpPage();
