@@ -921,24 +921,35 @@ public class TupenterConfigScreen {
         if (screen instanceof me.shedaniel.clothconfig2.gui.AbstractConfigScreen cloth) {
             cloth.selectedCategoryIndex = tabIndex;
         }
-        Minecraft.getInstance().gui.setScreen(screen); // init() runs synchronously in here
+        Minecraft.getInstance().gui.setScreen(screen); // Gui.setScreen calls Screen.init synchronously
         if (screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth) {
-            // Restore TWICE, on purpose. capYPosition clamps against
-            // getMaxScroll(), which is max(0, contentHeight - (bottom - top - 4))
-            // — all of which init() has already set, so the immediate call is
-            // the one that should take. The deferred call is a safety net for a
-            // later layout pass resetting scroll behind us. Setting the same
-            // value twice is idempotent, so whichever one lands, we end up in
-            // the same place.
             double target = scroll;
             restoreScroll(cloth, target);
+            // Second, deferred pass: an entry whose height isn't final until it
+            // has been ticked once (the wrapping edit boxes) can move the clamp
+            // ceiling after the first restore. Idempotent, so it either changes
+            // nothing or finishes the job.
             Minecraft.getInstance().execute(() -> restoreScroll(cloth, target));
         }
     }
 
-    /** Put the list back where it was, clamped if it shrank. No-op if the screen moved on. */
+    /**
+     * Put the list back where it was, clamped if it shrank. No-op if the screen
+     * moved on.
+     *
+     * <p>The tickList() is the whole fix, and it is not optional. capYPosition
+     * clamps to getMaxScroll(), which sums the heights of
+     * <em>visibleChildren()</em> — a list Cloth caches in a field and refreshes
+     * ONLY from tickList(). Straight after init() that cache is still empty, so
+     * getMaxScroll() reads 0 and the clamp silently pins any target to the top.
+     * Deferring the call doesn't help either: Minecraft.runTick drains the
+     * execute queue before it ticks the screen, so a queued restore lands just
+     * as early. Ticking the list ourselves populates the cache first, and then
+     * the clamp has real content to measure against.
+     */
     private static void restoreScroll(me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth, double target) {
         if (Minecraft.getInstance().gui.screen() == cloth && cloth.listWidget != null) {
+            cloth.listWidget.tickList();
             cloth.listWidget.capYPosition(target);
         }
     }
