@@ -54,7 +54,7 @@ import net.tupenter.script.VariableRegistry;
 
 import java.util.Map;
 import java.util.Random;
-import net.tupenter.compat.ModMenuIntegration;
+import net.tupenter.compat.ConfigScreenAccess;
 import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.platform.InputConstants;
 
@@ -1368,6 +1368,18 @@ public class TupenterModClient implements ClientModInitializer {
                                             .then(argument("name", StringArgumentType.word())
                                                     .suggests(TupenterModClient::suggestScriptNames)
                                                     .executes(context -> runSetArmedByName(context, false)))))
+                            .then(literal("menu")
+                                    .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_GENERAL))
+                                    .then(literal("general")
+                                            .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_GENERAL)))
+                                    .then(literal("scripting")
+                                            .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_SCRIPTING)))
+                                    // "customcommands" matches the tab's label, not the
+                                    // internal name (the category key is ...aliases)
+                                    .then(literal("customcommands")
+                                            .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_ALIASES)))
+                                    .then(literal("scripts")
+                                            .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_SCRIPTS))))
                             .then(literal("reference")
                                     .executes(TupenterModClient::runReferenceCommand))
                             .then(literal("vars")
@@ -1542,7 +1554,11 @@ public class TupenterModClient implements ClientModInitializer {
             
             // Handle Config
             while (configKey.consumeClick()) {
-                client.gui.setScreen(ModMenuIntegration.createScreen(client.gui.screen()));
+                // Guarded: Cloth Config is only *suggested*, and this used to
+                // call straight through — binding this key without it crashed.
+                if (!ConfigScreenAccess.open(ConfigScreenAccess.TAB_GENERAL)) {
+                    sendClothMissingMessage();
+                }
             }
             
             // Handle History Recording Toggle
@@ -2206,6 +2222,30 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /**
+     * /tupenter menu [tab] — the settings screen, straight from chat, on the tab
+     * you asked for. The same screen Mod Menu shows.
+     */
+    private static int runMenuCommand(CommandContext<FabricClientCommandSource> context, int tabIndex) {
+        if (!ConfigScreenAccess.open(tabIndex)) {
+            context.getSource().sendError(Component.literal(CLOTH_MISSING));
+            return 0;
+        }
+        return 1;
+    }
+
+    /** The keybind's version of the same miss — no command source to answer on. */
+    private static void sendClothMissingMessage() {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player != null) {
+            client.player.sendSystemMessage(Component.literal(CLOTH_MISSING).withStyle(ChatFormatting.RED));
+        }
+    }
+
+    private static final String CLOTH_MISSING =
+            "Tupenter's settings screen needs Cloth Config, which isn't installed. "
+                    + "Nothing else is affected — the whole mod still works from chat: /tupenter help.";
+
+    /**
      * /tupenter reference — the whole scripting reference (the same text as
      * SCRIPTING.md, generated from the same registries) onto the clipboard,
      * for pasting anywhere you'd rather read or search it.
@@ -2664,6 +2704,7 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine(navRow("flow", "&& chains, #repeat, #for, #foreach, #if/#elseif, #while", "/tupenter help flow"));
         helpLine(navRow("prefixes", "#silent, #norecord, #stage, /echo", "/tupenter help prefixes"));
         helpLine(navRow("scripts", "the every-tick Scripts tab", "/tupenter help scripts"));
+        helpLine(navRow("/tupenter menu", "open the settings — add general, scripting, customcommands or scripts to land on a tab", "/tupenter menu"));
         helpLine("§8Anything by name: /tupenter help <command | function | directive | variable> — e.g. help echo, help blockset, help local");
         helpLine(Component.literal("Quick taste: ").withStyle(ChatFormatting.GRAY).append(suggestLink(taste, taste)));
         endHelpPage();
