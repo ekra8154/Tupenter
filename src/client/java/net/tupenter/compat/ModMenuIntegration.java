@@ -899,15 +899,23 @@ public class ModMenuIntegration implements ModMenuApi {
         }
         Minecraft.getInstance().gui.setScreen(screen); // init() runs synchronously in here
         if (screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth) {
-            // capYPosition clamps to getMaxScroll(), which is 0 until the list
-            // has laid out on its first render — restoring now would snap us to
-            // the top. Defer to the next main-thread pass, after that frame.
+            // Restore TWICE, on purpose. capYPosition clamps against
+            // getMaxScroll(), which is max(0, contentHeight - (bottom - top - 4))
+            // — all of which init() has already set, so the immediate call is
+            // the one that should take. The deferred call is a safety net for a
+            // later layout pass resetting scroll behind us. Setting the same
+            // value twice is idempotent, so whichever one lands, we end up in
+            // the same place.
             double target = scroll;
-            Minecraft.getInstance().execute(() -> {
-                if (Minecraft.getInstance().gui.screen() == cloth && cloth.listWidget != null) {
-                    cloth.listWidget.capYPosition(target); // clamps if the list shrank
-                }
-            });
+            restoreScroll(cloth, target);
+            Minecraft.getInstance().execute(() -> restoreScroll(cloth, target));
+        }
+    }
+
+    /** Put the list back where it was, clamped if it shrank. No-op if the screen moved on. */
+    private static void restoreScroll(me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth, double target) {
+        if (Minecraft.getInstance().gui.screen() == cloth && cloth.listWidget != null) {
+            cloth.listWidget.capYPosition(target);
         }
     }
 
