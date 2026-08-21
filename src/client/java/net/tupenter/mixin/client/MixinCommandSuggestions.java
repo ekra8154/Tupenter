@@ -99,6 +99,10 @@ public abstract class MixinCommandSuggestions {
             candidates = prefix.startsWith("#")
                     ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
                     : TupenterModClient.expressionCompletions(prefix);
+        } else if ((tokenStart = ChatInputStyler.assignTypeTokenStart(text, cursor)) >= 0) {
+            // the :type of an assignment (#local c:bloc|) — the same keywords a
+            // custom command's <name:type> parameters take
+            candidates = net.tupenter.script.ParamTypeDocs.keywords();
         } else {
             // typing a directive word (#norec... / after-')' #elseif)
             tokenStart = ChatInputStyler.directiveTokenStart(text, cursor);

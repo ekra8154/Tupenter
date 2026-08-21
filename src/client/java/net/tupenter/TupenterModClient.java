@@ -331,6 +331,7 @@ public class TupenterModClient implements ClientModInitializer {
     public static String smartMaskMarkers(String text) {
         StringBuilder out = null;
         net.tupenter.script.EvalContext ctx = null;
+        java.util.Map<String, net.tupenter.script.AliasDefinition.ParamType> declaredTypes = null;
         int i = 0;
         while (i < text.length()) {
             char c = text.charAt(i);
@@ -359,9 +360,15 @@ public class TupenterModClient implements ClientModInitializer {
                 String value = MathEvaluator.evaluateValue(text.substring(i + 1, close), ctx).substitutionString();
                 tokens = tokenCount(value);
             } catch (RuntimeException ignored) {
-                // eval failed (e.g. target.blockpos off-crosshair while chat is open) —
-                // fall back to the known arity of a position variable, else one blob
-                tokens = positionalArity(text.substring(i + 1, close));
+                // eval failed — either a live read that has nothing to say right
+                // now (target.blockpos off-crosshair), or a name this very line is
+                // about to define, which by definition has no value yet. Fall back
+                // to a DECLARED arity, then to the known position variables, then
+                // to one blob.
+                if (declaredTypes == null) {
+                    declaredTypes = net.tupenter.script.VariableTypes.declaredOn(text);
+                }
+                tokens = declaredArity(text.substring(i + 1, close), declaredTypes);
             }
             writeTokenMask(out, i, close - i + 1, tokens);
             i = close + 1;
@@ -378,8 +385,23 @@ public class TupenterModClient implements ClientModInitializer {
     private static final java.util.Set<String> POSITIONAL_VARS = java.util.Set.of(
             "client.pos", "client.target.blockpos", "client.motion");
 
-    private static int positionalArity(String inner) {
-        return POSITIONAL_VARS.contains(inner.trim().toLowerCase(java.util.Locale.ROOT)) ? 3 : 1;
+    /**
+     * How many command tokens a marker will expand to when we cannot evaluate it.
+     *
+     * <p>A type declared on this very line wins, because it is the only thing that
+     * knows: "#local c:blockpos = -10 20 85 && /tp $c$ " has no value for c yet,
+     * so without the annotation $c$ masks to one token, /tp parses as a 1-argument
+     * teleport, and everything after it stops completing. That is the whole reason
+     * variable types exist.
+     */
+    private static int declaredArity(String inner,
+            java.util.Map<String, net.tupenter.script.AliasDefinition.ParamType> declared) {
+        String name = inner.trim().toLowerCase(java.util.Locale.ROOT);
+        net.tupenter.script.AliasDefinition.ParamType type = declared.get(name);
+        if (type != null) {
+            return net.tupenter.script.VariableTypes.arity(type);
+        }
+        return POSITIONAL_VARS.contains(name) ? 3 : 1;
     }
 
     /** Fills [start, start+len) with {@code tokens} runs of '0' joined by single spaces — length preserved. */

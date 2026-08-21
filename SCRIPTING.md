@@ -306,7 +306,7 @@ transition happens.
 a session variable — lives until you leave the world
 
 ```
-#set name = value
+#set name[:type] = value
 ```
 
 - Bare name is normal: #set x = 5. The name is x — $x$ is just x with EXPLICIT wrapping. Both the target (#set x = / #set $x$ =) and reads in expression world (#if (x > 3), x + 1, function args) take the bare name.
@@ -314,6 +314,7 @@ a session variable — lives until you leave the world
 - Compound forms: #set x += 1 (also -= *= /= %=) · dotted groups organize: #set hitlist.bob = "wanted".
 - Session-scoped: cleared when you leave, unless kept with /tupenter var save <name> (the composed example makes a permanent home).
 - Prints a notice when it sets — #silent mutes it. For a value that shouldn't outlive the line, use #local instead.
+- Optional type: #local c:blockpos = blockpos(-10, 20, 85) — the same keywords a custom command's <name:type> params take. It CHECKS the value (three whole numbers, or the line stops) and it tells the chat bar the SHAPE before the value exists, so /tp $c$ keeps completing the rest of the line. /customcommand help types lists them.
 
 ```
 #set x = rand(1,10) && /give @s stick $x$ && /echo got $x$!
@@ -325,13 +326,14 @@ a session variable — lives until you leave the world
 the workhorse: compute ONCE, use many times, save NOTHING
 
 ```
-#local name = value
+#local name[:type] = value
 ```
 
 - Line-scoped and silent: nothing written to the session, no notice printed — a tick script using #local stays stateless between runs.
 - One evaluation: every later read sees the SAME value — a rand doesn't re-roll, a raycast doesn't re-cast (the composed example reads two fields off one hit).
 - Bare name is normal — #local hit, then hit in the condition and hit inside entity(...); $r$ only where it substitutes into command text.
 - The choosing rule: #local by default; #set only when the value must OUTLIVE the line.
+- Optional type: #local c:blockpos = blockpos(-10, 20, 85) — the same keywords a custom command's <name:type> params take. It CHECKS the value (three whole numbers, or the line stops) and it tells the chat bar the SHAPE before the value exists, so /tp $c$ keeps completing the rest of the line. /customcommand help types lists them.
 
 ```
 #local r = rand(1, 5) && /give @s stick $r$ && /echo gave $r$ (same roll, both places)
@@ -343,7 +345,7 @@ the workhorse: compute ONCE, use many times, save NOTHING
 guarantee a variable exists: create it if absent, keep it as-is if present
 
 ```
-#setdefault name = value
+#setdefault name[:type] = value
 ```
 
 - Already defined means session, saved, or live — an existing value always wins.
@@ -352,6 +354,7 @@ guarantee a variable exists: create it if absent, keep it as-is if present
 - The stateful-command idiom: first run initializes, every run advances — paste it anywhere, no separate setup line.
 - Only track what the game DOESN'T tell you: for live state read the real variable — $world.frozen$, $client.held.id$, $client.riding$. A self-tracked flag drifts the moment anything else changes it (or you rejoin), and then your toggle does the opposite of what you meant.
 - Create-once-across-sessions: #setdefault x = 0 && /tupenter var save x.
+- Optional type: #local c:blockpos = blockpos(-10, 20, 85) — the same keywords a custom command's <name:type> params take. It CHECKS the value (three whole numbers, or the line stops) and it tells the chat bar the SHAPE before the value exists, so /tp $c$ keeps completing the rest of the line. /customcommand help types lists them.
 
 ```
 #setdefault maxy = 80 && /echo building up to $maxy$

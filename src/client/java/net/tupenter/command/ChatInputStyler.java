@@ -77,6 +77,15 @@ public final class ChatInputStyler {
     private static final java.util.Set<String> HEADER_EXPR_DIRECTIVES = java.util.Set.of(
             "#repeat", "#if", "#elseif", "#while", "#for", "#foreach");
 
+    /**
+     * The assignment directives. Their right-hand side is an expression zone too,
+     * but they are kept OUT of HEADER_EXPR_DIRECTIVES because that set also drives
+     * styling, and an assignment is styled by styleDirectiveCore. Completion is
+     * the only thing they join.
+     */
+    private static final java.util.Set<String> ASSIGN_DIRECTIVES = java.util.Set.of(
+            "#set", "#local", "#setdefault");
+
     public enum Kind {
         COMMAND,
         DIRECTIVE,
@@ -1159,6 +1168,71 @@ public final class ChatInputStyler {
     }
 
     /**
+     * The index of an assignment's {@code =} within [from, end), or -1.
+     *
+     * <p>A variable name cannot contain '=', so the first one is always the
+     * assignment operator — including the compound spellings, where {@code +=}
+     * still puts the '=' last and the expression still starts after it.
+     */
+    private static int assignmentEquals(String text, int from, int end) {
+        for (int i = from; i < end && i < text.length(); i++) {
+            if (text.charAt(i) == '=') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * When the cursor sits in the {@code :type} of an assignment
+     * ({@code #local c:bloc|}), the index just after the colon — so the type
+     * keywords can be offered there; -1 otherwise.
+     */
+    public static int assignTypeTokenStart(String text, int cursor) {
+        if (markerTokenStart(text, cursor) >= 0) {
+            return -1;
+        }
+        List<Segment> segs = segments(text, true);
+        Segment seg = segmentAt(segs, Math.min(cursor, text.length()));
+        int rest = statementStartAfterPrefixes(text, seg.textStart(), Math.min(seg.end(), text.length()));
+        if (rest >= seg.end() || text.charAt(rest) != '#') {
+            return -1;
+        }
+        int wordEnd = rest;
+        while (wordEnd < seg.end() && !Character.isWhitespace(text.charAt(wordEnd)) && text.charAt(wordEnd) != '(') {
+            wordEnd++;
+        }
+        if (!ASSIGN_DIRECTIVES.contains(text.substring(rest, wordEnd).toLowerCase(java.util.Locale.ROOT))) {
+            return -1;
+        }
+        int i = skipWhitespace(text, wordEnd);
+        if (i < seg.end() && text.charAt(i) == '$') {
+            i++;
+        }
+        int nameStart = i;
+        while (i < seg.end() && (Character.isLetterOrDigit(text.charAt(i)) || text.charAt(i) == '_'
+                || text.charAt(i) == '.')) {
+            i++;
+        }
+        if (i == nameStart) {
+            return -1; // no name yet
+        }
+        if (i < seg.end() && text.charAt(i) == '$') {
+            i++; // the $name$:type spelling
+        }
+        if (i >= seg.end() || text.charAt(i) != ':') {
+            return -1;
+        }
+        int keywordStart = i + 1;
+        int keywordEnd = keywordStart;
+        while (keywordEnd < seg.end() && (Character.isLetterOrDigit(text.charAt(keywordEnd))
+                || text.charAt(keywordEnd) == '_')) {
+            keywordEnd++;
+        }
+        return cursor >= keywordStart && cursor <= keywordEnd ? keywordStart : -1;
+    }
+
+    /**
      * When the cursor sits in the condition/iterable EXPRESSION of a scanner
      * directive (#repeat/#if/#for/#foreach — outside its body group and any
      * literal (a|b) list), the identifier start for expression/tag
@@ -1180,10 +1254,13 @@ public final class ChatInputStyler {
             wordEnd++;
         }
         String dir = text.substring(rest, wordEnd).toLowerCase(java.util.Locale.ROOT);
-        if (!HEADER_EXPR_DIRECTIVES.contains(dir) || cursor <= wordEnd) {
+        boolean assign = ASSIGN_DIRECTIVES.contains(dir);
+        if ((!assign && !HEADER_EXPR_DIRECTIVES.contains(dir)) || cursor <= wordEnd) {
             return -1; // still typing the directive word — let #-word completion cycle
         }
-        int bodyOpen = lastTopLevelGroupOpen(text, wordEnd, seg.end());
+        // An assignment has no body group: a (...) on its right-hand side is part
+        // of the expression, so the whole rest of the segment is the zone.
+        int bodyOpen = assign ? -1 : lastTopLevelGroupOpen(text, wordEnd, seg.end());
         int headerEnd = bodyOpen >= 0 ? bodyOpen : seg.end();
         int exprFrom = skipWhitespace(text, wordEnd);
         if (dir.equals("#foreach") || dir.equals("#for")) {
@@ -1199,6 +1276,13 @@ public final class ChatInputStyler {
         }
         if (dir.equals("#foreach") && exprFrom < headerEnd && text.charAt(exprFrom) == '(') {
             return -1; // literal (a|b) list — not an expression
+        }
+        if (assign) {
+            int equals = assignmentEquals(text, wordEnd, headerEnd);
+            if (equals < 0) {
+                return -1; // still on the name or its :type — nothing to complete yet
+            }
+            exprFrom = skipWhitespace(text, equals + 1);
         }
         if (cursor < exprFrom || cursor > headerEnd) {
             return -1;

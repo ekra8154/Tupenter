@@ -1037,6 +1037,16 @@ public final class ScriptParser {
                 throw new ParseAbort(directive + " $" + setVar.name() + "$ — " + ex.getMessage());
             }
 
+            // A declared type that is never checked is a lie the tab-completer
+            // then repeats, so the shape is enforced here at the assignment -
+            // the one place that knows both the annotation and the value.
+            if (setVar.type() != null) {
+                String problem = VariableTypes.validate(setVar.type(), value, setVar.name());
+                if (problem != null) {
+                    throw new ParseAbort(problem);
+                }
+            }
+
             if (onlyIfAbsent) {
                 // #setdefault seeds the SESSION store directly, once — it keeps no
                 // shadowing copy in this script's own scope. So a later #set (even
@@ -2275,14 +2285,16 @@ public final class ScriptParser {
     // #set
     // =====================================================================
 
-    private record SetVar(String name, String expression) {
+    /** {@code type} is null for a plain untyped assignment. */
+    private record SetVar(String name, String expression, AliasDefinition.ParamType type) {
     }
 
     /** Parses "#set $name$ = expression" (the $ around the name is optional). */
     private static SetVar parseSetDirective(String content, String directive) {
         String rest = content.substring(directive.length()).trim();
 
-        String syntax = directive + " syntax: " + directive + " name = expression (also name += expression; $ around the name is optional)";
+        String syntax = directive + " syntax: " + directive + " name = expression (also name:type = expression, "
+                + "name += expression; $ around the name is optional)";
 
         boolean wrapped = rest.startsWith("$");
         if (wrapped) {
@@ -2296,11 +2308,26 @@ public final class ScriptParser {
         String name = rest.substring(0, nameEnd).toLowerCase(Locale.ROOT);
         rest = rest.substring(nameEnd).trim();
 
+        // The optional :type. Accepted on BOTH sides of a closing $ - $c:blockpos$
+        // and $c$:blockpos read the same to a person, so neither should be an
+        // error. Unwrapped (c:blockpos) is the first branch too.
+        AliasDefinition.ParamType type = null;
+        if (rest.startsWith(":")) {
+            TypeSuffix suffix = parseTypeSuffix(rest, directive, name);
+            type = suffix.type();
+            rest = suffix.rest();
+        }
+
         if (wrapped) {
             if (!rest.startsWith("$")) {
                 throw new ParseAbort(syntax);
             }
             rest = rest.substring(1).trim();
+            if (type == null && rest.startsWith(":")) {
+                TypeSuffix suffix = parseTypeSuffix(rest, directive, name);
+                type = suffix.type();
+                rest = suffix.rest();
+            }
         }
 
         if (name.isEmpty()) {
@@ -2327,7 +2354,28 @@ public final class ScriptParser {
             expression = name + " " + compound + " (" + expression + ")";
         }
 
-        return new SetVar(name, expression);
+        return new SetVar(name, expression, type);
+    }
+
+    private record TypeSuffix(AliasDefinition.ParamType type, String rest) {
+    }
+
+    /** Reads ":keyword" off the front of {@code rest}, with the keyword list in the error. */
+    private static TypeSuffix parseTypeSuffix(String rest, String directive, String name) {
+        int end = 1;
+        while (end < rest.length() && (Character.isLetterOrDigit(rest.charAt(end)) || rest.charAt(end) == '_')) {
+            end++;
+        }
+        String keyword = rest.substring(1, end);
+        if (keyword.isEmpty()) {
+            throw new ParseAbort(directive + " " + name + ": needs a type after the colon, e.g. "
+                    + directive + " " + name + ":blockpos = ... (" + ParamTypeDocs.keywordSummary() + ")");
+        }
+        try {
+            return new TypeSuffix(VariableTypes.parse(keyword), rest.substring(end).trim());
+        } catch (IllegalArgumentException unknown) {
+            throw new ParseAbort(directive + " " + name + ":" + keyword + " — " + unknown.getMessage());
+        }
     }
 
     // =====================================================================
