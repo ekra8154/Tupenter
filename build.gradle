@@ -99,6 +99,15 @@ sourceSets {
 test {
     useJUnitPlatform()
     finalizedBy jacocoTestReport
+
+    // Two tests read markdown from the repo root rather than the classpath:
+    // ReadmeExamplesTest runs every example in README.md, and
+    // ScriptingReferenceTest compares SCRIPTING.md against the registries.
+    // Without declaring them as inputs, Gradle calls the task up-to-date when
+    // only a doc changed — so editing the README could never fail the build,
+    // which is the one thing those tests exist to do.
+    inputs.file("README.md").withPropertyName("readme").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file("SCRIPTING.md").withPropertyName("scriptingReference").withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 jacoco {
