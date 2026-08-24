@@ -13,6 +13,7 @@ import net.minecraft.client.multiplayer.ClientSuggestionProvider;
 import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 import net.tupenter.config.TupenterConfig;
+import net.tupenter.script.ListLiteral;
 import net.tupenter.script.ScriptParser;
 
 import java.util.ArrayList;
@@ -476,7 +477,8 @@ public final class ChatInputStyler {
         return FormattedCharSequence.composite(parts);
     }
 
-    private static Style[] stylesFor(String full) {
+    // package-private so ChatInputStylerTest can assert the finished styles
+    static Style[] stylesFor(String full) {
         if (full.equals(cachedText) && cachedStyles != null) {
             return cachedStyles;
         }
@@ -484,9 +486,78 @@ public final class ChatInputStyler {
         java.util.Arrays.fill(styles, Style.EMPTY);
         styleStatements(full, 0, styles);
         overlayMarkers(full, styles);
+        overlayListPipes(full, styles);
         cachedText = full;
         cachedStyles = styles;
         return styles;
+    }
+
+    /**
+     * Gold pipes inside a {@code list(a | b | c)} call.
+     *
+     * <p>A final overlay rather than a branch in one styler, because the call can
+     * appear anywhere an expression can: a $...$ marker, a #foreach header, an
+     * assignment's right-hand side, a custom function's body. One pass over the
+     * finished styles covers all of them and cannot drift from the evaluator,
+     * since it asks {@link ListLiteral} the same two questions the evaluator does.
+     *
+     * <p>Only where an expression could actually live — inside a directive
+     * statement, or somewhere already painted as marker text. In plain chat,
+     * "list(a | b)" is prose and gets left alone.
+     */
+    private static void overlayListPipes(String full, Style[] styles) {
+        for (Segment segment : segments(full, true)) {
+            int limit = Math.min(segment.end(), full.length());
+            int rest = statementStartAfterPrefixes(full, segment.textStart(), limit);
+            boolean directive = rest < limit && full.charAt(rest) == '#';
+            for (int i = segment.textStart(); i < limit; i++) {
+                if (!startsListCall(full, i) || !(directive || MARKER.equals(styles[i]))) {
+                    continue;
+                }
+                int open = i + "list".length();
+                int close = ListLiteral.groupEnd(full, open);
+                if (close < 0 || close > limit || !ListLiteral.hasSeparatorPipe(full, open + 1, close)) {
+                    continue;
+                }
+                paintSeparatorPipes(full, styles, open + 1, close);
+                i = close;
+            }
+        }
+    }
+
+    /** Is {@code list(} at {@code i}, as a whole word rather than a name ending in it? */
+    private static boolean startsListCall(String full, int i) {
+        return full.regionMatches(true, i, "list(", 0, "list(".length())
+                && (i == 0 || !Character.isLetterOrDigit(full.charAt(i - 1)) && full.charAt(i - 1) != '_');
+    }
+
+    /** The separator pipes in [from, end) — same rules the splitter uses. */
+    private static void paintSeparatorPipes(String full, Style[] styles, int from, int end) {
+        boolean insideSpan = false;
+        boolean insideQuotes = false;
+        int depth = 0;
+        for (int i = from; i < end; i++) {
+            char c = full.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '"' && !insideSpan) {
+                insideQuotes = !insideQuotes;
+            } else if (c == '$' && !insideQuotes) {
+                insideSpan = !insideSpan;
+            } else if (!insideSpan && !insideQuotes) {
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth--;
+                } else if (c == '|' && depth == 0) {
+                    if (i + 1 < end && full.charAt(i + 1) == '|') {
+                        i++; // boolean or, not a separator
+                    } else {
+                        styles[i] = SEPARATOR;
+                    }
+                }
+            }
+        }
     }
 
     /**
