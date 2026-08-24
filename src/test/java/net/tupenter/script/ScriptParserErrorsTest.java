@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -324,5 +325,29 @@ class ScriptParserErrorsTest {
     void emptyChainSegmentsAreForgiven() {
         assertEquals(List.of("say hi"), sent("&& say hi"));
         assertEquals(List.of("say a", "say b"), sent("say a && && say b"));
+    }
+
+    /**
+     * A bare "/" is vanilla's business. Vanilla strips the slash before the
+     * packet, so Tupenter sees an empty command — and used to answer it with
+     * "That prefix needs a command to run", which is both wrong (there is no
+     * prefix) and a hijack of an error the game already gives properly, caret
+     * and all. Passing it through is what restores "Unknown or incomplete
+     * command".
+     */
+    @Test
+    void aBareSlashIsLeftToVanilla() {
+        for (String nothing : java.util.List.of("", " ", "   ")) {
+            ScriptParser.ParseResult result = ScriptParser.parse(nothing, options());
+            assertNull(result.error(), "a blank command should not be Tupenter's error: " + result.error());
+            assertFalse(result.changed(), "and nothing should be rewritten");
+        }
+    }
+
+    /** A prefix with nothing after it is still ours, and still says so. */
+    @Test
+    void aPrefixWithNoCommandStillExplainsItself() {
+        assertErrorNames("#silent", "needs a command to run");
+        assertErrorNames("#norecord", "needs a command to run");
     }
 }

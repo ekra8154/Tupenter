@@ -165,6 +165,15 @@ public final class ScriptParser {
 
         String work = prefixes.rest();
         if (work.isEmpty()) {
+            if (command.isBlank()) {
+                // A bare "/" — vanilla strips the slash, so what reaches us is "".
+                // There is no prefix here and nothing of ours to parse, so hand it
+                // straight back and let VANILLA answer it the way it always has:
+                // "Unknown or incomplete command", caret under the problem.
+                // Claiming this one made the mod look like it had broken plain
+                // commands, and answered a question nobody asked about prefixes.
+                return ParseResult.unchanged(command);
+            }
             return ParseResult.error("That prefix needs a command to run, e.g. #silent /time set day");
         }
 
