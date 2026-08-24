@@ -716,8 +716,7 @@ public final class ChatInputStyler {
      * or iterable is an EXPRESSION, styled aqua like a $...$ marker (function
      * names, tags, and operators all read as "code"); the loop variable and
      * 'in' keyword get their own colors; and the trailing (...) body recurses
-     * as statements. Foreach's literal (a | b | c) list is styled as a list,
-     * not an expression.
+     * as statements.
      */
     private static void styleScannerHeader(String full, Style[] styles, int wordStart, int wordEnd,
                                            int end, String directive, int depth) {
@@ -741,12 +740,11 @@ public final class ChatInputStyler {
                 exprFrom = afterVar;
             }
         }
-        if (directive.equals("#foreach") && exprFrom < headerEnd && full.charAt(exprFrom) == '(') {
-            styleLiteralList(full, styles, exprFrom, headerEnd); // (a | b | c)
-        } else {
-            fill(styles, exprFrom, headerEnd, MARKER); // condition/iterable expression
-            flagUnbalancedParens(full, styles, exprFrom, headerEnd);
-        }
+        // Every scanner header is an EXPRESSION now, #foreach included: its list
+        // used to be bare parentheses styled as a list of their own, and that
+        // moved into list(...).
+        fill(styles, exprFrom, headerEnd, MARKER);
+        flagUnbalancedParens(full, styles, exprFrom, headerEnd);
         if (bodyOpen >= 0) {
             int close = matchingClose(full, bodyOpen, end);
             if (close < 0) {
@@ -755,30 +753,6 @@ public final class ChatInputStyler {
                 styles[bodyOpen] = GROUP_PAREN;
                 styles[close] = GROUP_PAREN;
                 styleStatements(full, bodyOpen + 1, close, styles, depth + 1);
-            }
-        }
-    }
-
-    /** #foreach's literal iterable: dim parens, gold '|' separators, gray items. */
-    private static void styleLiteralList(String full, Style[] styles, int from, int end) {
-        int close = matchingClose(full, from, end);
-        if (close < 0) {
-            styles[from] = ERROR;
-            return;
-        }
-        styles[from] = GROUP_PAREN;
-        styles[close] = GROUP_PAREN;
-        boolean marker = false;
-        for (int i = from + 1; i < close; i++) {
-            char c = full.charAt(i);
-            if (c == '\\') {
-                i++;
-            } else if (c == '$') {
-                marker = !marker;
-            } else if (!marker && c == '|') {
-                styles[i] = SEPARATOR;
-            } else if (!marker && !Character.isWhitespace(c)) {
-                styles[i] = COMMAND_LITERAL;
             }
         }
     }

@@ -264,7 +264,7 @@ public final class BuiltinFunctions {
                         "/summon $pick(\"zombie\", \"skeleton\", rand(entityset(#minecraft:skeletons)))$",
                         "§7Options are full EXPRESSIONS§r — they nest and compute: pick(rand(1,5), client.pos.y) rolls or reads, it doesn't hand back the words.",
                         "§7Quote literal text:§r pick(\"say hi\", \"say nah\").",
-                        "§7pick(a | b) still works§r — the older spelling, same meaning. Commas are the one to learn: they match list(a, b), and everywhere ELSE in the language a pipe means literal text.",
+                        "§7Commas, not pipes:§r pick(a | b) was the old spelling and now errors on purpose — a pipe builds literal TEXT everywhere else, and pick's options COMPUTE, so it can't mean both. list(a | b) is the text form.",
                         "§7pick vs rand:§r a set is ONE value, so pick(entityset(...)) is one option holding a whole list — rand(entityset(...)) is how you draw one member."),
 
                 // ---- Lists ----
@@ -273,8 +273,9 @@ public final class BuiltinFunctions {
                         "/calc list(1, 2, 3)",
                         "#foreach $b$ in list(blockpos(1, 2, 3), blockpos(-4, 5, 6)) (/setblock $b$ glowstone)",
                         "§7The literal counterpart to range:§r range makes a RUN of numbers — list makes the exact values you name, of any type.",
-                        "§7Commas mean VALUES:§r list(1, 2) holds NUMBERS and computes its arguments — list(2 * 3) is 6. The other form, (a | b | c), holds literal TEXT: (1 | 2) is the strings, so x + 1 concatenates to \"11\". Both work anywhere; pick the one whose elements you meant.",
+                        "§7Two separators, two meanings:§r COMMAS compute — list(2 * 3, 7) is 6 and 7. PIPES take items as typed, so bare words need no quotes — list(short | tall) is the two words, and list(1 | 2) is the STRINGS, where x + 1 concatenates to \"11\".",
                         "§7Lists flatten:§r list(range(1, 3), 9) is 1 2 3 9, which makes list(a, b) double as \"join these two lists\".",
+                        "§7One item, or a comma inside one?§r Quote it — list(\"one two\"). With no pipe there is nothing to switch on, and once there IS a pipe a comma is content: list(1, 2 | 3) is the two items \"1, 2\" and \"3\".",
                         "§7Printed as source:§r /calc shows a list as list(...) with quotes on the text, so you can see which elements are numbers and paste the whole thing back."),
                 doc("range", Group.LISTS, "range(start, stop[, step])",
                         "an inclusive whole-number list; step optional, direction automatic",

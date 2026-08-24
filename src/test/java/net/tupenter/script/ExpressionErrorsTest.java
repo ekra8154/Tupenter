@@ -240,8 +240,8 @@ class ExpressionErrorsTest {
      */
     @Test
     void aPipeInAnArgumentListPointsAtTheLiteralForm() {
-        assertErrorNames("list(short | tall)", "(a | b | c)", "expressions", "commas");
-        assertErrorNames("len(1 | 2)", "(a | b | c)");
+        assertErrorNames("len(short | tall)", "Only list(...)", "list(a | b)");
+        assertErrorNames("abs(1 | 2)", "Only list(...)");
     }
 
     /** The literal list must not swallow what legitimately carries a pipe. */
@@ -250,7 +250,7 @@ class ExpressionErrorsTest {
         assertEquals("true", calc("(1 > 0) || (2 > 3)"), "|| is still boolean or");
         assertEquals("true", calc("(false || true)"), "even directly inside the parens");
         // pick splits its own options before the group parser sees them
-        assertEquals("b", calc("pick(\"a\" | \"b\")"));
+        assertEquals("b", calc("pick(\"a\", \"b\")"));
     }
 
 }

@@ -113,7 +113,7 @@ class ScriptParserErrorsTest {
 
     @Test
     void aMalformedForeachHeaderShowsTheWholeSyntax() {
-        String syntax = "#foreach $x$ in (a | b | c)";
+        String syntax = "#foreach $x$ in list(a | b | c)";
         assertErrorNames("#foreach $b$ 1 (/say hi)", syntax);
         assertErrorNames("#foreach in range(1,3) (/say hi)", syntax);
         assertErrorNames("#foreach $b$ in (/say hi)", syntax);
@@ -140,7 +140,7 @@ class ScriptParserErrorsTest {
 
     @Test
     void aWorkingForeachStillWorks() {
-        assertEquals(List.of("say a", "say b"), sent("#foreach $x$ in (a | b) (/say $x$)"));
+        assertEquals(List.of("say a", "say b"), sent("#foreach $x$ in list(a | b) (/say $x$)"));
         assertEquals(List.of("say 1", "say 2"), sent("#foreach $x$ in range(1, 2) (/say $x$)"));
     }
 

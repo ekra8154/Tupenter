@@ -1668,20 +1668,15 @@ public final class ScriptParser {
             requireLoops("#foreach");
             ForeachHeader header = parseForeachHeader(directive.header());
 
-            List<Value> items;
-            if (header.literalList() != null) {
-                try {
-                    items = ListLiteral.values(header.literalList());
-                } catch (IllegalArgumentException empty) {
-                    throw new ParseAbort("#foreach needs at least one list item, e.g. (a | b)");
-                }
-            } else {
-                Value listValue = evalExpression(header.listExpression(), "#foreach list");
-                if (!(listValue instanceof Value.ListValue list)) {
-                    throw new ParseAbort("#foreach needs a list: (a | b | c) or range(1, 10)");
-                }
-                items = list.values();
+            // One path: the header is an EXPRESSION that has to produce a list.
+            // There used to be a second, where bare parentheses in the header
+            // were a literal list all of their own — it moved into list(...) so
+            // that a list has one spelling everywhere it can appear.
+            Value listValue = evalExpression(header.listExpression(), "#foreach list");
+            if (!(listValue instanceof Value.ListValue list)) {
+                throw new ParseAbort("#foreach needs a list: list(a | b | c), list(1, 2, 3) or range(1, 10)");
             }
+            List<Value> items = list.values();
 
             if (sink == null) {
                 checkIterations(items.size(), "#foreach");
@@ -2096,11 +2091,11 @@ public final class ScriptParser {
         return new ForHeader(var.name(), from, to, step);
     }
 
-    private record ForeachHeader(String var, String literalList, String listExpression) {
+    private record ForeachHeader(String var, String listExpression) {
     }
 
     private static ForeachHeader parseForeachHeader(String header) {
-        String syntax = "#foreach syntax: #foreach $x$ in (a | b | c) (...) or #foreach $x$ in range(1, 10) (...)";
+        String syntax = "#foreach syntax: #foreach $x$ in list(a | b | c) (...) or #foreach $x$ in range(1, 10) (...)";
         VarToken var = parseVarToken(header, syntax);
         String rest = var.rest().trim();
 
@@ -2112,11 +2107,14 @@ public final class ScriptParser {
             throw new ParseAbort(syntax);
         }
 
-        if (rest.startsWith("(")) {
-            if (!rest.endsWith(")")) {
-                throw new ParseAbort("#foreach list is missing its closing parenthesis");
-            }
-            return new ForeachHeader(var.name(), rest.substring(1, rest.length() - 1), null);
+        // Bare parentheses here used to BE the list. They are grouping now, so
+        // say so with the fix attached rather than letting the expression parser
+        // report whatever it makes of "a | b | c".
+        if (rest.startsWith("(") && rest.endsWith(")")
+                && ListLiteral.hasSeparatorPipe(rest, 1, rest.length() - 1)) {
+            throw new ParseAbort("#foreach $x$ in (a | b | c) is now #foreach $x$ in list(a | b | c) — "
+                    + "the list moved into list(...) so parentheses only ever group. Try: #foreach "
+                    + var.name() + " in list(" + rest.substring(1, rest.length() - 1).trim() + ") (...)");
         }
         // "#foreach $b$ in range(1, 3)" with no body: the group scanner already
         // claimed the (1, 3) as the body, leaving a bare function NAME here.
@@ -2126,7 +2124,7 @@ public final class ScriptParser {
             throw new ParseAbort("#foreach needs a (...) body — " + rest + "(...) was read as the body."
                     + " e.g. #foreach $b$ in " + rest + "(...) (/say $b$)");
         }
-        return new ForeachHeader(var.name(), null, rest);
+        return new ForeachHeader(var.name(), rest);
     }
 
     private record VarToken(String name, String rest) {

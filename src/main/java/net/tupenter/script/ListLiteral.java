@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The {@code (a | b | c)} literal list — items of plain TEXT, separated by
+ * The {@code list(a | b | c)} literal list — items of plain TEXT, separated by
  * top-level pipes.
  *
  * <p>This is the language's second way to build a list, and the difference from
@@ -29,9 +29,10 @@ import java.util.List;
  * the next character, and {@code $...$} spans are carried through untouched so a
  * pipe inside a marker never splits an item.
  *
- * <p>Lives here rather than in either caller because both the {@code #foreach}
- * header and {@link ExpressionEvaluator} build these, and "the same syntax means
- * the same thing everywhere" only holds if they run the same code.
+ * <p>This form used to be written as bare parentheses, and only inside a
+ * {@code #foreach} header. It moved into {@code list(...)} so that a list has one
+ * spelling and a parenthesis has one meaning — grouping. The splitting rules
+ * came with it unchanged.
  */
 public final class ListLiteral {
 

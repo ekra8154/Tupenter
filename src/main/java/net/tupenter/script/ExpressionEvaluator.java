@@ -360,9 +360,15 @@ final class ExpressionEvaluator {
 
             char current = peek();
             if (current == '(') {
-                Value literalList = parseListLiteral();
-                if (literalList != null) {
-                    return literalList;
+                // Parentheses GROUP, and that is all they do. The (a | b | c)
+                // list used to live here (and, before that, only in a #foreach
+                // header) — it moved into list(...) so that a list has one
+                // spelling and a parenthesis has one meaning.
+                int close = ListLiteral.groupEnd(input, index);
+                if (close > 0 && ListLiteral.hasSeparatorPipe(input, index + 1, close)) {
+                    throw new ExpressionException("Parentheses group an expression; they don't build a list. "
+                            + "Write list(" + input.substring(index + 1, close).trim() + ") — pipes make items of "
+                            + "literal TEXT, commas make computed values.");
                 }
                 index++;
                 Value value = parseTernary();
@@ -487,6 +493,15 @@ final class ExpressionEvaluator {
 
             if (identifier.equalsIgnoreCase("pick")) {
                 return parsePick();
+            }
+
+            // list(a | b | c) — the TEXT form. Intercepted before the arguments
+            // are parsed, because its items are never parsed at all: they are
+            // taken as typed, which is the whole point (bare words need no
+            // quotes) and is why "a(1)" or "0,0]}" are fine here.
+            Value literalList = parsePipeList(identifier);
+            if (literalList != null) {
+                return literalList;
             }
 
             List<Value> args = parseFunctionArgs();
@@ -714,8 +729,8 @@ final class ExpressionEvaluator {
 
         /**
          * list(a, b, ...) — an explicit list, the literal counterpart to range().
-         * The (a | b | c) form only parses in a #foreach header; this works
-         * anywhere an expression does, so a list can live in a #local.
+         * The comma form COMPUTES its arguments; list(a | b | c) takes its
+         * items as literal text instead. Same function, same result type.
          *
          * <p>Nested lists FLATTEN. Not laziness: nothing downstream can consume a
          * list-of-lists — #foreach would bind an element that is itself a list, and
@@ -775,10 +790,9 @@ final class ExpressionEvaluator {
          * short.
          */
         private static String pipeInArgumentsMessage() {
-            return "Pipes build a list of literal TEXT and need their own parentheses: (a | b | c). "
-                    + "A function's arguments are expressions separated by commas — list(a, b) COMPUTES "
-                    + "a and b, while (a | b) is the two words themselves. A function can still take one: "
-                    + "len((a | b)).";
+            return "Only list(...) takes pipes, and they build items of literal TEXT: list(a | b) is the two "
+                    + "words themselves, while list(a, b) COMPUTES a and b. Everywhere else a function's "
+                    + "arguments are expressions separated by commas.";
         }
 
         /** Args already past '('; consumes through the closing ')'. */
@@ -1407,33 +1421,44 @@ final class ExpressionEvaluator {
         }
 
         /**
-         * pick(a | b | c) — options are full expressions separated by
-         * top-level '|' ('||' is still boolean or inside an option), so
-         * picks nest and compute: pick(rand(1,5) | client.y | pick(1 | 2)).
-         * Quote literal text: pick("say hi" | "say nah"). Like ternary,
-         * every option evaluates; one result is returned at random.
+         * pick(a, b, c) — options are full EXPRESSIONS, so picks nest and
+         * compute: pick(rand(1,5), client.y, pick(1, 2)). Quote literal text:
+         * pick("say hi", "say nah"). Like ternary, every option evaluates; one
+         * result is returned at random.
+         *
+         * <p>The separator used to be '|', which now means "literal text" in
+         * list(...) and nowhere else. Rather than let one pipe in the language
+         * quietly compute, the old spelling errors and names this one.
          */
         /**
-         * {@code (a | b | c)} — the literal list, wherever an expression is
-         * allowed, or null when this group is an ordinary parenthesised
-         * expression and the caller should parse it as one.
+         * {@code list(a | b | c)} — the TEXT list, or null when this call uses
+         * commas and should be parsed as ordinary arguments.
          *
-         * <p>The decision is made BEFORE parsing, by scanning for a separator
-         * pipe: a literal item can be {@code a(1)} or {@code 0,0]}}, text that
-         * would never survive the expression parser, so the group has to be
-         * claimed whole or not at all. {@code ||} is not a separator, which is
-         * what keeps {@code (a || b)} a boolean or.
+         * <p>Decided by scanning for a separator pipe BEFORE parsing anything,
+         * because a pipe item can be {@code a(1)} or {@code 0,0]}}: text no
+         * expression parser would accept. The call is claimed whole or not at all.
+         * {@code ||} is not a separator, so {@code list(a || b)} is still one
+         * boolean argument.
          *
-         * <p>Same {@link ListLiteral} code the #foreach header runs, so the form
-         * means one thing everywhere — that was the point of moving it out of
-         * the header.
+         * <p>Only {@code list} takes pipes. Everywhere else a pipe among arguments
+         * is an error naming this form, so there is exactly one thing a pipe can
+         * mean inside a function call.
+         *
+         * <p>A pipe WINS over a comma, and there is no "mixed separators" error,
+         * because there could not be an honest one: {@code list(0,0]} | 5.0,1]})}
+         * is a real two-item list whose items contain commas. Once pipe mode is
+         * established the comma is content, exactly like a bracket or a space.
+         * So {@code list(1, 2 | 3)} is the two items "1, 2" and "3".
          */
-        private Value parseListLiteral() {
-            int close = ListLiteral.groupEnd(input, index);
-            if (close < 0 || !ListLiteral.hasSeparatorPipe(input, index + 1, close)) {
+        private Value parsePipeList(String identifier) {
+            if (!identifier.equalsIgnoreCase("list")) {
                 return null;
             }
-            String inner = input.substring(index + 1, close);
+            int close = ListLiteral.groupEnd(input, index - 1);
+            if (close < 0 || !ListLiteral.hasSeparatorPipe(input, index, close)) {
+                return null;
+            }
+            String inner = input.substring(index, close);
             index = close + 1;
             if (skipping) {
                 return SKIP;
@@ -1451,7 +1476,7 @@ final class ExpressionEvaluator {
             if (!atEnd() && peek() == ')') {
                 // otherwise the empty option falls into parseTernary and comes
                 // back as "Unexpected ')'", which says nothing about pick
-                throw new ExpressionException("pick(...) needs at least one option, e.g. pick(\"hi\" | \"bye\")");
+                throw new ExpressionException("pick(...) needs at least one option, e.g. pick(\"hi\", \"bye\")");
             }
             while (true) {
                 options.add(parseTernary());
@@ -1460,15 +1485,20 @@ final class ExpressionEvaluator {
                     throw new ExpressionException("pick(...) is missing its closing parenthesis");
                 }
                 char c = peek();
-                // ',' and '|' are interchangeable here. Everywhere else in the
-                // language commas mean "expressions" and pipes mean "literal
-                // text" — but pick's options have ALWAYS been expressions, so
-                // there is no second meaning for a comma to carry and nothing to
-                // get wrong. Commas are the spelling to learn (they match
-                // list(...)); the pipe stays because scripts already use it.
-                if (c == '|' || c == ',') {
+                if (c == ',') {
                     index++;
                     continue;
+                }
+                if (c == '|') {
+                    // pick's options used to be pipe-separated, and they were
+                    // EXPRESSIONS — the opposite of what a pipe means now. Left
+                    // working, it would be the one place in the language where a
+                    // pipe computes, so it errors instead. Loudly: silently
+                    // turning pick(rand(1,5) | client.pos.y) into two strings is
+                    // exactly the failure this whole design avoids.
+                    throw new ExpressionException("pick(...) separates its options with commas now: "
+                            + "pick(a, b, c). Its options are expressions that get computed, and a pipe "
+                            + "means literal text everywhere else, so it can't mean both here.");
                 }
                 if (c == ')') {
                     index++;

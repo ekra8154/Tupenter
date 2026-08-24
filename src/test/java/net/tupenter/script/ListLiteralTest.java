@@ -8,16 +8,20 @@ import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The {@code (a | b | c)} literal list, now that it works wherever an expression
- * does rather than only in a #foreach header.
+ * {@code list(...)} — the language's ONE way to build a list, in its two flavours.
  *
- * <p>The rule it has to hold up: commas mean VALUES, pipes mean TEXT. Those are
- * two genuinely different things, and every case here is either a demonstration
- * of the difference or a guard on something that also contains a pipe and must
- * not be swallowed.
+ * <p>The rule these hold up: <b>commas mean VALUES, pipes mean TEXT</b>, and
+ * parentheses mean neither — they group, everywhere, with no exceptions. The
+ * pipe form used to be bare parentheses in a #foreach header; moving it inside
+ * list(...) is what let parentheses go back to having a single meaning.
+ *
+ * <p>So the cases here come in three kinds: the two flavours differing, the
+ * things that also contain a pipe and must NOT become lists, and the errors that
+ * catch the old spellings and name the new one.
  */
 class ListLiteralTest {
 
@@ -25,151 +29,162 @@ class ListLiteralTest {
         return ExpressionEvaluator.evaluate(expression, new EvalContext(new Random(1))).displayString();
     }
 
-    private static List<String> run(String line) {
+    private static String errorFrom(String expression) {
+        return assertThrows(ExpressionException.class,
+                () -> ExpressionEvaluator.evaluate(expression, new EvalContext(new Random(1)))).getMessage();
+    }
+
+    private static ScriptParser.ParseResult parse(String line) {
         SessionVariableStore store = new SessionVariableStore();
-        ScriptParser.Options options = new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT,
-                new LinkedHashMap<>(), true, true, true, true, 100, 1000, new Random(42), store, store);
-        ScriptParser.ParseResult result = ScriptParser.parse(line, options);
+        return ScriptParser.parse(line, new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT,
+                new LinkedHashMap<>(), true, true, true, true, 100, 1000, new Random(42), store, store));
+    }
+
+    private static List<String> run(String line) {
+        ScriptParser.ParseResult result = parse(line);
         assertNull(result.error(), "expected no error, got: " + result.error());
         return result.script().statements().stream().map(Script.SendStatement::content).toList();
     }
 
-    // ------------------------------------------------ it works everywhere now
+    // -------------------------------------------------------- the two flavours
 
     @Test
-    void theLiteralListIsAnExpression() {
-        assertEquals("list(\"a\", \"b\")", calc("(a | b)"));
-        assertEquals("2", calc("len((a | b))"));
-        assertEquals("b", calc("nth((a | b), 1)"));
-        assertEquals("true", calc("contains((a | b), \"b\")"));
+    void pipesMakeTextAndNeedNoQuotes() {
+        assertEquals("list(\"short\", \"tall\")", calc("list(short | tall)"));
+        assertEquals("list(\"a\", \"b\", \"c\")", calc("list(a | b | c)"));
     }
 
-    /** The line that started this: a reusable list of names, no quotes. */
     @Test
-    void itGoesInALocalNow() {
-        assertEquals(List.of("say short", "say tall"),
-                run("#local kinds = (short | tall) && #foreach $k$ in kinds (/say $k$)"));
+    void commasMakeValuesAndAreComputed() {
+        assertEquals("list(1, 2)", calc("list(1, 2)"));
+        assertEquals("list(6, 7)", calc("list(2 * 3, 7)"));
     }
-
-    /** And the header form is now literally the same thing, not a special case. */
-    @Test
-    void theHeaderFormAndTheExpressionFormAgree() {
-        assertEquals(run("#foreach $x$ in (a | b) (/say $x$)"),
-                run("#local g = (a | b) && #foreach $x$ in g (/say $x$)"));
-    }
-
-    // ------------------------------------------------------ commas vs pipes
 
     /**
-     * The whole distinction in one pair of lines. Pipes give the TEXT "1", so
-     * x + 1 concatenates; commas give the NUMBER 1, so it adds.
+     * The distinction in one pair of lines. Pipes give the TEXT "1", so x + 1
+     * concatenates; commas give the NUMBER 1, so it adds.
      */
     @Test
-    void pipesMakeTextAndCommasMakeValues() {
-        assertEquals(List.of("say 11", "say 21"), run("#foreach $x$ in (1 | 2) (/say $x + 1$)"));
+    void theSameDigitsMeanDifferentThings() {
+        assertEquals(List.of("say 11", "say 21"), run("#foreach $x$ in list(1 | 2) (/say $x + 1$)"));
         assertEquals(List.of("say 2", "say 3"), run("#foreach $x$ in list(1, 2) (/say $x + 1$)"));
     }
 
-    /** Pipe items are taken as typed; comma arguments are computed. */
     @Test
     void pipeItemsAreNeverEvaluated() {
-        assertEquals("list(\"2 * 3\", \"7\")", calc("(2 * 3 | 7)"), "taken as typed");
+        assertEquals("list(\"2 * 3\", \"7\")", calc("list(2 * 3 | 7)"), "taken as typed");
         assertEquals("list(6, 7)", calc("list(2 * 3, 7)"), "computed");
     }
 
     /**
-     * Permissive on purpose: a pipe item is text, so characters that are operators
-     * in expression-land are ordinary here. This is what the form is FOR, and it
-     * is why it could not simply become "parse an expression".
+     * Permissive on purpose: a pipe item is text, so characters that are
+     * operators in expression-land are ordinary content here. This is what the
+     * form is FOR, and it is why it could never have been "just parse an
+     * expression".
      */
     @Test
-    void itemsMayBeThingsNoExpressionParserWouldAccept() {
-        assertEquals("list(\"a(1)\", \"b\")", calc("(a(1) | b)"));
-        assertEquals("list(\"0,0]}\", \"5.0,1]}\")", calc("(0,0]} | 5.0,1]})"));
-        assertEquals("list(\"one two\", \"three\")", calc("(one two | three)"), "spaces are content");
-        assertEquals("list(\"a|b\", \"c\")", calc("(a\\|b | c)"),
+    void pipeItemsMayBeThingsNoExpressionParserWouldAccept() {
+        assertEquals("list(\"a(1)\", \"b\")", calc("list(a(1) | b)"));
+        assertEquals("list(\"0,0]}\", \"5.0,1]}\")", calc("list(0,0]} | 5.0,1]})"));
+        assertEquals("list(\"one two\", \"three\")", calc("list(one two | three)"), "spaces are content");
+        assertEquals("list(\"a|b\", \"c\")", calc("list(a\\|b | c)"),
                 "an escaped pipe is content, not a separator");
     }
 
     @Test
-    void itemsAreTrimmed() {
-        assertEquals("list(\"a\", \"b\")", calc("(  a   |   b  )"));
+    void pipeItemsAreTrimmed() {
+        assertEquals("list(\"a\", \"b\")", calc("list(  a   |   b  )"));
     }
 
-    // ------------------------------- things with pipes that are NOT list literals
-
-    /** || is boolean or, and a group holding one stays an expression. */
     @Test
-    void booleanOrIsNotAList() {
-        assertEquals("true", calc("(false || true)"));
+    void aListGoesInALocalAndLoops() {
+        assertEquals(List.of("say short", "say tall"),
+                run("#local kinds = list(short | tall) && #foreach $k$ in kinds (/say $k$)"));
+    }
+
+    @Test
+    void listsFeedEveryListConsumer() {
+        assertEquals("2", calc("len(list(a | b))"));
+        assertEquals("b", calc("nth(list(a | b), 1)"));
+        assertEquals("true", calc("contains(list(a | b), \"b\")"));
+    }
+
+    // ------------------------------------------- parentheses only ever group
+
+    @Test
+    void parenthesesGroupAndNothingElse() {
+        assertEquals("9", calc("(1 + 2) * 3"));
+        assertEquals("5", calc("(5)"));
+        assertEquals("true", calc("(false || true)"), "|| is boolean or, not a separator");
         assertEquals("true", calc("(1 > 0) || (2 > 3)"));
         assertEquals(List.of("say yes"), run("#if (1 > 0 || 2 > 3) (/say yes)"));
     }
 
-    /** A group with no pipe at all is an ordinary parenthesised expression. */
+    /** The old bare-parenthesis list is caught by name, with the new spelling. */
     @Test
-    void aPlainGroupIsStillAGroup() {
-        assertEquals("9", calc("(1 + 2) * 3"));
-        assertEquals("5", calc("(5)"));
+    void bareParenthesesWithPipesNameTheNewForm() {
+        String error = errorFrom("(a | b)");
+        assertTrue(error.contains("group"), error);
+        assertTrue(error.contains("list(a | b)"), error);
+    }
+
+    /** ...including in a #foreach header, where it used to be the only spelling. */
+    @Test
+    void theOldForeachHeaderSpellingIsCaughtAndRewritten() {
+        String error = parse("#foreach $x$ in (a | b | c) (/say $x$)").error();
+        assertTrue(error != null && error.contains("list(a | b | c)"), String.valueOf(error));
+    }
+
+    // ---------------------------------------------------------------- errors
+
+    /**
+     * A pipe WINS, and a comma next to one is content — there is deliberately no
+     * "mixed separators" error, because there could not be an honest one:
+     * list(0,0]} | 5.0,1]}) is a real two-item list whose items contain commas.
+     * Once pipe mode is on, a comma is as ordinary as a bracket.
+     */
+    @Test
+    void aCommaBesideAPipeIsContentNotASeparator() {
+        assertEquals("list(\"1, 2\", \"3\")", calc("list(1, 2 | 3)"));
+        assertEquals("list(\"0,0]}\", \"5.0,1]}\")", calc("list(0,0]} | 5.0,1]})"));
+    }
+
+    /** Pipes belong to list(...) alone, so any other function says so. */
+    @Test
+    void aPipeInAnyOtherFunctionPointsAtList() {
+        String error = errorFrom("len(a | b)");
+        assertTrue(error.contains("Only list(...)"), error);
+        assertTrue(error.contains("list(a | b)"), error);
     }
 
     // ------------------------------------------------------------------ pick
 
     /**
-     * pick's options have always been EXPRESSIONS, and they stay that way — a
-     * text rule would have silently turned every computed pick into a string.
-     * Commas are the new spelling; the pipe still works so existing scripts do.
+     * pick's options are EXPRESSIONS, so its old pipe separator now contradicts
+     * what a pipe means everywhere else. It errors rather than quietly
+     * reinterpreting: turning pick(rand(1,5) | client.pos.y) into two strings is
+     * exactly the silent wrong answer this whole design exists to avoid.
      */
     @Test
-    void pickTakesCommasNowAndStillTakesPipes() {
+    void pickTakesCommasAndRefusesItsOldPipe() {
         assertEquals("b", calc("pick(\"a\", \"b\")"));
-        assertEquals("b", calc("pick(\"a\" | \"b\")"));
-        // the options COMPUTE, either way
-        assertEquals("6", calc("pick(2 * 3, 2 * 3)"));
-        assertEquals("6", calc("pick(2 * 3 | 2 * 3)"));
-    }
+        assertEquals("6", calc("pick(2 * 3, 2 * 3)"), "options compute");
 
-    @Test
-    void pickErrorsNameTheCommaForm() {
-        // ";" is nobody's separator — "1 2" would NOT do, that is implicit
-        // multiplication and a perfectly good single option worth 2
-        ExpressionException thrown = org.junit.jupiter.api.Assertions.assertThrows(ExpressionException.class,
-                () -> ExpressionEvaluator.evaluate("pick(1 ; 2)", new EvalContext(new Random(1))));
-        assertTrue(thrown.getMessage().contains("','"), thrown.getMessage());
-    }
-
-    // ------------------------------------------------------------- the errors
-
-    @Test
-    void aPipeAmongArgumentsPointsAtTheParenthesisedForm() {
-        ExpressionException thrown = org.junit.jupiter.api.Assertions.assertThrows(ExpressionException.class,
-                () -> ExpressionEvaluator.evaluate("list(short | tall)", new EvalContext(new Random(1))));
-        assertTrue(thrown.getMessage().contains("(a | b | c)"), thrown.getMessage());
-        assertTrue(thrown.getMessage().contains("len((a | b))"), thrown.getMessage());
-    }
-
-    /**
-     * A ONE-item literal list cannot be written in expression position, and that
-     * is a consequence rather than an oversight: with no separator pipe there is
-     * nothing to tell (a) apart from a parenthesised expression, so the group wins.
-     * list("a") is the spelling for that.
-     */
-    @Test
-    void aSingleItemNeedsListNotParentheses() {
-        assertEquals("5", calc("(5)"), "no pipe, so it is a group");
-        assertEquals("list(\"a\")", calc("list(\"a\")"));
+        String error = errorFrom("pick(\"a\" | \"b\")");
+        assertTrue(error.contains("pick(a, b, c)"), error);
+        assertTrue(error.contains("literal text"), error);
     }
 
     // ------------------------------------------------------------- rendering
 
     /**
-     * The printed form is the form you would type to get the list back, with the
+     * The printed form is what you would type to get the list back, with the
      * element types visible — so /calc on a pipe list shows you it made text.
      */
     @Test
     void listsPrintAsSourceYouCouldPasteBack() {
         assertEquals("list(1, 2, 3)", calc("range(1, 3)"));
-        assertEquals("list(\"a\", \"b\")", calc("(a | b)"));
+        assertEquals("list(\"a\", \"b\")", calc("list(a | b)"));
         assertEquals("list(\"a\", 2)", calc("list(\"a\", 2)"), "mixed types stay distinguishable");
         assertEquals("list(\"say \\\"hi\\\"\")", calc("list(\"say \\\"hi\\\"\")"), "quotes in content are escaped");
     }

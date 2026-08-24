@@ -400,15 +400,15 @@ count a whole-number range, inclusive — direction automatic
 walk options you wrote, or any LIST value
 
 ```
-#foreach $x$ in (a | b | c) (body) · #foreach $x$ in <list> (body)
+#foreach $x$ in <list> (body)
 ```
 
-- Two sources: (a | b | c) options written in place, or any list — range(1, 10), list(...), registry sets, entities(radius), client.effects.
-- (a | b | c) is not special here — it is an ordinary list value and works anywhere an expression does, so #local kinds = (short | tall) then #foreach $k$ in kinds is the same loop. Its items are literal TEXT (bare words need no quotes); list(a, b) is the form whose items are computed.
+- Any list will do: list(a | b | c) written in place, list(1, 2, 3), range(1, 10), registry sets, entities(radius), client.effects.
+- The header is just an expression — nothing is special about it, so #local kinds = list(short | tall) then #foreach $k$ in kinds is the same loop. list(a | b) items are literal TEXT (bare words, no quotes); list(a, b) items are COMPUTED.
 - The set pairing is the classic: every member of a #tag, one command each.
 
 ```
-#foreach $m$ in (zombie | skeleton) (/summon $m$)
+#foreach $m$ in list(zombie | skeleton) (/summon $m$)
 #foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)
 ```
 
@@ -846,7 +846,7 @@ one of the options you wrote, chosen at random
 
 - Options are full EXPRESSIONS — they nest and compute: pick(rand(1,5), client.pos.y) rolls or reads, it doesn't hand back the words.
 - Quote literal text: pick("say hi", "say nah").
-- pick(a | b) still works — the older spelling, same meaning. Commas are the one to learn: they match list(a, b), and everywhere ELSE in the language a pipe means literal text.
+- Commas, not pipes: pick(a | b) was the old spelling and now errors on purpose — a pipe builds literal TEXT everywhere else, and pick's options COMPUTE, so it can't mean both. list(a | b) is the text form.
 - pick vs rand: a set is ONE value, so pick(entityset(...)) is one option holding a whole list — rand(entityset(...)) is how you draw one member.
 
 ```
@@ -861,8 +861,9 @@ one of the options you wrote, chosen at random
 exactly the values you name, as one list
 
 - The literal counterpart to range: range makes a RUN of numbers — list makes the exact values you name, of any type.
-- Commas mean VALUES: list(1, 2) holds NUMBERS and computes its arguments — list(2 * 3) is 6. The other form, (a | b | c), holds literal TEXT: (1 | 2) is the strings, so x + 1 concatenates to "11". Both work anywhere; pick the one whose elements you meant.
+- Two separators, two meanings: COMMAS compute — list(2 * 3, 7) is 6 and 7. PIPES take items as typed, so bare words need no quotes — list(short | tall) is the two words, and list(1 | 2) is the STRINGS, where x + 1 concatenates to "11".
 - Lists flatten: list(range(1, 3), 9) is 1 2 3 9, which makes list(a, b) double as "join these two lists".
+- One item, or a comma inside one? Quote it — list("one two"). With no pipe there is nothing to switch on, and once there IS a pipe a comma is content: list(1, 2 | 3) is the two items "1, 2" and "3".
 - Printed as source: /calc shows a list as list(...) with quotes on the text, so you can see which elements are numbers and paste the whole thing back.
 
 ```
