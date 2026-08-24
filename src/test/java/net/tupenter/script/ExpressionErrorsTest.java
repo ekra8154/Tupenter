@@ -147,10 +147,10 @@ class ExpressionErrorsTest {
 
     @Test
     void aRangeOfOneElementIsFineNotAWrongWayStep() {
-        assertEquals("(5)", calc("range(5, 5)"));
-        assertEquals("(1 | 3 | 5)", calc("range(1, 5, 2)"));
-        assertEquals("(5 | 3 | 1)", calc("range(5, 1, -2)"));
-        assertEquals("(5 | 4 | 3 | 2 | 1)", calc("range(5, 1)"), "a backwards range picks its own step");
+        assertEquals("list(5)", calc("range(5, 5)"));
+        assertEquals("list(1, 3, 5)", calc("range(1, 5, 2)"));
+        assertEquals("list(5, 3, 1)", calc("range(5, 1, -2)"));
+        assertEquals("list(5, 4, 3, 2, 1)", calc("range(5, 1)"), "a backwards range picks its own step");
     }
 
     // ---------------------------------------------------------- comparisons
@@ -234,26 +234,22 @@ class ExpressionErrorsTest {
     }
 
     /**
-     * Reaching for the #foreach header's (a | b | c) inside an expression is the
-     * obvious next guess once you have seen it work in a loop, and the old answer
-     * was "Missing closing parenthesis" — true, useless, and about the wrong
-     * thing. The two forms are not interchangeable: the header makes TEXT, so
-     * (1 | 2) then x + 1 concatenates to "11", while list(1, 2) keeps numbers and
-     * gives 3. The error has to say which one you want.
+     * A pipe inside a FUNCTION call is someone reaching for the literal-list form
+     * one pair of parentheses short. Arguments are always expressions, so the
+     * error has to point at the form that isn't.
      */
     @Test
-    void thePipeListFormIsRedirectedToList() {
-        assertErrorNames("(\"a\" | \"b\")", "#foreach", "list(a, b, c)");
-        assertErrorNames("(1 | 2 | 3)", "list(a, b, c)");
-        assertErrorNames("(\"a\" | \"b\")", "quote anything meant as a bare word");
+    void aPipeInAnArgumentListPointsAtTheLiteralForm() {
+        assertErrorNames("list(short | tall)", "(a | b | c)", "expressions", "commas");
+        assertErrorNames("len(1 | 2)", "(a | b | c)");
     }
 
-    /** ...without disturbing the two things that legitimately carry a pipe. */
+    /** The literal list must not swallow what legitimately carries a pipe. */
     @Test
-    void booleanOrAndPickStillTakeTheirPipes() {
+    void booleanOrAndPickAreNotListsC() {
         assertEquals("true", calc("(1 > 0) || (2 > 3)"), "|| is still boolean or");
         assertEquals("true", calc("(false || true)"), "even directly inside the parens");
-        // pick parses its own | options before the group parser ever sees them
+        // pick splits its own options before the group parser sees them
         assertEquals("b", calc("pick(\"a\" | \"b\")"));
     }
 

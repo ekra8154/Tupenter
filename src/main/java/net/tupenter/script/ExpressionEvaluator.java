@@ -360,23 +360,13 @@ final class ExpressionEvaluator {
 
             char current = peek();
             if (current == '(') {
+                Value literalList = parseListLiteral();
+                if (literalList != null) {
+                    return literalList;
+                }
                 index++;
                 Value value = parseTernary();
                 skipWhitespace();
-                if (!atEnd() && peek() == '|' && !(index + 1 < input.length()
-                        && input.charAt(index + 1) == '|')) {
-                    // (a | b | c) is the #foreach HEADER's literal list, and it is
-                    // not an expression — the two forms differ in what they
-                    // PRODUCE, not just in punctuation. The header form makes text
-                    // ("1" | "2" then x + 1 concatenates to "11"); list(...) makes
-                    // values (1, 2 then x + 1 is 3). Naming that here beats
-                    // "Missing closing parenthesis", which says nothing about the
-                    // very natural thing that was just attempted.
-                    throw new ExpressionException("(a | b | c) is the #foreach header's list of literal TEXT — "
-                            + "it isn't an expression. In an expression use list(a, b, c), which keeps numbers as "
-                            + "numbers and computes its arguments; quote anything meant as a bare word: "
-                            + "list(\"short\", \"tall\")");
-                }
                 if (atEnd() || peek() != ')') {
                     throw new ExpressionException("Missing closing parenthesis");
                 }
@@ -779,9 +769,30 @@ final class ExpressionEvaluator {
             return new Value.ListValue(values);
         }
 
+        /**
+         * A function's arguments are always expressions, so a pipe among them is
+         * someone reaching for the literal-list form one pair of parentheses
+         * short.
+         */
+        private static String pipeInArgumentsMessage() {
+            return "Pipes build a list of literal TEXT and need their own parentheses: (a | b | c). "
+                    + "A function's arguments are expressions separated by commas — list(a, b) COMPUTES "
+                    + "a and b, while (a | b) is the two words themselves. A function can still take one: "
+                    + "len((a | b)).";
+        }
+
         /** Args already past '('; consumes through the closing ')'. */
         private List<Value> parseFunctionArgs() {
             List<Value> args = new ArrayList<>();
+            // Check for a separator pipe BEFORE parsing anything. Otherwise
+            // list(short | tall) — the whole reason someone reaches for pipes —
+            // reports "Unknown variable 'short'", because arguments evaluate
+            // left to right and the first one fails before the pipe is ever
+            // reached. The bare word isn't the mistake; the punctuation is.
+            int close = ListLiteral.groupEnd(input, index - 1);
+            if (close > 0 && ListLiteral.hasSeparatorPipe(input, index, close)) {
+                throw new ExpressionException(pipeInArgumentsMessage());
+            }
             skipWhitespace();
             if (!atEnd() && peek() == ')') {
                 index++;
@@ -798,6 +809,9 @@ final class ExpressionEvaluator {
                 if (current == ',') {
                     index++;
                     continue;
+                }
+                if (current == '|') {
+                    throw new ExpressionException(pipeInArgumentsMessage());
                 }
                 if (current == ')') {
                     index++;
@@ -1399,6 +1413,38 @@ final class ExpressionEvaluator {
          * Quote literal text: pick("say hi" | "say nah"). Like ternary,
          * every option evaluates; one result is returned at random.
          */
+        /**
+         * {@code (a | b | c)} — the literal list, wherever an expression is
+         * allowed, or null when this group is an ordinary parenthesised
+         * expression and the caller should parse it as one.
+         *
+         * <p>The decision is made BEFORE parsing, by scanning for a separator
+         * pipe: a literal item can be {@code a(1)} or {@code 0,0]}}, text that
+         * would never survive the expression parser, so the group has to be
+         * claimed whole or not at all. {@code ||} is not a separator, which is
+         * what keeps {@code (a || b)} a boolean or.
+         *
+         * <p>Same {@link ListLiteral} code the #foreach header runs, so the form
+         * means one thing everywhere — that was the point of moving it out of
+         * the header.
+         */
+        private Value parseListLiteral() {
+            int close = ListLiteral.groupEnd(input, index);
+            if (close < 0 || !ListLiteral.hasSeparatorPipe(input, index + 1, close)) {
+                return null;
+            }
+            String inner = input.substring(index + 1, close);
+            index = close + 1;
+            if (skipping) {
+                return SKIP;
+            }
+            try {
+                return new Value.ListValue(ListLiteral.values(inner));
+            } catch (IllegalArgumentException empty) {
+                throw new ExpressionException(empty.getMessage());
+            }
+        }
+
         private Value parsePick() {
             List<Value> options = new ArrayList<>();
             skipWhitespace();
@@ -1414,7 +1460,13 @@ final class ExpressionEvaluator {
                     throw new ExpressionException("pick(...) is missing its closing parenthesis");
                 }
                 char c = peek();
-                if (c == '|') {
+                // ',' and '|' are interchangeable here. Everywhere else in the
+                // language commas mean "expressions" and pipes mean "literal
+                // text" — but pick's options have ALWAYS been expressions, so
+                // there is no second meaning for a comma to carry and nothing to
+                // get wrong. Commas are the spelling to learn (they match
+                // list(...)); the pipe stays because scripts already use it.
+                if (c == '|' || c == ',') {
                     index++;
                     continue;
                 }
@@ -1423,7 +1475,7 @@ final class ExpressionEvaluator {
                     // dead pick: no random draw; options were still dry-parsed to advance
                     return skipping ? SKIP : options.get(context.random().nextInt(options.size()));
                 }
-                throw new ExpressionException("pick(...): expected '|' or ')' but found '" + c + "'");
+                throw new ExpressionException("pick(...): expected ',' or ')' but found '" + c + "'");
             }
         }
 

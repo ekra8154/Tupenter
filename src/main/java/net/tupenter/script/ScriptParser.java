@@ -1670,9 +1670,10 @@ public final class ScriptParser {
 
             List<Value> items;
             if (header.literalList() != null) {
-                items = new ArrayList<>();
-                for (String item : splitListItems(header.literalList())) {
-                    items.add(Value.of(item));
+                try {
+                    items = ListLiteral.values(header.literalList());
+                } catch (IllegalArgumentException empty) {
+                    throw new ParseAbort("#foreach needs at least one list item, e.g. (a | b)");
                 }
             } else {
                 Value listValue = evalExpression(header.listExpression(), "#foreach list");
@@ -2241,44 +2242,6 @@ public final class ScriptParser {
             }
         }
         return -1;
-    }
-
-    /** Splits a literal foreach list on top-level '|', decoding \-escapes. */
-    private static List<String> splitListItems(String inner) {
-        List<String> items = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean insideSpan = false;
-        int depth = 0;
-
-        for (int i = 0; i < inner.length(); i++) {
-            char c = inner.charAt(i);
-            if (c == '\\' && i + 1 < inner.length()) {
-                current.append(inner.charAt(i + 1));
-                i++;
-                continue;
-            }
-            if (c == '$') {
-                insideSpan = !insideSpan;
-                current.append(c);
-                continue;
-            }
-            if (!insideSpan) {
-                if (c == '(') depth++;
-                else if (c == ')') depth--;
-                else if (c == '|' && depth == 0) {
-                    items.add(current.toString().trim());
-                    current.setLength(0);
-                    continue;
-                }
-            }
-            current.append(c);
-        }
-        items.add(current.toString().trim());
-
-        if (items.size() == 1 && items.get(0).isEmpty()) {
-            throw new ParseAbort("#foreach needs at least one list item, e.g. (a | b)");
-        }
-        return items;
     }
 
     // =====================================================================

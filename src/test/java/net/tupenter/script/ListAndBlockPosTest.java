@@ -30,16 +30,16 @@ class ListAndBlockPosTest {
 
     @Test
     void listHoldsExactlyTheValuesNamed() {
-        assertEquals("(1 | 2 | 3)", calc("list(1, 2, 3)"));
+        assertEquals("list(1, 2, 3)", calc("list(1, 2, 3)"));
         assertEquals("3", calc("len(list(1, 2, 3))"));
-        assertEquals("()", calc("list()"), "an empty list is a legal list, not an error");
+        assertEquals("list()", calc("list()"), "an empty list is a legal list, not an error");
         assertEquals("0", calc("len(list())"));
     }
 
     @Test
     void elementsAreExpressions() {
-        assertEquals("(4 | 9)", calc("list(2 * 2, 3 * 3)"));
-        assertEquals("(a | 2)", calc("list(\"a\", 2)"), "mixed types are fine — a list isn't typed");
+        assertEquals("list(4, 9)", calc("list(2 * 2, 3 * 3)"));
+        assertEquals("list(\"a\", 2)", calc("list(\"a\", 2)"), "mixed types are fine — a list isn't typed");
     }
 
     /**
@@ -49,8 +49,8 @@ class ListAndBlockPosTest {
      */
     @Test
     void nestedListsFlattenSoListAlsoConcatenates() {
-        assertEquals("(1 | 2 | 3 | 9)", calc("list(range(1, 3), 9)"));
-        assertEquals("(1 | 2 | 8 | 9)", calc("list(range(1, 2), range(8, 9))"), "join two lists");
+        assertEquals("list(1, 2, 3, 9)", calc("list(range(1, 3), 9)"));
+        assertEquals("list(1, 2, 8, 9)", calc("list(range(1, 2), range(8, 9))"), "join two lists");
         assertEquals("4", calc("len(list(range(1, 2), range(8, 9)))"), "flat, so len counts members not lists");
     }
 
@@ -116,7 +116,7 @@ class ListAndBlockPosTest {
     /** The pair together — the shape the whole feature exists for. */
     @Test
     void aLiteralListOfPositions() {
-        assertEquals("(1 2 3 | -4 5 6)", calc("list(blockpos(1, 2, 3), blockpos(-4, 5, 6))"));
+        assertEquals("list(\"1 2 3\", \"-4 5 6\")", calc("list(blockpos(1, 2, 3), blockpos(-4, 5, 6))"));
         assertEquals("-4 5 6", calc("nth(list(blockpos(1, 2, 3), blockpos(-4, 5, 6)), 1)"));
     }
 
