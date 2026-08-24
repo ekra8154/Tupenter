@@ -363,6 +363,20 @@ final class ExpressionEvaluator {
                 index++;
                 Value value = parseTernary();
                 skipWhitespace();
+                if (!atEnd() && peek() == '|' && !(index + 1 < input.length()
+                        && input.charAt(index + 1) == '|')) {
+                    // (a | b | c) is the #foreach HEADER's literal list, and it is
+                    // not an expression — the two forms differ in what they
+                    // PRODUCE, not just in punctuation. The header form makes text
+                    // ("1" | "2" then x + 1 concatenates to "11"); list(...) makes
+                    // values (1, 2 then x + 1 is 3). Naming that here beats
+                    // "Missing closing parenthesis", which says nothing about the
+                    // very natural thing that was just attempted.
+                    throw new ExpressionException("(a | b | c) is the #foreach header's list of literal TEXT — "
+                            + "it isn't an expression. In an expression use list(a, b, c), which keeps numbers as "
+                            + "numbers and computes its arguments; quote anything meant as a bare word: "
+                            + "list(\"short\", \"tall\")");
+                }
                 if (atEnd() || peek() != ')') {
                     throw new ExpressionException("Missing closing parenthesis");
                 }

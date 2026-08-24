@@ -232,4 +232,29 @@ class ExpressionErrorsTest {
         assertErrorNames("flor(2)", "floor", "/tupenter help functions");
         assertErrorNames("zzzzzz(2)", "Unknown function: zzzzzz", "/tupenter help functions");
     }
+
+    /**
+     * Reaching for the #foreach header's (a | b | c) inside an expression is the
+     * obvious next guess once you have seen it work in a loop, and the old answer
+     * was "Missing closing parenthesis" — true, useless, and about the wrong
+     * thing. The two forms are not interchangeable: the header makes TEXT, so
+     * (1 | 2) then x + 1 concatenates to "11", while list(1, 2) keeps numbers and
+     * gives 3. The error has to say which one you want.
+     */
+    @Test
+    void thePipeListFormIsRedirectedToList() {
+        assertErrorNames("(\"a\" | \"b\")", "#foreach", "list(a, b, c)");
+        assertErrorNames("(1 | 2 | 3)", "list(a, b, c)");
+        assertErrorNames("(\"a\" | \"b\")", "quote anything meant as a bare word");
+    }
+
+    /** ...without disturbing the two things that legitimately carry a pipe. */
+    @Test
+    void booleanOrAndPickStillTakeTheirPipes() {
+        assertEquals("true", calc("(1 > 0) || (2 > 3)"), "|| is still boolean or");
+        assertEquals("true", calc("(false || true)"), "even directly inside the parens");
+        // pick parses its own | options before the group parser ever sees them
+        assertEquals("b", calc("pick(\"a\" | \"b\")"));
+    }
+
 }
