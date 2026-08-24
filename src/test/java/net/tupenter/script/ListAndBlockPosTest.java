@@ -121,6 +121,37 @@ class ListAndBlockPosTest {
     }
 
     /**
+     * The whole stack at once: a custom command with an optional typed parameter,
+     * a list in a #local, a #foreach over it, and the loop variable glued to a
+     * suffix. This is the shape people actually write, and every piece of it is
+     * somewhere else's test — which is exactly why it deserves one of its own.
+     */
+    @Test
+    void aCustomCommandCanLoopOverAStoredList() {
+        java.util.Map<String, AliasDefinition> aliases = new java.util.LinkedHashMap<>();
+        aliases.put("cutgrass", AliasDefinition.parse(
+                "<r:int=15> = #local kinds = list(\"short\", \"tall\") && "
+                        + "#foreach $kind$ in kinds (/fill ~$r$ ~$r$ ~$r$ ~$-r$ ~$-r$ ~$-r$ air replace $kind$_grass)"));
+        ScriptParser.Options options = new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT, aliases,
+                true, true, true, true, 100, 1000, new Random(42),
+                new SessionVariableStore(), new SessionVariableStore());
+
+        ScriptParser.ParseResult defaulted = ScriptParser.parse("cutgrass", options);
+        assertNull(defaulted.error(), String.valueOf(defaulted.error()));
+        assertEquals(java.util.List.of(
+                        "fill ~15 ~15 ~15 ~-15 ~-15 ~-15 air replace short_grass",
+                        "fill ~15 ~15 ~15 ~-15 ~-15 ~-15 air replace tall_grass"),
+                defaulted.script().statements().stream().map(Script.SendStatement::content).toList());
+
+        ScriptParser.ParseResult given = ScriptParser.parse("cutgrass 4", options);
+        assertNull(given.error(), String.valueOf(given.error()));
+        assertEquals(java.util.List.of(
+                        "fill ~4 ~4 ~4 ~-4 ~-4 ~-4 air replace short_grass",
+                        "fill ~4 ~4 ~4 ~-4 ~-4 ~-4 air replace tall_grass"),
+                given.script().statements().stream().map(Script.SendStatement::content).toList());
+    }
+
+    /**
      * End to end, through the parser: a list of positions in a #local, looped
      * over, substituted into a command. This is the line that was unwriteable
      * before — the (a | b | c) form only parses in a #foreach HEADER, so a
