@@ -109,6 +109,59 @@ class ListLiteralTest {
         assertEquals("true", calc("contains(list(a | b), \"b\")"));
     }
 
+    // -------------------------------------------------------------------- NBT
+
+    /**
+     * NBT goes in either way, and the pipe form takes it RAW — braces, brackets,
+     * colons and commas are all just characters there, so nothing needs escaping.
+     * That is the case the permissiveness was for.
+     */
+    @Test
+    void nbtSurvivesBothForms() {
+        assertEquals("list(\"{Count:1b}\", \"{id:5}\")", calc("list(\"{Count:1b}\", \"{id:5}\")"),
+                "quoted, comma form");
+        assertEquals("list(\"{Count:1b}\", \"{id:5}\")", calc("list({Count:1b} | {id:5})"),
+                "raw, pipe form — identical result, no quotes needed");
+        assertEquals("list(\"{Enchantments:[{id:sharpness,lvl:5}]}\", \"b\")",
+                calc("list({Enchantments:[{id:sharpness,lvl:5}]} | b)"),
+                "nested braces and brackets, and a comma inside an item");
+    }
+
+    /**
+     * Quotes are CONTENT in the pipe form, not delimiters — which is exactly what
+     * makes NBT-with-strings work, since {id:"minecraft:stone"} carries its own.
+     */
+    @Test
+    void quotesInsideAPipeItemAreJustCharacters() {
+        assertEquals("list(\"{id:\\\"minecraft:stone\\\"}\", \"b\")",
+                calc("list({id:\"minecraft:stone\"} | b)"));
+    }
+
+    /**
+     * Quotes protect a pipe from being read as a SEPARATOR, which is the check
+     * that keeps an ordinary comma list intact: list("a|b", "c") must stay two
+     * strings, not get torn into pieces because one of them contains a pipe.
+     *
+     * <p>They protect it, but they do not consume it — the quote characters stay
+     * in a pipe item, because pipe items are raw text. That is deliberate and is
+     * what makes the NBT cases above work.
+     */
+    @Test
+    void quotesHideAPipeFromTheSeparatorScan() {
+        assertEquals("list(\"a|b\", \"c\")", calc("list(\"a|b\", \"c\")"),
+                "a comma list is not hijacked by a pipe inside one of its strings");
+        assertEquals("list(\"\\\"a|b\\\"\", \"c\")", calc("list(\"a|b\" | c)"),
+                "in pipe mode the quotes are kept as content, and the pipe inside them does not split");
+        assertEquals("list(\"a|b\", \"c\")", calc("list(a\\|b | c)"),
+                "escaping is the other way to put a literal pipe in an item");
+    }
+
+    @Test
+    void nbtSubstitutesIntoACommand() {
+        assertEquals(List.of("give @s stick{Count:1b}", "give @s stick{Count:2b}"),
+                run("#foreach $n$ in list({Count:1b} | {Count:2b}) (/give @s stick$n$)"));
+    }
+
     // ------------------------------------------- parentheses only ever group
 
     @Test

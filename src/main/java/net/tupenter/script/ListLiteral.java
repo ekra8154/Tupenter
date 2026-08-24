@@ -27,7 +27,12 @@ import java.util.List;
  * commas, spaces and brackets are ordinary characters here, not syntax. Only
  * three things are special — a top-level {@code |} separates, {@code \} escapes
  * the next character, and {@code $...$} spans are carried through untouched so a
- * pipe inside a marker never splits an item.
+ * pipe inside a marker never splits an item. A {@code "..."} span is skipped the
+ * same way, for a sharper reason: without it, list("a|b", "c") — an ordinary
+ * COMMA list whose string happens to contain a pipe — would be mistaken for a
+ * pipe list and torn in half. The quote characters themselves stay in the item,
+ * because pipe items are raw text: that is what lets NBT keep its own strings,
+ * as in list({id:"minecraft:stone"} | b).
  *
  * <p>This form used to be written as bare parentheses, and only inside a
  * {@code #foreach} header. It moved into {@code list(...)} so that a list has one
@@ -49,6 +54,7 @@ public final class ListLiteral {
      */
     public static int groupEnd(String text, int openParen) {
         boolean insideSpan = false;
+        boolean insideQuotes = false;
         int depth = 0;
         for (int i = openParen; i < text.length(); i++) {
             char c = text.charAt(i);
@@ -56,11 +62,15 @@ public final class ListLiteral {
                 i++;
                 continue;
             }
-            if (c == '$') {
+            if (c == '"' && !insideSpan) {
+                insideQuotes = !insideQuotes;
+                continue;
+            }
+            if (c == '$' && !insideQuotes) {
                 insideSpan = !insideSpan;
                 continue;
             }
-            if (insideSpan) {
+            if (insideSpan || insideQuotes) {
                 continue;
             }
             if (c == '(') {
@@ -84,6 +94,7 @@ public final class ListLiteral {
      */
     public static boolean hasSeparatorPipe(String text, int from, int end) {
         boolean insideSpan = false;
+        boolean insideQuotes = false;
         int depth = 0;
         for (int i = from; i < end && i < text.length(); i++) {
             char c = text.charAt(i);
@@ -91,11 +102,15 @@ public final class ListLiteral {
                 i++;
                 continue;
             }
-            if (c == '$') {
+            if (c == '"' && !insideSpan) {
+                insideQuotes = !insideQuotes;
+                continue;
+            }
+            if (c == '$' && !insideQuotes) {
                 insideSpan = !insideSpan;
                 continue;
             }
-            if (insideSpan) {
+            if (insideSpan || insideQuotes) {
                 continue;
             }
             if (c == '(') {
@@ -133,6 +148,7 @@ public final class ListLiteral {
         List<String> items = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         boolean insideSpan = false;
+        boolean insideQuotes = false;
         int depth = 0;
 
         for (int i = 0; i < inner.length(); i++) {
@@ -142,12 +158,17 @@ public final class ListLiteral {
                 i++;
                 continue;
             }
-            if (c == '$') {
+            if (c == '"' && !insideSpan) {
+                insideQuotes = !insideQuotes;
+                current.append(c);
+                continue;
+            }
+            if (c == '$' && !insideQuotes) {
                 insideSpan = !insideSpan;
                 current.append(c);
                 continue;
             }
-            if (!insideSpan) {
+            if (!insideSpan && !insideQuotes) {
                 if (c == '(') {
                     depth++;
                 } else if (c == ')') {
