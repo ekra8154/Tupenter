@@ -1946,7 +1946,7 @@ public final class ScriptParser {
         return switch (word) {
             case "#repeat" -> "#repeat 5 (/say hi)";
             case "#for" -> "#for $x$ in 1..10 (/summon zombie ~$x$ ~ ~)";
-            case "#foreach" -> "#foreach $mob$ in (zombie | skeleton) (/summon $mob$)";
+            case "#foreach" -> "#foreach $mob$ in list(zombie | skeleton) (/summon $mob$)";
             case "#while" -> "#while ($client.health$ < 20) (/effect give @s regeneration 1 1 && #wait 3s)";
             default -> word + " (...)";
         };

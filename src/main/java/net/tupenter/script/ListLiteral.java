@@ -13,17 +13,17 @@ import java.util.List;
  * <ul>
  *   <li><b>commas → values.</b> {@code list(1, 2)} holds numbers, and its
  *       arguments are expressions that get computed.</li>
- *   <li><b>pipes → text.</b> {@code (1 | 2)} holds the strings "1" and "2", and
- *       its items are taken exactly as typed.</li>
+ *   <li><b>pipes → text.</b> {@code list(1 | 2)} holds the strings "1" and "2",
+ *       and its items are taken exactly as typed.</li>
  * </ul>
  *
  * <p>Text is the whole point of the pipe form: bare words need no quotes, which
- * is what makes {@code (short | tall | dry)} pleasant where
+ * is what makes {@code list(short | tall | dry)} pleasant where
  * {@code list("short", "tall", "dry")} is noise. The cost is that items are
  * never computed — that is what commas are for.
  *
- * <p>Because items are text, they are gloriously permissive: {@code (a(1) | b)},
- * {@code (one two)}, and {@code (0,0]} | 5.0,1]})} are all fine. Parentheses,
+ * <p>Because items are text, they are gloriously permissive:
+ * {@code list(a(1) | b)} and {@code list(0,0]} | 5.0,1]})} are both fine. Parentheses,
  * commas, spaces and brackets are ordinary characters here, not syntax. Only
  * three things are special — a top-level {@code |} separates, {@code \} escapes
  * the next character, and {@code $...$} spans are carried through untouched so a
@@ -189,7 +189,7 @@ public final class ListLiteral {
         items.add(current.toString().trim());
 
         if (items.size() == 1 && items.get(0).isEmpty()) {
-            throw new IllegalArgumentException("a literal list needs at least one item, e.g. (a | b)");
+            throw new IllegalArgumentException("a list needs at least one item, e.g. list(a | b)");
         }
         return items;
     }

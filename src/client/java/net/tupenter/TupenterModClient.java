@@ -2668,12 +2668,17 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7rand(min, max)§r — whole number, INCLUSIVE both ends: $rand(1, 64)$",
                     "§7randf(min, max)§r — decimal in [min, max)",
                     "§7rand(list)§r — one element of any list: $rand(effectset())$, $rand(range(0, 100, 10))$",
-                    "§7pick(a | b | c)§r — one OPTION you wrote, chosen at random; options are full expressions and nest — /tupenter help pick",
+                    "§7pick(a, b, c)§r — one OPTION you wrote, chosen at random; options are full expressions and nest — /tupenter help pick",
                     "§7pick vs rand:§r pick chooses between things YOU wrote; rand samples a range or list",
                     "§7Re-rolls:§r resend history keeps the original line, so every resend rolls fresh",
             };
             case "lists" -> new String[]{
                     "§bExpressions · lists:",
+                    "§7list(a, b, c)§r — the values you name. Arguments are EXPRESSIONS, so list(2 * 3, client.pos.y) computes them and numbers stay numbers.",
+                    "§7list(a | b | c)§r — the same function, pipe-separated: items are literal TEXT taken exactly as typed, so bare words need no quotes — list(short | tall | dry).",
+                    "§7Which one:§r commas COMPUTE, pipes DON'T. list(1, 2) holds numbers; list(1 | 2) holds the strings, where $x + 1$ concatenates to \"11\" instead of adding. /calc shows you which — it prints a list as list(...) with quotes on the text.",
+                    "§7Pipe items are permissive:§r parens, commas, spaces and NBT braces are all ordinary content — list({Count:1b} | {id:5}) works raw. Use \\| for a literal pipe, and quote a ONE-item list: list(\"one two\").",
+                    "§7Parentheses do NOT make a list§r — they only ever group. (a | b) was the old #foreach spelling and now errors, naming list(a | b).",
                     "§7range(start, stop[, step])§r — inclusive whole numbers: range(1, 10), range(10, 0, -2)",
                     "§7len(x)§r — list length (or text length) · §7nth(list, i)§r — element i, 0-based · §7indexof(list, v)§r — position of v (or -1) · §7contains(list, v)§r — membership test",
                     "§7Cycling:§r nth(list, $i$ % len(list)) walks a list forever — with a #set counter, one step per run: #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset(\"#minecraft:wool\"), i % 16)$",
@@ -2837,6 +2842,7 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine("§7Bare name is normal:§r #set x = 5, then x in expression world — #if (x > 3), x + 1, a function arg. $x$ is the SAME name with explicit wrapping; you only need it as the door into command/chat text, where /give @s stick $x$ substitutes but plain x is the letter.");
         helpLine(navRow("#set · #local · #setdefault", "YOUR variables — session, line-local, init-once (each has a page)", "/tupenter help local"));
         helpLine("§7Persistent:§r /tupenter var save <name> keeps a #set forever · var delete <name> removes it · create-once-across-sessions: #setdefault $x$ = 0 && /tupenter var save $x$");
+        helpLine("§7Optional type:§r #local c:blockpos = blockpos(-10, 20, 85) — same keywords a custom command's <name:type> params take. It CHECKS the value (three whole numbers, or the line stops) and tells the chat bar the SHAPE before the value exists, so /tp $c$ keeps completing the rest of the line. Types: /customcommand help types");
         helpLine("§7Dotted or function?§r Both read LIVE — the difference is the ADDRESS, not the value. Spell the address out and it's a dotted variable (tab-completes); COMPUTE it and it's a function: client.slot.inventory.8.id vs slot(\"inventory.\" + i, \"id\").");
         helpLine("§7One vocabulary, three subjects:§r type, uuid, name, health, pos, blockpos, nbt.<path> work on YOU (client.*), your CROSSHAIR (client.target.*), and ANY entity (entity(uuid, ...)). Swapping subject changes only the subject.");
         for (net.tupenter.script.SubjectDocs.Subject subject : net.tupenter.script.SubjectDocs.ALL) {
@@ -3045,7 +3051,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7/calc int <expr>§r / §7/calc float <expr>§r — wraps the whole expression in int(...) / float(...): truncated toward zero, or forced to a decimal",
                     "§7/$ expr $§r — top-down shorthand: numbers, booleans, and lists display like /calc,",
                     "§7but a STRING result runs as a fresh line: \"/...\" command, \"#...\" directive, else chat.",
-                    "§7/$pick(\"hi\" | \"/time set day\")$§r — chats hi, or runs the command. Resending re-rolls.",
+                    "§7/$pick(\"hi\", \"/time set day\")$§r — chats hi, or runs the command. Resending re-rolls.",
                     "§7Expression reference: /tupenter help expressions",
             };
             case "unroll" -> new String[]{
