@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * The examples a fresh install ships with, so the mod does something the moment
  * it's on rather than presenting an empty Scripting tab. Five custom commands
- * and five tick scripts — the scripts are DISARMED everywhere (no world enables
+ * and seven tick scripts — the scripts are DISARMED everywhere (no world enables
  * them), so nothing runs until the player flips one on in Mod Menu. Bodies are
  * stored multi-line for readability; the tick runner collapses the whitespace to
  * a single line before parsing, so the layout is cosmetic. DefaultExamplesTest
@@ -143,18 +143,21 @@ public final class DefaultExamples {
             + "  /tp @s $hit$ &&\n"
             + "  /tp @s ^ ^ ^-2)";
 
+    // Ten /give lines collapsed into a loop, because it is the shortest honest
+    // demo of what a literal list is FOR: nine bare words that need no quotes,
+    // and a name built around each one. The shield stays outside the loop —
+    // it is the one piece with no iron_ prefix, which is the useful half of the
+    // lesson (a list is for the part that repeats, not the whole job).
+    //
+    // The loop variable is DECLARED bare, to show that the $...$ there is
+    // optional. Reading it is not: inside the body $piece$ is an ordinary
+    // marker, and the difference between the two positions is the point.
     static final String IRONKIT =
             "ironkit \"a full set of iron gear\" =\n"
-            + "/give @s minecraft:iron_sword &&\n"
-            + "/give @s minecraft:iron_pickaxe &&\n"
-            + "/give @s minecraft:iron_axe &&\n"
-            + "/give @s minecraft:shield &&\n"
-            + "/give @s minecraft:iron_shovel &&\n"
-            + "/give @s minecraft:iron_hoe &&\n"
-            + "/give @s minecraft:iron_boots &&\n"
-            + "/give @s minecraft:iron_leggings &&\n"
-            + "/give @s minecraft:iron_chestplate &&\n"
-            + "/give @s minecraft:iron_helmet";
+            + "#foreach piece in list(helmet | chestplate | leggings | boots |\n"
+            + "                          sword | pickaxe | axe | shovel | hoe) (\n"
+            + "  /give @s minecraft:iron_$piece$) &&\n"
+            + "/give @s minecraft:shield";
 
     static final String PORTALCALC =
             "portalcalc <p:blockpos=~ ~ ~> <dim:to_overworld,to_nether=$client.dimension == \"minecraft:the_nether\" ? \"to_overworld\" : \"to_nether\"$> =\n"

@@ -368,11 +368,17 @@ public final class ScriptingReference {
             ```
             #repeat 5 (/say tick $i$)                       $i$ counts 1..5
             #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~)
-            #foreach $m$ in (zombie | skeleton) (/summon $m$ ~ ~ ~)
+            #foreach $m$ in list(zombie | skeleton) (/summon $m$ ~ ~ ~)
             #foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)
             #while (client.health < 20) (/effect give @s regeneration 1 1 && #wait 3s)
             #if (cond) (...) #elseif (cond) (...) #else (...)
             ```
+
+            A loop's variable is DECLARED in the header and READ in the body, and
+            only the reading needs `$...$`. `#foreach piece in list(...)` and
+            `#foreach $piece$ in list(...)` are the same loop — same as the
+            optional `$` on `#set` — but `$piece$` inside the body is an ordinary
+            marker and is never optional.
 
             Loops are capped by **Max Loop Iterations** (default 100). A loop
             that *sends* each iteration paces itself across ticks instead and is
