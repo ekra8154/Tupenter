@@ -125,7 +125,9 @@ class ReadmeExamplesTest {
         ScriptParser.Options options = new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT,
                 aliases, true, true, true, true, 100, 1000, new Random(42), store, store);
         try {
-            return ScriptParser.parse(line, options).error();
+            // parse() takes a command PACKET, and vanilla has already eaten the
+            // slash that opened it — so feed it the same shape the client does.
+            return ScriptParser.parse(line.startsWith("/") ? line.substring(1) : line, options).error();
         } catch (RuntimeException ex) {
             return String.valueOf(ex);
         }

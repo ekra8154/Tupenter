@@ -187,8 +187,24 @@ public final class ScriptParser {
             if (!isKnownStatementWord(word)) {
                 return ParseResult.error(unknownDirective(firstWord(work)));
             }
-        } else if (!work.startsWith("/") && !prefixes.chat()) {
-            work = "/" + work; // #chat keeps it chat; otherwise a bare command word gets its slash
+        } else if (!prefixes.chat()) {
+            // Put back the slash vanilla ate. What arrives here is a command
+            // PACKET, so its opening "/" is already gone — and a command whose
+            // NAME begins with a slash, like WorldEdit's //replace, arrives
+            // looking exactly like an ordinary /replace. Treating that slash as
+            // ours and stripping it again sent "replace obsidian air" to a
+            // dispatcher that only knows "/replace".
+            //
+            // Only when the command really heads the line, though: after a
+            // #prefix it was the prefix's slash that vanilla ate, so every slash
+            // still standing was typed on purpose.
+            //
+            // (//replacenear survived this because WorldEdit registers its
+            // utility commands under both spellings — the region commands, the
+            // ones that only exist as //name, are where it showed.)
+            if (!source.trim().startsWith("#") || !work.startsWith("/")) {
+                work = "/" + work;
+            }
         }
 
         return parseSequence(work, command, prefixes.silent(), prefixes.history(), options, prefixes.chat());
@@ -850,7 +866,11 @@ public final class ScriptParser {
                 }
             }
 
-            if (isAlias(content, options.aliases())) {
+            // A content that STILL starts with '/' means the line said "//name":
+            // vanilla's slash is long gone by here, so that one belongs to the
+            // command's own name (WorldEdit's //replace) and the line is not an
+            // invocation of an alias called "name".
+            if (!content.startsWith("/") && isAlias(content, options.aliases())) {
                 processAliasInvocation(content);
             } else {
                 emitSend(content, isCommand);
