@@ -8,6 +8,12 @@ only self-consistency.)
 (v3: `#wait` **deferred** — not in scope for now. The executor is built with it
 in mind (tick-driven, script instances), but no wait directive ships until the
 overlap/concurrency policy is settled. See §6.)
+(v4 — 1.1.0: a literal list is spelled `list(...)` and nothing else. Bare
+parentheses no longer build one, so `(...)` means grouping everywhere and
+`pick` takes commas like every other function. Two separators inside `list`:
+commas COMPUTE their arguments, pipes take items as literal text. Also landed:
+`blockpos(...)`, an optional `name:type` on `#set`/`#local`/`#setdefault`
+reusing the custom-command parameter keywords, and `##` comments.)
 
 This document specifies "enhanced command parsing v2": the evolution of
 Tupenter's alias expansion + `&&` chaining + `$...$` math into a small, capped,
@@ -224,9 +230,10 @@ the same carve-out command markers use. `#set`/`#local` accept bare names
 (the `$` decoration is optional) and compound assignment `+= -= *= /= %=`.
 
 Functions, phase 1: `int` `float` (existing), `rand(min,max)` (integer,
-inclusive), `pick(a | b | c)` (options are full expressions, so picks nest
-and compute; quote literal text — `pick("say hi" | "say nah")`),
-`range(start, stop[, step])` (inclusive). Phase 2: `floor` `ceil` `round`
+inclusive), `pick(a, b, c)` (options are full expressions, so picks nest
+and compute; quote literal text — `pick("say hi", "say nah")`),
+`range(start, stop[, step])` (inclusive), `list(a | b | c)` / `list(1, 2, 3)`,
+`blockpos(...)`. Phase 2: `floor` `ceil` `round`
 `abs` `min` `max` `randf` `len`.
 
 ### 2.5 Lazy execution and `#wait`
@@ -339,9 +346,12 @@ N evaluated once at loop entry. Implicit `$i$` = 1..N (1-based).
 Inclusive bounds, default step 1, negative step allowed when a > b.
 `#for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~)`
 
-### `#foreach $x$ in (a | b | c) (body)`
-Iterates literal items or a list expression (`$range(...)$`).
-`#foreach $mob$ in (zombie | skeleton | creeper) (/summon $mob$ ~ ~ ~)`
+### `#foreach $x$ in <list> (body)`
+The header is just an expression that has to produce a list — `list(a | b | c)`
+written in place, `range(...)`, a registry set, or a variable holding one. The
+loop variable's `$...$` is optional in the header (it is a declaration); reading
+it in the body is an ordinary marker and is not.
+`#foreach $mob$ in list(zombie | skeleton | creeper) (/summon $mob$ ~ ~ ~)`
 
 ### `#if (cond) (body) [#else (body)]`
 Gatekeeper, evaluated when execution reaches it. Inline value selection is the
