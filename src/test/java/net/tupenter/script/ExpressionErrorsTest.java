@@ -147,10 +147,10 @@ class ExpressionErrorsTest {
 
     @Test
     void aRangeOfOneElementIsFineNotAWrongWayStep() {
-        assertEquals("(5)", calc("range(5, 5)"));
-        assertEquals("(1 | 3 | 5)", calc("range(1, 5, 2)"));
-        assertEquals("(5 | 3 | 1)", calc("range(5, 1, -2)"));
-        assertEquals("(5 | 4 | 3 | 2 | 1)", calc("range(5, 1)"), "a backwards range picks its own step");
+        assertEquals("list(5)", calc("range(5, 5)"));
+        assertEquals("list(1, 3, 5)", calc("range(1, 5, 2)"));
+        assertEquals("list(5, 3, 1)", calc("range(5, 1, -2)"));
+        assertEquals("list(5, 4, 3, 2, 1)", calc("range(5, 1)"), "a backwards range picks its own step");
     }
 
     // ---------------------------------------------------------- comparisons
@@ -232,4 +232,25 @@ class ExpressionErrorsTest {
         assertErrorNames("flor(2)", "floor", "/tupenter help functions");
         assertErrorNames("zzzzzz(2)", "Unknown function: zzzzzz", "/tupenter help functions");
     }
+
+    /**
+     * A pipe inside a FUNCTION call is someone reaching for the literal-list form
+     * one pair of parentheses short. Arguments are always expressions, so the
+     * error has to point at the form that isn't.
+     */
+    @Test
+    void aPipeInAnArgumentListPointsAtTheLiteralForm() {
+        assertErrorNames("len(short | tall)", "Only list(...)", "list(a | b)");
+        assertErrorNames("abs(1 | 2)", "Only list(...)");
+    }
+
+    /** The literal list must not swallow what legitimately carries a pipe. */
+    @Test
+    void booleanOrAndPickAreNotListsC() {
+        assertEquals("true", calc("(1 > 0) || (2 > 3)"), "|| is still boolean or");
+        assertEquals("true", calc("(false || true)"), "even directly inside the parens");
+        // pick splits its own options before the group parser sees them
+        assertEquals("b", calc("pick(\"a\", \"b\")"));
+    }
+
 }
