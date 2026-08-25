@@ -1598,6 +1598,7 @@ public class TupenterModClient implements ClientModInitializer {
 				TupenterModClient::renderRunningHud);
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			net.tupenter.compat.TupenterConfigScreen.tickPendingRestore();
             if (client.player == null) return;
 
             // Drain any scripts still holding statements (budget-stretched ones).

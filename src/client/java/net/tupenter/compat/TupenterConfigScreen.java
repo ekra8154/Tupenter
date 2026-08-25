@@ -961,10 +961,6 @@ public class TupenterConfigScreen {
                 && old.listWidget != null) {
             scroll = old.listWidget.getScroll();
         }
-        if (Minecraft.getInstance().gui.screen() instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen live
-                && live.listWidget != null) {
-            scrollTrace("captured", live, scroll);
-        }
         carryExpansion(); // before createScreen clears the row lists
         Screen screen = createScreen(cachedParent);
         if (screen instanceof me.shedaniel.clothconfig2.gui.AbstractConfigScreen cloth) {
@@ -972,13 +968,11 @@ public class TupenterConfigScreen {
         }
         Minecraft.getInstance().gui.setScreen(screen); // Gui.setScreen calls Screen.init synchronously
         if (screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth) {
-            double target = scroll;
-            restoreScroll(cloth, target);
-            // Second, deferred pass: an entry whose height isn't final until it
-            // has been ticked once (the wrapping edit boxes) can move the clamp
-            // ceiling after the first restore. Idempotent, so it either changes
-            // nothing or finishes the job.
-            Minecraft.getInstance().execute(() -> restoreScroll(cloth, target));
+            restoreScroll(cloth, scroll);
+            // ...and again on the next few ticks, because this first attempt can
+            // be clamped against a list that has not finished measuring itself.
+            pendingScroll = scroll;
+            pendingRestoreTicks = 3;
         }
     }
 
@@ -1000,22 +994,43 @@ public class TupenterConfigScreen {
         if (Minecraft.getInstance().gui.screen() == cloth && cloth.listWidget != null) {
             cloth.listWidget.tickList();
             cloth.listWidget.capYPosition(target);
-            scrollTrace("restore", cloth, target);
         }
     }
 
-    // TEMPORARY diagnostic — the scroll restore has been wrong twice from
-    // reasoning alone, so this prints what actually happens. Remove once the
-    // cause is known.
-    private static void scrollTrace(String stage, me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth,
-                                    double target) {
-        System.out.println("[tupenter-scroll] " + stage
-                + " target=" + String.format("%.1f", target)
-                + " actual=" + String.format("%.1f", cloth.listWidget.getScroll())
-                + " children=" + cloth.listWidget.children().size()
-                + " visible=" + cloth.listWidget.visibleChildren().size()
-                + " viewport=" + (cloth.listWidget.bottom - cloth.listWidget.top)
-                + " scrollBottom=" + cloth.listWidget.getScrollBottom());
+    private static double pendingScroll;
+    private static int pendingRestoreTicks;
+
+    /**
+     * Re-apply the scroll for a few ticks after a rebuild, until it sticks.
+     *
+     * <p>The first attempt can land short through no fault of its own. An
+     * expanded row builds its multi-line editor LAZILY, at the width it is first
+     * rendered at, so until that render it reports a stub height: the list
+     * measures 62px shorter than it will be, getMaxScroll() comes out 62 too
+     * small, and capYPosition clamps an otherwise-valid target down to it.
+     *
+     * <p>Which is exactly why this only ever showed at the BOTTOM of the list.
+     * From the middle the target is under the ceiling either way and nothing
+     * clamps; scrolled to the end, it was cut by up to a full expanded row — a
+     * quarter of the viewport, which is what got reported.
+     *
+     * <p>Stops the moment the value sticks, so it is a frame or two of
+     * correction and never a fight with someone who is scrolling.
+     */
+    public static void tickPendingRestore() {
+        if (pendingRestoreTicks <= 0) {
+            return;
+        }
+        pendingRestoreTicks--;
+        if (!(Minecraft.getInstance().gui.screen() instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth)
+                || cloth.listWidget == null) {
+            pendingRestoreTicks = 0;
+            return;
+        }
+        restoreScroll(cloth, pendingScroll);
+        if (Math.abs(cloth.listWidget.getScroll() - pendingScroll) < 0.5) {
+            pendingRestoreTicks = 0; // it took — stop touching it
+        }
     }
 
     /**
