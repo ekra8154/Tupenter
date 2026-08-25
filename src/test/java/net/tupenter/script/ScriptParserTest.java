@@ -1263,23 +1263,23 @@ class ScriptParserTest {
 
     @Test
     void foreachIteratesLiteralItems() {
-        ScriptParser.ParseResult result = parse("#foreach $mob$ in (zombie | skeleton | creeper) (/summon $mob$ ~ ~ ~)");
+        ScriptParser.ParseResult result = parse("#foreach $mob$ in list(zombie | skeleton | creeper) (/summon $mob$ ~ ~ ~)");
         assertNull(result.error());
         assertEquals(List.of("summon zombie ~ ~ ~", "summon skeleton ~ ~ ~", "summon creeper ~ ~ ~"), contents(result));
     }
 
     @Test
     void foreachItemsAreLiteralNbtSafe() {
-        ScriptParser.ParseResult result = parse("#foreach $m$ in (0,0]} | 5.0,1]}) (/say $m$)");
+        ScriptParser.ParseResult result = parse("#foreach $m$ in list(0,0]} | 5.0,1]}) (/say $m$)");
         assertNull(result.error());
         assertEquals(List.of("say 0,0]}", "say 5.0,1]}"), contents(result));
     }
 
     @Test
     void foreachEscapedPipeIsLiteral() {
-        ScriptParser.ParseResult result = parse("#foreach $m$ in (a \\| b) (/say $m$)");
+        ScriptParser.ParseResult result = parse("#foreach $m$ in list(a \\| b | c) (/say $m$)");
         assertNull(result.error());
-        assertEquals(List.of("say a | b"), contents(result));
+        assertEquals(List.of("say a | b", "say c"), contents(result));
     }
 
     @Test

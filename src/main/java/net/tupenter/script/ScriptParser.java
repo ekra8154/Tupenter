@@ -156,25 +156,55 @@ public final class ScriptParser {
 
     /** Parses a command-packet line (leading slash already stripped by vanilla). */
     public static ParseResult parse(String command, Options options) {
+        if (Comments.isOnlyComment(command)) {
+            return ParseResult.error(Comments.nothingToRunMessage());
+        }
+        String source = Comments.strip(command);
+
         LinePrefixes prefixes;
         try {
-            prefixes = stripLinePrefixes(command, options);
+            prefixes = stripLinePrefixes(source, options);
         } catch (ParseAbort abort) {
             return ParseResult.error(abort.getMessage());
         }
 
         String work = prefixes.rest();
         if (work.isEmpty()) {
+            if (command.isBlank()) {
+                // A bare "/" — vanilla strips the slash, so what reaches us is "".
+                // There is no prefix here and nothing of ours to parse, so hand it
+                // straight back and let VANILLA answer it the way it always has:
+                // "Unknown or incomplete command", caret under the problem.
+                // Claiming this one made the mod look like it had broken plain
+                // commands, and answered a question nobody asked about prefixes.
+                return ParseResult.unchanged(command);
+            }
             return ParseResult.error("That prefix needs a command to run, e.g. #silent /time set day");
         }
 
         if (work.startsWith("#")) {
             String word = firstWord(work).toLowerCase(Locale.ROOT);
             if (!isKnownStatementWord(word)) {
-                return ParseResult.error("Unknown directive " + firstWord(work));
+                return ParseResult.error(unknownDirective(firstWord(work)));
             }
-        } else if (!work.startsWith("/") && !prefixes.chat()) {
-            work = "/" + work; // #chat keeps it chat; otherwise a bare command word gets its slash
+        } else if (!prefixes.chat()) {
+            // Put back the slash vanilla ate. What arrives here is a command
+            // PACKET, so its opening "/" is already gone — and a command whose
+            // NAME begins with a slash, like WorldEdit's //replace, arrives
+            // looking exactly like an ordinary /replace. Treating that slash as
+            // ours and stripping it again sent "replace obsidian air" to a
+            // dispatcher that only knows "/replace".
+            //
+            // Only when the command really heads the line, though: after a
+            // #prefix it was the prefix's slash that vanilla ate, so every slash
+            // still standing was typed on purpose.
+            //
+            // (//replacenear survived this because WorldEdit registers its
+            // utility commands under both spellings — the region commands, the
+            // ones that only exist as //name, are where it showed.)
+            if (!source.trim().startsWith("#") || !work.startsWith("/")) {
+                work = "/" + work;
+            }
         }
 
         return parseSequence(work, command, prefixes.silent(), prefixes.history(), options, prefixes.chat());
@@ -185,7 +215,10 @@ public final class ScriptParser {
      * through) unless the line starts with a known directive word.
      */
     public static ParseResult parseChatLine(String message, Options options) {
-        String trimmed = message.trim();
+        if (Comments.isOnlyComment(message)) {
+            return ParseResult.error(Comments.nothingToRunMessage());
+        }
+        String trimmed = Comments.strip(message).trim();
         if (!trimmed.startsWith("#")) {
             return ParseResult.unchanged(message);
         }
@@ -205,7 +238,7 @@ public final class ScriptParser {
             return ParseResult.error("That prefix needs a command to run, e.g. #silent /time set day");
         }
         if (work.startsWith("#") && !isKnownStatementWord(firstWord(work).toLowerCase(Locale.ROOT))) {
-            return ParseResult.error("Unknown directive " + firstWord(work));
+            return ParseResult.error(unknownDirective(firstWord(work)));
         }
 
         return parseSequence(work, message, prefixes.silent(), prefixes.history(), options, prefixes.chat());
@@ -219,9 +252,12 @@ public final class ScriptParser {
      * always a runnable script. {@code originalLine} is what history records.
      */
     public static ParseResult parseGeneratedLine(String line, String originalLine, Options options) {
+        if (Comments.isOnlyComment(line)) {
+            return ParseResult.error(Comments.nothingToRunMessage());
+        }
         LinePrefixes prefixes;
         try {
-            prefixes = stripLinePrefixes(line, options);
+            prefixes = stripLinePrefixes(Comments.strip(line), options);
         } catch (ParseAbort abort) {
             return ParseResult.error(abort.getMessage());
         }
@@ -231,10 +267,24 @@ public final class ScriptParser {
             return ParseResult.error("The expression evaluated to nothing runnable");
         }
         if (work.startsWith("#") && !isKnownStatementWord(firstWord(work).toLowerCase(Locale.ROOT))) {
-            return ParseResult.error("Unknown directive " + firstWord(work));
+            return ParseResult.error(unknownDirective(firstWord(work)));
         }
 
         return parseSequence(work, originalLine, prefixes.silent(), prefixes.history(), options, true);
+    }
+
+    /**
+     * "Unknown directive X" — with one extra sentence when X looks like a
+     * comment someone forgot the space in. "##this" is the shape people
+     * actually type, and without the hint the error names the spelling without
+     * saying what is wrong with it.
+     */
+    private static String unknownDirective(String word) {
+        String message = "Unknown directive " + word;
+        if (word.startsWith(Comments.MARK) && word.length() > Comments.MARK.length()) {
+            message += " — for a comment, leave a space after ## (## " + word.substring(Comments.MARK.length()) + ")";
+        }
+        return message;
     }
 
     /** True when a chat line starts with a word Tupenter treats as a directive ("#silent /...", "#repeat ..."). */
@@ -419,7 +469,7 @@ public final class ScriptParser {
 
         // mirrors the walker's own prefix run, so both paths agree on last-wins
         Script.HistoryMode history = fallback;
-        String body = definition.body().trim();
+        String body = definition.runnableBody().trim();
         while (body.startsWith("#")) {
             String word = firstWord(body).toLowerCase(Locale.ROOT);
             if (word.equals(SILENT)) {
@@ -785,7 +835,7 @@ public final class ScriptParser {
                     throw new ParseAbort(word + " goes at the start of the line"
                             + (word.equals(SILENT) ? ", or wrap statements: #silent (/cmd && /cmd)" : ""));
                 }
-                throw new ParseAbort("Unknown directive " + firstWord(content));
+                throw new ParseAbort(unknownDirective(firstWord(content)));
             }
 
             boolean isCommand = normalized.isCommand();
@@ -816,7 +866,11 @@ public final class ScriptParser {
                 }
             }
 
-            if (isAlias(content, options.aliases())) {
+            // A content that STILL starts with '/' means the line said "//name":
+            // vanilla's slash is long gone by here, so that one belongs to the
+            // command's own name (WorldEdit's //replace) and the line is not an
+            // invocation of an alias called "name".
+            if (!content.startsWith("/") && isAlias(content, options.aliases())) {
                 processAliasInvocation(content);
             } else {
                 emitSend(content, isCommand);
@@ -845,7 +899,7 @@ public final class ScriptParser {
                     case WAIT -> throw new ParseAbort("a function can't #wait — it computes a value synchronously");
                     case SILENT, NORECORD, RECORD, "#stage", "#unstage", "#chat" ->
                             throw new ParseAbort(word + " isn't meaningful in a function — its body computes a value");
-                    default -> throw new ParseAbort("Unknown directive " + firstWord(content));
+                    default -> throw new ParseAbort(unknownDirective(firstWord(content)));
                 }
                 return;
             }
@@ -1037,6 +1091,16 @@ public final class ScriptParser {
                 throw new ParseAbort(directive + " $" + setVar.name() + "$ — " + ex.getMessage());
             }
 
+            // A declared type that is never checked is a lie the tab-completer
+            // then repeats, so the shape is enforced here at the assignment -
+            // the one place that knows both the annotation and the value.
+            if (setVar.type() != null) {
+                String problem = VariableTypes.validate(setVar.type(), value, setVar.name());
+                if (problem != null) {
+                    throw new ParseAbort(problem);
+                }
+            }
+
             if (onlyIfAbsent) {
                 // #setdefault seeds the SESSION store directly, once — it keeps no
                 // shadowing copy in this script's own scope. So a later #set (even
@@ -1093,7 +1157,7 @@ public final class ScriptParser {
                 throw new ParseAbort("Alias expansion limit reached (" + MAX_ALIAS_EXPANSIONS + "). Possible recursive alias loop.");
             }
 
-            String body = definition.body().trim();
+            String body = definition.runnableBody().trim();
             Map<String, Value> bindings = new HashMap<>();
 
             if (definition.params().isEmpty()) {
@@ -1537,7 +1601,7 @@ public final class ScriptParser {
                 case "#for" -> processFor(directive);
                 case "#foreach" -> processForeach(directive);
                 case "#silent" -> processSilentGroup(directive);
-                default -> throw new ParseAbort("Unknown directive " + directive.word());
+                default -> throw new ParseAbort(unknownDirective(directive.word()));
             }
         }
 
@@ -1658,19 +1722,15 @@ public final class ScriptParser {
             requireLoops("#foreach");
             ForeachHeader header = parseForeachHeader(directive.header());
 
-            List<Value> items;
-            if (header.literalList() != null) {
-                items = new ArrayList<>();
-                for (String item : splitListItems(header.literalList())) {
-                    items.add(Value.of(item));
-                }
-            } else {
-                Value listValue = evalExpression(header.listExpression(), "#foreach list");
-                if (!(listValue instanceof Value.ListValue list)) {
-                    throw new ParseAbort("#foreach needs a list: (a | b | c) or range(1, 10)");
-                }
-                items = list.values();
+            // One path: the header is an EXPRESSION that has to produce a list.
+            // There used to be a second, where bare parentheses in the header
+            // were a literal list all of their own — it moved into list(...) so
+            // that a list has one spelling everywhere it can appear.
+            Value listValue = evalExpression(header.listExpression(), "#foreach list");
+            if (!(listValue instanceof Value.ListValue list)) {
+                throw new ParseAbort("#foreach needs a list: list(a | b | c), list(1, 2, 3) or range(1, 10)");
             }
+            List<Value> items = list.values();
 
             if (sink == null) {
                 checkIterations(items.size(), "#foreach");
@@ -1940,7 +2000,7 @@ public final class ScriptParser {
         return switch (word) {
             case "#repeat" -> "#repeat 5 (/say hi)";
             case "#for" -> "#for $x$ in 1..10 (/summon zombie ~$x$ ~ ~)";
-            case "#foreach" -> "#foreach $mob$ in (zombie | skeleton) (/summon $mob$)";
+            case "#foreach" -> "#foreach $mob$ in list(zombie | skeleton) (/summon $mob$)";
             case "#while" -> "#while ($client.health$ < 20) (/effect give @s regeneration 1 1 && #wait 3s)";
             default -> word + " (...)";
         };
@@ -2085,11 +2145,11 @@ public final class ScriptParser {
         return new ForHeader(var.name(), from, to, step);
     }
 
-    private record ForeachHeader(String var, String literalList, String listExpression) {
+    private record ForeachHeader(String var, String listExpression) {
     }
 
     private static ForeachHeader parseForeachHeader(String header) {
-        String syntax = "#foreach syntax: #foreach $x$ in (a | b | c) (...) or #foreach $x$ in range(1, 10) (...)";
+        String syntax = "#foreach syntax: #foreach $x$ in list(a | b | c) (...) or #foreach $x$ in range(1, 10) (...)";
         VarToken var = parseVarToken(header, syntax);
         String rest = var.rest().trim();
 
@@ -2101,11 +2161,14 @@ public final class ScriptParser {
             throw new ParseAbort(syntax);
         }
 
-        if (rest.startsWith("(")) {
-            if (!rest.endsWith(")")) {
-                throw new ParseAbort("#foreach list is missing its closing parenthesis");
-            }
-            return new ForeachHeader(var.name(), rest.substring(1, rest.length() - 1), null);
+        // Bare parentheses here used to BE the list. They are grouping now, so
+        // say so with the fix attached rather than letting the expression parser
+        // report whatever it makes of "a | b | c".
+        if (rest.startsWith("(") && rest.endsWith(")")
+                && ListLiteral.hasSeparatorPipe(rest, 1, rest.length() - 1)) {
+            throw new ParseAbort("#foreach $x$ in (a | b | c) is now #foreach $x$ in list(a | b | c) — "
+                    + "the list moved into list(...) so parentheses only ever group. Try: #foreach "
+                    + var.name() + " in list(" + rest.substring(1, rest.length() - 1).trim() + ") (...)");
         }
         // "#foreach $b$ in range(1, 3)" with no body: the group scanner already
         // claimed the (1, 3) as the body, leaving a bare function NAME here.
@@ -2115,7 +2178,7 @@ public final class ScriptParser {
             throw new ParseAbort("#foreach needs a (...) body — " + rest + "(...) was read as the body."
                     + " e.g. #foreach $b$ in " + rest + "(...) (/say $b$)");
         }
-        return new ForeachHeader(var.name(), null, rest);
+        return new ForeachHeader(var.name(), rest);
     }
 
     private record VarToken(String name, String rest) {
@@ -2233,56 +2296,20 @@ public final class ScriptParser {
         return -1;
     }
 
-    /** Splits a literal foreach list on top-level '|', decoding \-escapes. */
-    private static List<String> splitListItems(String inner) {
-        List<String> items = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean insideSpan = false;
-        int depth = 0;
-
-        for (int i = 0; i < inner.length(); i++) {
-            char c = inner.charAt(i);
-            if (c == '\\' && i + 1 < inner.length()) {
-                current.append(inner.charAt(i + 1));
-                i++;
-                continue;
-            }
-            if (c == '$') {
-                insideSpan = !insideSpan;
-                current.append(c);
-                continue;
-            }
-            if (!insideSpan) {
-                if (c == '(') depth++;
-                else if (c == ')') depth--;
-                else if (c == '|' && depth == 0) {
-                    items.add(current.toString().trim());
-                    current.setLength(0);
-                    continue;
-                }
-            }
-            current.append(c);
-        }
-        items.add(current.toString().trim());
-
-        if (items.size() == 1 && items.get(0).isEmpty()) {
-            throw new ParseAbort("#foreach needs at least one list item, e.g. (a | b)");
-        }
-        return items;
-    }
-
     // =====================================================================
     // #set
     // =====================================================================
 
-    private record SetVar(String name, String expression) {
+    /** {@code type} is null for a plain untyped assignment. */
+    private record SetVar(String name, String expression, AliasDefinition.ParamType type) {
     }
 
     /** Parses "#set $name$ = expression" (the $ around the name is optional). */
     private static SetVar parseSetDirective(String content, String directive) {
         String rest = content.substring(directive.length()).trim();
 
-        String syntax = directive + " syntax: " + directive + " name = expression (also name += expression; $ around the name is optional)";
+        String syntax = directive + " syntax: " + directive + " name = expression (also name:type = expression, "
+                + "name += expression; $ around the name is optional)";
 
         boolean wrapped = rest.startsWith("$");
         if (wrapped) {
@@ -2296,11 +2323,26 @@ public final class ScriptParser {
         String name = rest.substring(0, nameEnd).toLowerCase(Locale.ROOT);
         rest = rest.substring(nameEnd).trim();
 
+        // The optional :type. Accepted on BOTH sides of a closing $ - $c:blockpos$
+        // and $c$:blockpos read the same to a person, so neither should be an
+        // error. Unwrapped (c:blockpos) is the first branch too.
+        AliasDefinition.ParamType type = null;
+        if (rest.startsWith(":")) {
+            TypeSuffix suffix = parseTypeSuffix(rest, directive, name);
+            type = suffix.type();
+            rest = suffix.rest();
+        }
+
         if (wrapped) {
             if (!rest.startsWith("$")) {
                 throw new ParseAbort(syntax);
             }
             rest = rest.substring(1).trim();
+            if (type == null && rest.startsWith(":")) {
+                TypeSuffix suffix = parseTypeSuffix(rest, directive, name);
+                type = suffix.type();
+                rest = suffix.rest();
+            }
         }
 
         if (name.isEmpty()) {
@@ -2327,7 +2369,28 @@ public final class ScriptParser {
             expression = name + " " + compound + " (" + expression + ")";
         }
 
-        return new SetVar(name, expression);
+        return new SetVar(name, expression, type);
+    }
+
+    private record TypeSuffix(AliasDefinition.ParamType type, String rest) {
+    }
+
+    /** Reads ":keyword" off the front of {@code rest}, with the keyword list in the error. */
+    private static TypeSuffix parseTypeSuffix(String rest, String directive, String name) {
+        int end = 1;
+        while (end < rest.length() && (Character.isLetterOrDigit(rest.charAt(end)) || rest.charAt(end) == '_')) {
+            end++;
+        }
+        String keyword = rest.substring(1, end);
+        if (keyword.isEmpty()) {
+            throw new ParseAbort(directive + " " + name + ": needs a type after the colon, e.g. "
+                    + directive + " " + name + ":blockpos = ... (" + ParamTypeDocs.keywordSummary() + ")");
+        }
+        try {
+            return new TypeSuffix(VariableTypes.parse(keyword), rest.substring(end).trim());
+        } catch (IllegalArgumentException unknown) {
+            throw new ParseAbort(directive + " " + name + ":" + keyword + " — " + unknown.getMessage());
+        }
     }
 
     // =====================================================================

@@ -73,11 +73,12 @@ public final class UserFunctions {
                             context.tags(), context.blocks(), context.functions(), context.raycaster(), context.entities());
                     try {
                         // statement bodies run through the Walker; pure expressions stay on the fast path
-                        if (ScriptParser.isStatementBody(def.body())) {
-                            return ScriptParser.evaluateFunctionBody(def.body(),
+                        String body = def.runnableBody();
+                        if (ScriptParser.isStatementBody(body)) {
+                            return ScriptParser.evaluateFunctionBody(body,
                                     functionOptions(scoped, maxLoopIterations));
                         }
-                        return MathEvaluator.evaluateValue(def.body(), scoped);
+                        return MathEvaluator.evaluateValue(body, scoped);
                     } catch (ExpressionException ex) {
                         // attribute body failures to the function, not the caller's marker
                         throw new ExpressionException("in " + name + "() body — " + ex.getMessage());

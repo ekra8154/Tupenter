@@ -56,7 +56,7 @@ class ShortCircuitTest {
         assertEquals("false", eval("false && \"text\" == unknownvar"), "string literal");
         assertEquals("false", eval("false && 3s == unknownvar"), "stack suffix");
         assertEquals("false", eval("false && 1.5 == unknownvar"), "decimal literal");
-        assertEquals("false", eval("false && pick(unknownvar | 2) == 1"), "pick");
+        assertEquals("false", eval("false && pick(unknownvar, 2) == 1"), "pick");
         assertEquals("false", eval("false && (true ? unknownvar : 2) == 1"), "nested ternary");
         assertEquals("false", eval("false && (unknownvar || true)"), "nested ||");
         assertEquals("false", eval("false && (unknownvar && true)"), "nested &&");
