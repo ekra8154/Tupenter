@@ -36,6 +36,29 @@ A line is a command (`/...`), a directive (`#...`), or plain chat.
 /time set day && /weather clear
 ```
 
+### Comments — `##`
+
+```
+## a counter that survives rejoins
+#setdefault runs = 0 &&     ## start at zero
+#set runs += 1 &&
+/say run number $runs$
+```
+
+```
+## bottom left && /activate 1 2 3 && ## the other one && /activate 2 3 4
+```
+
+`##` followed by a space starts a note that never runs. It ends at the next
+`&&` or the end of its line, whichever comes first — the line ending is for
+scripts written over several lines, the `&&` ending is what lets a one-liner
+carry notes between its statements. The `&&` that ends a note is eaten with
+it, so a note cannot contain `&&`.
+
+A note may begin only where a statement could: at the start of a line, or
+right after an `&&`. Anywhere else `##` is ordinary text, so `/say ## hi`
+still says `## hi` and `##1 winner` is still a chat message.
+
 ### `#wait` — pause mid-line
 
 ```
@@ -48,7 +71,8 @@ statement's `$...$` markers evaluate *when it runs*, so the `/tp` above
 reads your target block *after* the jump boost landed — not at Enter-press.
 Re-running a line cancels its still-running previous instance (resend =
 restart, not stack); different lines run concurrently; `/tupenter abort`
-stops everything.
+stops the lines you ran and `/tupenter abort all` stops armed tick scripts
+too.
 
 ### Expressions — `$...$`
 
@@ -56,9 +80,10 @@ stops everything.
 /give @s stick $32+5$                          → 37
 /give @s diamond $3s$                          → 192   (s = stacks of 64)
 /give @s stick $rand(1, 64)$                   → random amount, inclusive
-/summon $pick("zombie" | "skeleton" | "creeper")$    → random choice (options are expressions; quote literal text)
+/summon $pick("zombie", "skeleton", "creeper")$    → random choice (options are expressions; quote literal text)
 /tp @s ~ ~$client.pos.y > 60 ? 10 : 0$ ~           → conditional value
 /say $client.health < 5 ? "help!" : "fine"$    → strings, comparisons
+/setblock $blockpos(raycast(50))$ torch        → snap a computed position to a block
 ```
 
 Exact rational math (no float drift), `int(...)`/`float(...)` casts,
@@ -136,13 +161,41 @@ question: is the *server* ticking entities there? That's what governs item
 despawn, mob spawning and crop growth, and it's often a shorter radius than
 what you can see.
 
+### Lists
+
+```
+list(1, 2, 3)                     → values — arguments are expressions, computed
+list(short | tall | dry)          → text — items taken as typed, no quotes needed
+#local kinds = list(short | tall) && #foreach $k$ in kinds (/say $k$)
+```
+
+One function, two separators, and the difference is the **elements**:
+
+- **Commas compute.** `list(2 * 3, client.pos.y)` is `6` and your Y.
+- **Pipes don't.** `list(1 | 2)` holds the *strings*, so `$x + 1$` concatenates
+  to `"11"` instead of adding — but bare words need no quotes, which is the
+  whole point for a list of block or item names.
+
+Pipe items are deliberately permissive: parentheses, commas, spaces and NBT
+braces are ordinary content, so `list({Count:1b} | {id:5})` goes in raw. Use
+`\|` for a literal pipe, and quote a one-item list — `list("one two")` — since
+with no pipe there is nothing to switch on. **Parentheses never make a list;
+they only ever group.**
+
+`range(1, 10)` and the registry sets (`blockset` / `itemset` / `effectset` /
+`entityset`) are lists too, and `len` / `nth` / `indexof` / `contains` / `rand` /
+`#foreach` take any of them. `/calc` prints a list back as `list(...)` with
+quotes on the text, so you can see which elements are numbers — and paste the
+whole thing straight back.
+
 ### Variables
 
 ```
 #set spawn = "100 64 -200"
 /tp @s $spawn$
-#set i += 1                      (compound assignment: += -= *= /= %=)
+#setdefault i = 0 && #set i += 1   (compound assignment: += -= *= /= %=)
 #local x = rand(1, 10) && /give @s stick $x$ && /say I got $x$!
+#local c:blockpos = blockpos(-10, 20, 85) && /tp $c$    (optional type)
 ```
 
 - `#set` = session (clears on join, configurable; echoes a notice);
@@ -150,6 +203,12 @@ what you can see.
   The `$` around the name is optional, and the right side is already an
   expression — `#set i = i + 1` and `#set i = $i + 1$` both work
   (`$...$` always evaluates its inside, everywhere).
+- **An optional type** — `#local c:blockpos = ...` — uses the same keywords a
+  custom command's `<name:type>` parameters take, on `#set` and `#setdefault`
+  too. It *checks* the value (three whole numbers, or the line stops) and tells
+  the chat bar the value's **shape before the value exists**, so `/tp $c$ `
+  keeps completing the rest of the line while you are still typing the one that
+  defines `c`. `/customcommand help types` lists the keywords.
 - `/tupenter var save <name>` promotes one to the config file forever;
   `/tupenter var delete <name>` removes it.
 - Live client state: `$client.pos$` (+ `.x/.y/.z`), `blockpos`, `eye_pos`,
@@ -182,7 +241,7 @@ what you can see.
 ```
 #repeat 5 (/say Tick $i$!)
 #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~)
-#foreach $mob$ in (zombie | skeleton | creeper) (/summon $mob$ ~ ~ ~)
+#foreach $mob$ in list(zombie | skeleton | creeper) (/summon $mob$ ~ ~ ~)
 #foreach $n$ in range(1, 10) (/give @s stick $n$)
 #if ($client.pos.y$ > 60) (/say high!) #elseif ($client.pos.y$ > 30) (/say mid) #else (/say low)
 ```
@@ -285,7 +344,7 @@ body forwards to a command that accepts tags.
 Mod Menu → Tupenter → **Scripts**: one-line scripts that run **every tick**
 while the master toggle is on. They never touch resend history, `#set`
 notices are muted, and a broken script errors once and is skipped until
-edited. `/tupenter abort` is the panic switch (it also flips the master
+edited. `/tupenter abort all` is the panic switch (it also flips the master
 toggle off).
 
 **Arming is per world.** The tab has two sections: **Global Scripts** are
@@ -347,11 +406,11 @@ the result without sending anything. The `/$ expr $` shorthand is top-down:
 numbers, booleans, and lists print locally like `/calc`, but a **string**
 result runs as a fresh line using the three statement forms — `"/..."` is a
 command, `"#..."` a directive, anything else plain chat. So
-`/$pick("hi" | "bye")$` chats one of them, and
-`/$pick("/tp ~ ~1 ~" | "/tp ~ ~-1 ~")$` teleports. (The `/` in `/$...$`
+`/$pick("hi", "bye")$` chats one of them, and
+`/$pick("/tp ~ ~1 ~", "/tp ~ ~-1 ~")$` teleports. (The `/` in `/$...$`
 just marks the line as script.) Resending re-rolls — history keeps the
 original `/$...$` form. pick options are expressions, so picks nest:
-`/$pick(pick("say hi" | "say yo") | "say nah")$`.
+`/$pick(pick("say hi", "say yo"), "say nah")$`.
 
 ### Custom functions
 
@@ -380,8 +439,11 @@ thing to your clipboard.
   function and variable documents itself, with runnable examples)
 - `/unroll <line>` — dry-run debugger: prints what a line unrolls to,
   color-coded by kind (command/chat/echo), without sending anything
-- `/tupenter abort` — stop all running scripts
+- `/tupenter abort` — stop the scripts you ran from chat; `/tupenter abort all`
+  also stops armed tick scripts and flips the master switch off
 - `/tupenter vars`, `/tupenter var save|delete <name>` — variable management
+- `/tupenter menu` — the settings screen from chat; add `customcommands` or
+  `scripts` to land on that tab
 - Every feature has an on/off toggle in Mod Menu → Tupenter → Scripting.
 
 ## Development

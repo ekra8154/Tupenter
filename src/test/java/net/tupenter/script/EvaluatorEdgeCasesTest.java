@@ -174,23 +174,23 @@ class EvaluatorEdgeCasesTest {
 
     @Test
     void aTagExpandsToItsMembersAndAnIdToItself() {
-        assertEquals("(minecraft:oak_log | minecraft:birch_log)", withRegistry("blockset(\"#minecraft:logs\")"));
-        assertEquals("(minecraft:stone)", withRegistry("blockset(\"minecraft:stone\")"));
-        assertEquals("(minecraft:stone)", withRegistry("blockset(\"stone\")"), "the namespace defaults");
+        assertEquals("list(\"minecraft:oak_log\", \"minecraft:birch_log\")", withRegistry("blockset(\"#minecraft:logs\")"));
+        assertEquals("list(\"minecraft:stone\")", withRegistry("blockset(\"minecraft:stone\")"));
+        assertEquals("list(\"minecraft:stone\")", withRegistry("blockset(\"stone\")"), "the namespace defaults");
     }
 
     /** A bare name that is both an id and a tag means the ID; # asks for the family. */
     @Test
     void aBareNameMeansTheBlockAndTheHashMeansTheFamily() {
-        assertEquals("(minecraft:ice)", withRegistry("blockset(\"ice\")"));
-        assertEquals("(minecraft:ice | minecraft:packed_ice)", withRegistry("blockset(\"#ice\")"));
+        assertEquals("list(\"minecraft:ice\")", withRegistry("blockset(\"ice\")"));
+        assertEquals("list(\"minecraft:ice\", \"minecraft:packed_ice\")", withRegistry("blockset(\"#ice\")"));
     }
 
     @Test
     void setsUnionTheirArgumentsAndDeduplicate() {
-        assertEquals("(minecraft:oak_log | minecraft:birch_log | minecraft:stone)",
+        assertEquals("list(\"minecraft:oak_log\", \"minecraft:birch_log\", \"minecraft:stone\")",
                 withRegistry("blockset(\"#minecraft:logs\", \"minecraft:stone\")"));
-        assertEquals("(minecraft:oak_log | minecraft:birch_log)",
+        assertEquals("list(\"minecraft:oak_log\", \"minecraft:birch_log\")",
                 withRegistry("blockset(\"#minecraft:logs\", \"minecraft:oak_log\")"), "oak_log appears once");
     }
 
@@ -201,9 +201,9 @@ class EvaluatorEdgeCasesTest {
      */
     @Test
     void oneStringArgumentCanCarryAWholeSet() {
-        assertEquals("(minecraft:stone | minecraft:ice)", withRegistry("blockset(\"stone ice\")"));
-        assertEquals("(minecraft:stone | minecraft:ice)", withRegistry("blockset(\"stone,ice\")"));
-        assertEquals("(minecraft:stone | minecraft:oak_log | minecraft:birch_log)",
+        assertEquals("list(\"minecraft:stone\", \"minecraft:ice\")", withRegistry("blockset(\"stone ice\")"));
+        assertEquals("list(\"minecraft:stone\", \"minecraft:ice\")", withRegistry("blockset(\"stone,ice\")"));
+        assertEquals("list(\"minecraft:stone\", \"minecraft:oak_log\", \"minecraft:birch_log\")",
                 withRegistry("blockset(\"stone #minecraft:logs\")"));
     }
 
@@ -215,7 +215,7 @@ class EvaluatorEdgeCasesTest {
 
     @Test
     void noArgumentMeansTheWholeRegistry() {
-        assertEquals("(minecraft:stone | minecraft:ice | minecraft:oak_log)", withRegistry("blockset()"));
+        assertEquals("list(\"minecraft:stone\", \"minecraft:ice\", \"minecraft:oak_log\")", withRegistry("blockset()"));
         assertEquals("3", withRegistry("len(blockset())"));
     }
 

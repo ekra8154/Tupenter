@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -113,7 +114,7 @@ class ScriptParserErrorsTest {
 
     @Test
     void aMalformedForeachHeaderShowsTheWholeSyntax() {
-        String syntax = "#foreach $x$ in (a | b | c)";
+        String syntax = "#foreach $x$ in list(a | b | c)";
         assertErrorNames("#foreach $b$ 1 (/say hi)", syntax);
         assertErrorNames("#foreach in range(1,3) (/say hi)", syntax);
         assertErrorNames("#foreach $b$ in (/say hi)", syntax);
@@ -140,7 +141,7 @@ class ScriptParserErrorsTest {
 
     @Test
     void aWorkingForeachStillWorks() {
-        assertEquals(List.of("say a", "say b"), sent("#foreach $x$ in (a | b) (/say $x$)"));
+        assertEquals(List.of("say a", "say b"), sent("#foreach $x$ in list(a | b) (/say $x$)"));
         assertEquals(List.of("say 1", "say 2"), sent("#foreach $x$ in range(1, 2) (/say $x$)"));
     }
 
@@ -324,5 +325,29 @@ class ScriptParserErrorsTest {
     void emptyChainSegmentsAreForgiven() {
         assertEquals(List.of("say hi"), sent("&& say hi"));
         assertEquals(List.of("say a", "say b"), sent("say a && && say b"));
+    }
+
+    /**
+     * A bare "/" is vanilla's business. Vanilla strips the slash before the
+     * packet, so Tupenter sees an empty command — and used to answer it with
+     * "That prefix needs a command to run", which is both wrong (there is no
+     * prefix) and a hijack of an error the game already gives properly, caret
+     * and all. Passing it through is what restores "Unknown or incomplete
+     * command".
+     */
+    @Test
+    void aBareSlashIsLeftToVanilla() {
+        for (String nothing : java.util.List.of("", " ", "   ")) {
+            ScriptParser.ParseResult result = ScriptParser.parse(nothing, options());
+            assertNull(result.error(), "a blank command should not be Tupenter's error: " + result.error());
+            assertFalse(result.changed(), "and nothing should be rewritten");
+        }
+    }
+
+    /** A prefix with nothing after it is still ours, and still says so. */
+    @Test
+    void aPrefixWithNoCommandStillExplainsItself() {
+        assertErrorNames("#silent", "needs a command to run");
+        assertErrorNames("#norecord", "needs a command to run");
     }
 }

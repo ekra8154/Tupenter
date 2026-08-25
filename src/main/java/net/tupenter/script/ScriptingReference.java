@@ -255,6 +255,33 @@ public final class ScriptingReference {
             #set cmd = "/tp @s ~ ~10 ~" && $cmd$
             ```
 
+            ## Comments
+
+            `##` followed by a space starts a note that never runs. It ends at
+            the next `&&` or the end of its line, whichever comes first:
+
+            ```
+            ## a counter that survives rejoins
+            #setdefault runs = 0 &&        ## start at zero
+            #set runs += 1 &&
+            /say run number $runs$
+            ```
+
+            ```
+            ## bottom left && /activate 1 2 3 && ## the other one && /activate 2 3 4
+            ```
+
+            The line ending is for scripts written over several lines; the `&&`
+            ending is what lets a one-liner carry notes between its statements.
+            The `&&` that ends a note is eaten with it, so what runs is just the
+            line with the notes lifted out. A comment therefore cannot contain
+            `&&` — that is the price of being able to end one mid-line.
+
+            A comment may begin only where a statement could — at the start of a
+            line, or right after an `&&`. Anywhere else the characters are
+            ordinary text, so `/say ## hi` still says `## hi`. The space is
+            required for the same reason: `##1 winner` is a message, not a note.
+
             """;
 
     private static final String EXPRESSIONS = """
@@ -372,7 +399,9 @@ public final class ScriptingReference {
 
             Re-running a line cancels its own still-running instance (resend =
             restart, not stack). Different lines run concurrently.
-            `/tupenter abort` stops everything; `/tupenter running` lists what is
+            `/tupenter abort` stops the lines YOU ran (armed tick scripts keep going;
+            `/tupenter abort all` takes those down too, master switch included);
+            `/tupenter running` lists what is
             active.
 
             """;

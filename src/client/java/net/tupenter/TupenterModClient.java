@@ -54,7 +54,7 @@ import net.tupenter.script.VariableRegistry;
 
 import java.util.Map;
 import java.util.Random;
-import net.tupenter.compat.ModMenuIntegration;
+import net.tupenter.compat.ConfigScreenAccess;
 import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.platform.InputConstants;
 
@@ -298,14 +298,61 @@ public class TupenterModClient implements ClientModInitializer {
         names.addAll(net.tupenter.command.SlotVariableProvider.completions(typed));
         names.addAll(net.tupenter.command.EntitySubjectProvider.completions(typed));
         names.addAll(java.util.List.of(
-                "rand", "randf", "pick", "range", "len", "nth", "indexof", "int", "float",
+                "rand", "randf", "pick", "range", "list", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
-                "trim", "upper", "lower", "substr", "replace", "vec", "component", "raycast", "raycast_block",
+                "trim", "upper", "lower", "substr", "replace", "vec", "blockpos", "component", "raycast", "raycast_block",
                 "entity", "raycast_entity", "entities", "nearest_entity",
                 "slot"));
         names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too
         return new java.util.ArrayList<>(names);
+    }
+
+    /**
+     * Ready-made position forms for the right-hand side of a coordinate-typed
+     * assignment: {@code #local c:blockpos = |} offers the block you're looking
+     * at, already spelled correctly.
+     *
+     * <p>"Spelled correctly" is the point, and it is why this can't just hand back
+     * the bare coordinates the way a vanilla blockpos argument does. A right-hand
+     * side is an EXPRESSION, so "-10 20 85" there is implicit multiplication and
+     * quietly becomes -17000. What you actually want typed is blockpos(-10, 20,
+     * 85) — so that is what gets offered, and the completion teaches the form.
+     *
+     * <p>Empty unless the cursor really is at the start of such a value; anything
+     * already typed there is a partial expression and belongs to the normal
+     * variable/function completer.
+     */
+    public static java.util.List<String> positionForms(String text, int cursor, String typedPrefix) {
+        if (!typedPrefix.isEmpty()) {
+            return java.util.List.of();
+        }
+        net.tupenter.script.AliasDefinition.ParamType type =
+                net.tupenter.command.ChatInputStyler.assignRhsType(text, cursor);
+        if (type == null) {
+            return java.util.List.of();
+        }
+        String constructor = switch (type) {
+            case BLOCKPOS -> "blockpos";
+            case POS -> "vec";
+            default -> null; // column_pos/rotation have no constructor to offer
+        };
+        if (constructor == null) {
+            return java.util.List.of();
+        }
+        java.util.List<String> forms = new java.util.ArrayList<>();
+        net.minecraft.world.phys.HitResult hit = Minecraft.getInstance().hitResult;
+        if (hit instanceof net.minecraft.world.phys.BlockHitResult blockHit) {
+            net.minecraft.core.BlockPos pos = blockHit.getBlockPos();
+            forms.add(constructor + "(" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + ")");
+        }
+        forms.add("client.blockpos");
+        // No "~ ~ ~". A relative coordinate is neither a number nor a variable —
+        // it only means anything to the command that receives it, so it can't be
+        // computed, offset or compared. A typed variable should hold a real
+        // position; offset it with arithmetic instead:
+        // blockpos(client.pos.x + 4, client.pos.y, client.pos.z).
+        return forms;
     }
 
     /** The collapsed root a name lives under, or null if it isn't in a collapsed namespace. */
@@ -331,6 +378,7 @@ public class TupenterModClient implements ClientModInitializer {
     public static String smartMaskMarkers(String text) {
         StringBuilder out = null;
         net.tupenter.script.EvalContext ctx = null;
+        java.util.Map<String, net.tupenter.script.AliasDefinition.ParamType> declaredTypes = null;
         int i = 0;
         while (i < text.length()) {
             char c = text.charAt(i);
@@ -359,9 +407,15 @@ public class TupenterModClient implements ClientModInitializer {
                 String value = MathEvaluator.evaluateValue(text.substring(i + 1, close), ctx).substitutionString();
                 tokens = tokenCount(value);
             } catch (RuntimeException ignored) {
-                // eval failed (e.g. target.blockpos off-crosshair while chat is open) —
-                // fall back to the known arity of a position variable, else one blob
-                tokens = positionalArity(text.substring(i + 1, close));
+                // eval failed — either a live read that has nothing to say right
+                // now (target.blockpos off-crosshair), or a name this very line is
+                // about to define, which by definition has no value yet. Fall back
+                // to a DECLARED arity, then to the known position variables, then
+                // to one blob.
+                if (declaredTypes == null) {
+                    declaredTypes = net.tupenter.script.VariableTypes.declaredOn(text);
+                }
+                tokens = declaredArity(text.substring(i + 1, close), declaredTypes);
             }
             writeTokenMask(out, i, close - i + 1, tokens);
             i = close + 1;
@@ -378,8 +432,23 @@ public class TupenterModClient implements ClientModInitializer {
     private static final java.util.Set<String> POSITIONAL_VARS = java.util.Set.of(
             "client.pos", "client.target.blockpos", "client.motion");
 
-    private static int positionalArity(String inner) {
-        return POSITIONAL_VARS.contains(inner.trim().toLowerCase(java.util.Locale.ROOT)) ? 3 : 1;
+    /**
+     * How many command tokens a marker will expand to when we cannot evaluate it.
+     *
+     * <p>A type declared on this very line wins, because it is the only thing that
+     * knows: "#local c:blockpos = -10 20 85 && /tp $c$ " has no value for c yet,
+     * so without the annotation $c$ masks to one token, /tp parses as a 1-argument
+     * teleport, and everything after it stops completing. That is the whole reason
+     * variable types exist.
+     */
+    private static int declaredArity(String inner,
+            java.util.Map<String, net.tupenter.script.AliasDefinition.ParamType> declared) {
+        String name = inner.trim().toLowerCase(java.util.Locale.ROOT);
+        net.tupenter.script.AliasDefinition.ParamType type = declared.get(name);
+        if (type != null) {
+            return net.tupenter.script.VariableTypes.arity(type);
+        }
+        return POSITIONAL_VARS.contains(name) ? 3 : 1;
     }
 
     /** Fills [start, start+len) with {@code tokens} runs of '0' joined by single spaces — length preserved. */
@@ -472,13 +541,43 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /** /tupenter scripts — what would run right here, right now. */
-    /** /tupenter abort — panic stop: kills every running script + resend queue and turns the tick master off. */
-    private static int runAbortAllCommand(CommandContext<FabricClientCommandSource> context) {
+    /**
+     * /tupenter abort — stop what YOU set off, and leave the armed tick scripts
+     * running.
+     *
+     * <p>Aborting almost always means "stop the thing I just started", and an
+     * armed HUD is not that: it is a setting you turned on, and disarming it as
+     * collateral is a much bigger hammer than the moment calls for. The full
+     * sweep, including the master switch, is /tupenter abort all.
+     */
+    private static int runAbortChatCommand(CommandContext<FabricClientCommandSource> context) {
+        int aborted = SCRIPT_EXECUTOR.abortUserInstances();
+        pendingQueue.clear();
+        delayTimer = 0;
+        context.getSource().sendFeedback(Component.literal(
+                aborted > 0 ? "Aborted " + aborted + " running script(s)." : "Nothing to abort.")
+                .withStyle(ChatFormatting.YELLOW));
+        int tickLoops = SCRIPT_EXECUTOR.tickLoopCount();
+        if (tickLoops > 0) {
+            context.getSource().sendFeedback(Component.literal(
+                    tickLoops + " tick script(s) still armed — /tupenter abort all stops those too.")
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        return 1;
+    }
+
+    /**
+     * /tupenter abort all — everything, tick scripts included, and the master
+     * switch off with them.
+     *
+     * <p>The switch is the point: without it, aborting a tick loop achieves
+     * nothing, because the next tick re-submits it. This is the panic button.
+     */
+    private static int runAbortEverythingCommand(CommandContext<FabricClientCommandSource> context) {
         int aborted = SCRIPT_EXECUTOR.runningCount();
         SCRIPT_EXECUTOR.abortAll();
         pendingQueue.clear();
         delayTimer = 0;
-        // panic switch: aborting while tick scripts keep resubmitting every tick would be futile
         if (TupenterConfig.INSTANCE.tickScriptsEnabled) {
             TupenterConfig.INSTANCE.tickScriptsEnabled = false;
             TupenterConfig.save();
@@ -1347,7 +1446,11 @@ public class TupenterModClient implements ClientModInitializer {
 
                     dispatcher.register(literal("tupenter")
                             .then(literal("abort")
-                                    .executes(TupenterModClient::runAbortAllCommand)
+                                    .executes(TupenterModClient::runAbortChatCommand)
+                                    // "all" is a literal, so it wins over the name
+                                    // argument below even for a script called "all"
+                                    .then(literal("all")
+                                            .executes(TupenterModClient::runAbortEverythingCommand))
                                     .then(argument("id", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
                                             .executes(TupenterModClient::runAbortOneCommand))
                                     .then(argument("name", StringArgumentType.word())
@@ -1368,6 +1471,18 @@ public class TupenterModClient implements ClientModInitializer {
                                             .then(argument("name", StringArgumentType.word())
                                                     .suggests(TupenterModClient::suggestScriptNames)
                                                     .executes(context -> runSetArmedByName(context, false)))))
+                            // Only the two LIST tabs get a name. General and
+                            // Scripting are plain option pages you land on
+                            // anyway with a bare /tupenter menu, so naming them
+                            // would just be two more words to tab past.
+                            .then(literal("menu")
+                                    .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_GENERAL))
+                                    // "customcommands" matches the tab's label, not the
+                                    // internal name (the category key is ...aliases)
+                                    .then(literal("customcommands")
+                                            .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_ALIASES)))
+                                    .then(literal("scripts")
+                                            .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_SCRIPTS))))
                             .then(literal("reference")
                                     .executes(TupenterModClient::runReferenceCommand))
                             .then(literal("vars")
@@ -1517,6 +1632,7 @@ public class TupenterModClient implements ClientModInitializer {
 				TupenterModClient::renderRunningHud);
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			net.tupenter.compat.TupenterConfigScreen.tickPendingRestore();
             if (client.player == null) return;
 
             // Drain any scripts still holding statements (budget-stretched ones).
@@ -1542,7 +1658,11 @@ public class TupenterModClient implements ClientModInitializer {
             
             // Handle Config
             while (configKey.consumeClick()) {
-                client.setScreen(ModMenuIntegration.createScreen(client.screen));
+                // Guarded: Cloth Config is only *suggested*, and this used to
+                // call straight through — binding this key without it crashed.
+                if (!ConfigScreenAccess.open(ConfigScreenAccess.TAB_GENERAL)) {
+                    sendClothMissingMessage();
+                }
             }
             
             // Handle History Recording Toggle
@@ -2206,6 +2326,30 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /**
+     * /tupenter menu [tab] — the settings screen, straight from chat, on the tab
+     * you asked for. The same screen Mod Menu shows.
+     */
+    private static int runMenuCommand(CommandContext<FabricClientCommandSource> context, int tabIndex) {
+        if (!ConfigScreenAccess.open(tabIndex)) {
+            context.getSource().sendError(Component.literal(CLOTH_MISSING));
+            return 0;
+        }
+        return 1;
+    }
+
+    /** The keybind's version of the same miss — no command source to answer on. */
+    private static void sendClothMissingMessage() {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player != null) {
+            client.player.sendSystemMessage(Component.literal(CLOTH_MISSING).withStyle(ChatFormatting.RED));
+        }
+    }
+
+    private static final String CLOTH_MISSING =
+            "Tupenter's settings screen needs Cloth Config, which isn't installed. "
+                    + "Nothing else is affected — the whole mod still works from chat: /tupenter help.";
+
+    /**
      * /tupenter reference — the whole scripting reference (the same text as
      * SCRIPTING.md, generated from the same registries) onto the clipboard,
      * for pasting anywhere you'd rather read or search it.
@@ -2606,12 +2750,17 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7rand(min, max)§r — whole number, INCLUSIVE both ends: $rand(1, 64)$",
                     "§7randf(min, max)§r — decimal in [min, max)",
                     "§7rand(list)§r — one element of any list: $rand(effectset())$, $rand(range(0, 100, 10))$",
-                    "§7pick(a | b | c)§r — one OPTION you wrote, chosen at random; options are full expressions and nest — /tupenter help pick",
+                    "§7pick(a, b, c)§r — one OPTION you wrote, chosen at random; options are full expressions and nest — /tupenter help pick",
                     "§7pick vs rand:§r pick chooses between things YOU wrote; rand samples a range or list",
                     "§7Re-rolls:§r resend history keeps the original line, so every resend rolls fresh",
             };
             case "lists" -> new String[]{
                     "§bExpressions · lists:",
+                    "§7list(a, b, c)§r — the values you name. Arguments are EXPRESSIONS, so list(2 * 3, client.pos.y) computes them and numbers stay numbers.",
+                    "§7list(a | b | c)§r — the same function, pipe-separated: items are literal TEXT taken exactly as typed, so bare words need no quotes — list(short | tall | dry).",
+                    "§7Which one:§r commas COMPUTE, pipes DON'T. list(1, 2) holds numbers; list(1 | 2) holds the strings, where $x + 1$ concatenates to \"11\" instead of adding. /calc shows you which — it prints a list as list(...) with quotes on the text.",
+                    "§7Pipe items are permissive:§r parens, commas, spaces and NBT braces are all ordinary content — list({Count:1b} | {id:5}) works raw. Use \\| for a literal pipe, and quote a ONE-item list: list(\"one two\").",
+                    "§7Parentheses do NOT make a list§r — they only ever group. (a | b) was the old #foreach spelling and now errors, naming list(a | b).",
                     "§7range(start, stop[, step])§r — inclusive whole numbers: range(1, 10), range(10, 0, -2)",
                     "§7len(x)§r — list length (or text length) · §7nth(list, i)§r — element i, 0-based · §7indexof(list, v)§r — position of v (or -1) · §7contains(list, v)§r — membership test",
                     "§7Cycling:§r nth(list, $i$ % len(list)) walks a list forever — with a #set counter, one step per run: #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset(\"#minecraft:wool\"), i % 16)$",
@@ -2664,6 +2813,7 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine(navRow("flow", "&& chains, #repeat, #for, #foreach, #if/#elseif, #while", "/tupenter help flow"));
         helpLine(navRow("prefixes", "#silent, #norecord, #stage, /echo", "/tupenter help prefixes"));
         helpLine(navRow("scripts", "the every-tick Scripts tab", "/tupenter help scripts"));
+        helpLine(navRow("/tupenter menu", "open the settings — add customcommands or scripts to land on that tab", "/tupenter menu"));
         helpLine("§8Anything by name: /tupenter help <command | function | directive | variable> — e.g. help echo, help blockset, help local");
         helpLine(Component.literal("Quick taste: ").withStyle(ChatFormatting.GRAY).append(suggestLink(taste, taste)));
         endHelpPage();
@@ -2705,6 +2855,7 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine("§bChains, loops & conditions:");
         helpLine("§7Chain:§r /time set day && /weather clear — one line, sent in order. Each segment picks its form: /command, #directive, bare text = chat. A segment that is exactly one $expr$ runs its string result the same way ($cmd$ holding \"/tp ~ ~1 ~\" teleports).");
         helpLine("§7Groups (...)§r nest and can hold chains. Parens elsewhere are literal text.");
+        helpLine("§7Comment:§r ## followed by a space — a note that never runs, ending at the next && or the end of its line. It may start a line or follow an &&; anywhere else ## is ordinary text, so /say ## hi still says ## hi.");
         for (net.tupenter.script.DirectiveDocs.Doc doc : net.tupenter.script.DirectiveDocs.ALL) {
             switch (doc.group()) {
                 case LOOPS, CONDITIONS, TIMING ->
@@ -2713,7 +2864,7 @@ public class TupenterModClient implements ClientModInitializer {
             }
         }
         helpLine("§7Variables have pages too:§r #set · #local · #setdefault — /tupenter help local is the one to read first");
-        helpLine("§7Overlap:§r re-running a line starts another concurrent instance (up to the concurrency cap) — they share the per-tick budget round-robin · /tupenter abort <id> stops one, /tupenter abort stops all");
+        helpLine("§7Overlap:§r re-running a line starts another concurrent instance (up to the concurrency cap) — they share the per-tick budget round-robin · /tupenter abort <id> stops one, /tupenter abort stops the lines you ran, /tupenter abort all stops armed tick scripts too");
         helpLine("§7Loops that DO something run free:§r a loop that sends or waits each iteration paces itself over ticks, however long it needs — Max Loop Iterations only caps a loop that spins WITHOUT sending or waiting (the runaway guard).");
         helpLine(navRow("prefixes", "#silent, #stage, #chat and friends", "/tupenter help prefixes"));
         helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));
@@ -2774,6 +2925,7 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine("§7Bare name is normal:§r #set x = 5, then x in expression world — #if (x > 3), x + 1, a function arg. $x$ is the SAME name with explicit wrapping; you only need it as the door into command/chat text, where /give @s stick $x$ substitutes but plain x is the letter.");
         helpLine(navRow("#set · #local · #setdefault", "YOUR variables — session, line-local, init-once (each has a page)", "/tupenter help local"));
         helpLine("§7Persistent:§r /tupenter var save <name> keeps a #set forever · var delete <name> removes it · create-once-across-sessions: #setdefault $x$ = 0 && /tupenter var save $x$");
+        helpLine("§7Optional type:§r #local c:blockpos = blockpos(-10, 20, 85) — same keywords a custom command's <name:type> params take. It CHECKS the value (three whole numbers, or the line stops) and tells the chat bar the SHAPE before the value exists, so /tp $c$ keeps completing the rest of the line. Types: /customcommand help types");
         helpLine("§7Dotted or function?§r Both read LIVE — the difference is the ADDRESS, not the value. Spell the address out and it's a dotted variable (tab-completes); COMPUTE it and it's a function: client.slot.inventory.8.id vs slot(\"inventory.\" + i, \"id\").");
         helpLine("§7One vocabulary, three subjects:§r type, uuid, name, health, pos, blockpos, nbt.<path> work on YOU (client.*), your CROSSHAIR (client.target.*), and ANY entity (entity(uuid, ...)). Swapping subject changes only the subject.");
         for (net.tupenter.script.SubjectDocs.Subject subject : net.tupenter.script.SubjectDocs.ALL) {
@@ -2982,7 +3134,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7/calc int <expr>§r / §7/calc float <expr>§r — wraps the whole expression in int(...) / float(...): truncated toward zero, or forced to a decimal",
                     "§7/$ expr $§r — top-down shorthand: numbers, booleans, and lists display like /calc,",
                     "§7but a STRING result runs as a fresh line: \"/...\" command, \"#...\" directive, else chat.",
-                    "§7/$pick(\"hi\" | \"/time set day\")$§r — chats hi, or runs the command. Resending re-rolls.",
+                    "§7/$pick(\"hi\", \"/time set day\")$§r — chats hi, or runs the command. Resending re-rolls.",
                     "§7Expression reference: /tupenter help expressions",
             };
             case "unroll" -> new String[]{

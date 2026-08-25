@@ -15,7 +15,7 @@ def formatMinecraftSupportLabel = { String supportRange ->
 	return normalizedRange.replaceAll(/(?i)\.x\b/, '.X')
 }
 
-// tupenter-fabric-1.21.10-v1.0.0.jar — loader, then the versions it serves,
+// tupenter-fabric-1.21.10-v1.1.0.jar — loader, then the versions it serves,
 // then the mod's own version. Which build you're holding is unambiguous.
 def buildArchiveName = "${project.archives_base_name}-fabric-${formatMinecraftSupportLabel(project.minecraft_support_range)}"
 
@@ -99,6 +99,15 @@ sourceSets {
 test {
     useJUnitPlatform()
     finalizedBy jacocoTestReport
+
+    // Two tests read markdown from the repo root rather than the classpath:
+    // ReadmeExamplesTest runs every example in README.md, and
+    // ScriptingReferenceTest compares SCRIPTING.md against the registries.
+    // Without declaring them as inputs, Gradle calls the task up-to-date when
+    // only a doc changed — so editing the README could never fail the build,
+    // which is the one thing those tests exist to do.
+    inputs.file("README.md").withPropertyName("readme").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file("SCRIPTING.md").withPropertyName("scriptingReference").withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 jacoco {

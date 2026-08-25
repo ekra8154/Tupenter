@@ -2,6 +2,7 @@ package net.tupenter.script;
 
 import net.tupenter.script.AliasDefinition.ParamType;
 
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,6 +49,25 @@ public final class ParamTypeDocs {
     /** The doc whose keyword or synonym is {@code name} (case-insensitive), or null. */
     public static Doc find(String name) {
         return BY_KEYWORD.get(name.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * The canonical keyword of every type, for tab-completion after a ":".
+     * CHOICE is left out for the same reason it is left out of keywordSummary:
+     * you write the options themselves, there is no keyword to type.
+     */
+    public static List<String> keywords() {
+        List<String> keywords = new ArrayList<>();
+        for (Doc doc : ALL) {
+            if (doc.type() == ParamType.CHOICE) {
+                continue;
+            }
+            // CANONICAL only. Offering "blockpos" and "block_pos" side by side
+            // reads as two types rather than two spellings of one; the synonyms
+            // still parse, they just aren't taught.
+            keywords.add(doc.keyword());
+        }
+        return keywords;
     }
 
     /** Every keyword, for fromKeyword's error message — ends with the CHOICE special case. */
