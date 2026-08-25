@@ -178,9 +178,48 @@ refactor at 1.21.4 and the recipe-display system at 1.21.2 — but that is a
 no recipes, and its slot access may or may not care. Compile against 1.21.4 to
 find out.
 
+## Backporting a cycle to the version branches
+
+The first backport cherry-picked commits one at a time. That stops scaling the
+moment a cycle MOVES code between files — the 1.1.0 cycle splits
+`ModMenuIntegration` into three, so a sequential pick means settling that rename
+twenty-odd times against intermediate states that get thrown away.
+
+What works instead, and what the 1.1.0 backport used on all five branches:
+
+1. Take master's copy of every file the cycle touched.
+2. Re-apply **that branch's own** adaptation — the `git diff <last-shared-commit>
+   <branch>` for those same files — on top, with `git apply -3`.
+
+Git then works out which adaptation hunks still apply and hands back a conflict
+only where the cycle rewrote the very lines the adaptation touches. On every
+branch that was the same two places: the Open Config keybind (now routed through
+`ConfigScreenAccess`) and the config screen's scroll restore (rewritten
+wholesale). Both keep master's logic, with the renames re-applied to it.
+
+Where a file's content MOVED, re-aim its patch at the new path — the config
+screen's adaptation is a diff against `ModMenuIntegration.java` and has to be
+sed'd onto `TupenterConfigScreen.java` before it will apply.
+
+**Do not `git checkout master -- src/main` wholesale.** `src/main/resources`
+is not all version-independent: `fabric.mod.json` is pinned per branch and
+`tupenter.accesswidener` names a different mapping namespace below 26.x
+(`named` vs `official`). Clobbering the widener fails the build at *configure*
+time with "Namespace mismatch, expected named got official", which reads like a
+toolchain problem and isn't. Only `assets/.../lang/en_us.json` comes from
+master.
+
+**Do not `git merge master`** into a version branch. The merge base is the
+up-port commit the branch forked from, so master's side carries the NEXT
+version's API rewrite as a change the branch never made — the merge takes it
+silently. Cherry-pick or patch; never merge.
+
+Build the branches one at a time. Concurrent Gradle runs share a daemon and
+fight over `build/test-results`, which fails the `test` task with an undeletable
+`output.bin` — a lock, not a test failure.
+
 ## Open items
 
-- `mod_version` is `1.1.0` on master and `1.0.0` on the version branches —
-  they are a release behind until this cycle's work is backported.
+- All six branches are at `mod_version` 1.1.0.
 - Only the 1.21.10 build has been published. The others are built but unreleased;
-  jars are collected in `tupenter-latest-builds/`.
+  jars are collected in `../latest release/`.
