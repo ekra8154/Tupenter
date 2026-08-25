@@ -137,6 +137,7 @@ public abstract class MixinCommandSuggestions {
     private String tupenter$chainAwareValue(EditBox box) {
         String full = box.getValue();
         tupenter$reroot = false;
+        net.tupenter.command.ChainSuggestionScope.clear();
         if (!ChatInputStyler.chainRerootEnabled() || full.isEmpty()) {
             return full;
         }
@@ -147,6 +148,8 @@ public abstract class MixinCommandSuggestions {
         tupenter$reroot = true;
         tupenter$cmdStart = target[0];
         tupenter$segEnd = target[1];
+        // an ask-the-server suggestion has to be asked about this segment only
+        net.tupenter.command.ChainSuggestionScope.reroot(target[0]);
         String truncated = full.substring(0, target[1]);
         // '#'-led lines (prefixes, directives) must still take vanilla's
         // COMMAND branch: mask everything before the inner '/' with spaces
