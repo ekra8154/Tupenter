@@ -185,7 +185,7 @@ public final class ScriptParser {
         if (work.startsWith("#")) {
             String word = firstWord(work).toLowerCase(Locale.ROOT);
             if (!isKnownStatementWord(word)) {
-                return ParseResult.error("Unknown directive " + firstWord(work));
+                return ParseResult.error(unknownDirective(firstWord(work)));
             }
         } else if (!work.startsWith("/") && !prefixes.chat()) {
             work = "/" + work; // #chat keeps it chat; otherwise a bare command word gets its slash
@@ -222,7 +222,7 @@ public final class ScriptParser {
             return ParseResult.error("That prefix needs a command to run, e.g. #silent /time set day");
         }
         if (work.startsWith("#") && !isKnownStatementWord(firstWord(work).toLowerCase(Locale.ROOT))) {
-            return ParseResult.error("Unknown directive " + firstWord(work));
+            return ParseResult.error(unknownDirective(firstWord(work)));
         }
 
         return parseSequence(work, message, prefixes.silent(), prefixes.history(), options, prefixes.chat());
@@ -251,10 +251,24 @@ public final class ScriptParser {
             return ParseResult.error("The expression evaluated to nothing runnable");
         }
         if (work.startsWith("#") && !isKnownStatementWord(firstWord(work).toLowerCase(Locale.ROOT))) {
-            return ParseResult.error("Unknown directive " + firstWord(work));
+            return ParseResult.error(unknownDirective(firstWord(work)));
         }
 
         return parseSequence(work, originalLine, prefixes.silent(), prefixes.history(), options, true);
+    }
+
+    /**
+     * "Unknown directive X" — with one extra sentence when X looks like a
+     * comment someone forgot the space in. "##this" is the shape people
+     * actually type, and without the hint the error names the spelling without
+     * saying what is wrong with it.
+     */
+    private static String unknownDirective(String word) {
+        String message = "Unknown directive " + word;
+        if (word.startsWith(Comments.MARK) && word.length() > Comments.MARK.length()) {
+            message += " — for a comment, leave a space after ## (## " + word.substring(Comments.MARK.length()) + ")";
+        }
+        return message;
     }
 
     /** True when a chat line starts with a word Tupenter treats as a directive ("#silent /...", "#repeat ..."). */
@@ -805,7 +819,7 @@ public final class ScriptParser {
                     throw new ParseAbort(word + " goes at the start of the line"
                             + (word.equals(SILENT) ? ", or wrap statements: #silent (/cmd && /cmd)" : ""));
                 }
-                throw new ParseAbort("Unknown directive " + firstWord(content));
+                throw new ParseAbort(unknownDirective(firstWord(content)));
             }
 
             boolean isCommand = normalized.isCommand();
@@ -865,7 +879,7 @@ public final class ScriptParser {
                     case WAIT -> throw new ParseAbort("a function can't #wait — it computes a value synchronously");
                     case SILENT, NORECORD, RECORD, "#stage", "#unstage", "#chat" ->
                             throw new ParseAbort(word + " isn't meaningful in a function — its body computes a value");
-                    default -> throw new ParseAbort("Unknown directive " + firstWord(content));
+                    default -> throw new ParseAbort(unknownDirective(firstWord(content)));
                 }
                 return;
             }
@@ -1567,7 +1581,7 @@ public final class ScriptParser {
                 case "#for" -> processFor(directive);
                 case "#foreach" -> processForeach(directive);
                 case "#silent" -> processSilentGroup(directive);
-                default -> throw new ParseAbort("Unknown directive " + directive.word());
+                default -> throw new ParseAbort(unknownDirective(directive.word()));
             }
         }
 

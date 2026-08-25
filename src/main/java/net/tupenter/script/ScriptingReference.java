@@ -257,8 +257,8 @@ public final class ScriptingReference {
 
             ## Comments
 
-            `##` followed by a space starts a comment, which runs to the end of
-            that line and never runs:
+            `##` followed by a space starts a note that never runs. It ends at
+            the next `&&` or the end of its line, whichever comes first:
 
             ```
             ## a counter that survives rejoins
@@ -267,14 +267,20 @@ public final class ScriptingReference {
             /say run number $runs$
             ```
 
+            ```
+            ## bottom left && /activate 1 2 3 && ## the other one && /activate 2 3 4
+            ```
+
+            The line ending is for scripts written over several lines; the `&&`
+            ending is what lets a one-liner carry notes between its statements.
+            The `&&` that ends a note is eaten with it, so what runs is just the
+            line with the notes lifted out. A comment therefore cannot contain
+            `&&` — that is the price of being able to end one mid-line.
+
             A comment may begin only where a statement could — at the start of a
             line, or right after an `&&`. Anywhere else the characters are
             ordinary text, so `/say ## hi` still says `## hi`. The space is
             required for the same reason: `##1 winner` is a message, not a note.
-
-            Comments are removed before parsing rather than being statements of
-            their own, so one needs no `&&` after it. The `&&` before a trailing
-            comment has already separated the statements around it.
 
             """;
 

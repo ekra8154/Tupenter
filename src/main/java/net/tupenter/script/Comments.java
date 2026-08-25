@@ -23,18 +23,30 @@ import java.util.List;
  *       This is what keeps a chat line like "##1 winner" sendable.</li>
  * </ul>
  *
- * <p>A comment runs to the end of its LINE rather than to the next {@code &&},
- * because script bodies are written in a multi-line box and that is where
- * comments earn their keep. It also makes the trailing form work: the {@code &&}
- * before a comment has already done the separating, so the next line continues
- * the chain without one of its own.
+ * <p>A comment ends at the next {@code &&} or the end of its line, whichever
+ * comes first. Both terminators are needed, and for different shapes:
  *
  * <pre>
  * ## a counter that survives rejoins
- * #setdefault i = 0 &&        ## start at zero
+ * #setdefault i = 0 &&        ## start at zero   (ends at the line)
  * #set i += 1 &&
  * /say run number $i$
+ *
+ * ## bottom left && /activate 1 2 3 && ## the other one && /activate 2 3 4
  * </pre>
+ *
+ * <p>The line ending is what lets a note sit above the statement it explains, or
+ * trail one, in the multi-line editor where scripts are actually written. The
+ * {@code &&} ending is what lets a one-liner carry notes BETWEEN its statements,
+ * which is the only place to put them when the whole script is one line.
+ *
+ * <p>The price is that a comment cannot contain {@code &&}. That is the right
+ * price: {@code &&} separates statements everywhere else in the language, and a
+ * comment that could swallow one would be the single exception.
+ *
+ * <p>The {@code &&} that ends a comment is eaten with it, since it terminated a
+ * note rather than separating two statements. What is left is exactly the line
+ * with its notes lifted out.
  *
  * <p>Comments are removed before anything else looks at the text, so they are
  * invisible to the parser rather than being a statement it has to skip. That is
@@ -98,7 +110,7 @@ public final class Comments {
             }
 
             if (opensCommentAt(text, i) && (!contentOnLine || afterChain)) {
-                int end = lineEnd(text, i);
+                int end = commentEnd(text, i);
                 spans.add(new int[]{i, end});
                 i = end - 1;
                 afterChain = false;
@@ -129,20 +141,33 @@ public final class Comments {
         return after >= text.length() || Character.isWhitespace(text.charAt(after));
     }
 
-    private static int lineEnd(String text, int from) {
+    /**
+     * Where the comment opening at {@code from} stops: the next {@code &&} or
+     * the end of the line. The scan is LITERAL - inside a comment there is no
+     * such thing as a string, a marker or an escape, so those are the only two
+     * sequences that mean anything.
+     *
+     * <p>A terminating {@code &&} is included in the span. It ended a note; it
+     * was never separating two statements, and leaving it behind would strand an
+     * empty segment at the front of the line.
+     */
+    private static int commentEnd(String text, int from) {
         for (int i = from; i < text.length(); i++) {
             char c = text.charAt(i);
             if (c == '\n' || c == '\r') {
                 return i;
+            }
+            if (c == '&' && i + 1 < text.length() && text.charAt(i + 1) == '&') {
+                return i + 2;
             }
         }
         return text.length();
     }
 
     /**
-     * {@code text} with its comments removed. The newline that ended each
-     * comment stays, so the lines around it still line up the way they were
-     * written.
+     * {@code text} with its comments removed. A newline that ended a comment
+     * stays, so the lines around it still line up the way they were written; an
+     * {@code &&} that ended one goes with it.
      */
     public static String strip(String text) {
         List<int[]> spans = spans(text);

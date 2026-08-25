@@ -179,17 +179,19 @@ class ChatInputStylerTest {
     }
 
     /**
-     * The reason the styler blanks comments before styling rather than after:
-     * an && inside a comment would otherwise split the line into a statement
-     * that the parser is never going to see, and everything after it would be
-     * painted as if that split were real.
+     * A comment ends at the next &&, and the statement after it is styled as a
+     * statement again. This is the one-liner shape - notes between statements on
+     * a single line - so getting it wrong greys out the rest of the line.
      */
     @Test
-    void anAmpersandInsideACommentSplitsNothing() {
-        String line = "#set x = 1 && ## why && how";
-        for (int i = line.indexOf("##"); i < line.length(); i++) {
-            assertEquals(COMMENT, colorAt(line, i), "index " + i + " of: " + line);
-        }
+    void aCommentEndsAtTheNextChain() {
+        String line = "#set x = 1 && ## why && #set y = 2";
+        int note = line.indexOf("## why");
+        assertEquals(COMMENT, colorAt(line, note), line);
+        assertEquals(COMMENT, colorAt(line, note + "## why &&".length() - 1),
+                "the && that ended it is greyed with it");
+        assertEquals(GOLD, colorAt(line, line.lastIndexOf("#set")),
+                "and what follows is a directive again, not more comment");
     }
 
     /** Mid-statement the characters are content, and content is not grayed out. */

@@ -45,12 +45,19 @@ A line is a command (`/...`), a directive (`#...`), or plain chat.
 /say run number $runs$
 ```
 
-`##` followed by a space starts a note that runs to the end of that line
-and never runs. It may begin a line or follow an `&&`; anywhere else the
-characters are ordinary text, so `/say ## hi` still says `## hi` and
-`##1 winner` is still a chat message. Comments are removed before parsing,
-so one never needs an `&&` of its own — the `&&` before a trailing comment
-has already separated the statements around it.
+```
+## bottom left && /activate 1 2 3 && ## the other one && /activate 2 3 4
+```
+
+`##` followed by a space starts a note that never runs. It ends at the next
+`&&` or the end of its line, whichever comes first — the line ending is for
+scripts written over several lines, the `&&` ending is what lets a one-liner
+carry notes between its statements. The `&&` that ends a note is eaten with
+it, so a note cannot contain `&&`.
+
+A note may begin only where a statement could: at the start of a line, or
+right after an `&&`. Anywhere else `##` is ordinary text, so `/say ## hi`
+still says `## hi` and `##1 winner` is still a chat message.
 
 ### `#wait` — pause mid-line
 

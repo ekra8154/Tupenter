@@ -50,6 +50,12 @@ class CommentsTest {
     }
 
     @Test
+    void aTerminatingChainIsEatenWithTheComment() {
+        assertEquals(" /say hi", Comments.strip("## note && /say hi"));
+        assertEquals("/say a &&  /say b", Comments.strip("/say a && ## note && /say b"));
+    }
+
+    @Test
     void theNewlineThatEndsACommentSurvives() {
         assertEquals("#set x = 1 &&\n", Comments.strip("#set x = 1 &&\n## why"));
         assertEquals("\n/say hi", Comments.strip("## header\n/say hi"));
@@ -107,10 +113,29 @@ class CommentsTest {
     // -------------------------------------------------------- where one ENDS
 
     @Test
-    void atTheEndOfTheLineNotTheNextChain() {
+    void atTheEndOfTheLine() {
         assertEquals(List.of("say one", "say two"),
-                run("## a note with && in it\n/say one &&\n/say two"),
-                "the && inside the comment never becomes a separator");
+                run("## why we do this\n/say one &&\n/say two"));
+    }
+
+    /**
+     * The other terminator, and the one that makes a note usable in a ONE-LINE
+     * script: without it the first ## would swallow every statement after it.
+     */
+    @Test
+    void orAtTheNextChain() {
+        assertEquals(List.of("say one", "say two"),
+                run("## the first one && /say one && ## the second one && /say two"));
+        assertEquals(List.of("say two"),
+                run("## a leading note && /say two"),
+                "the && that ended the note is eaten with it, not left dangling");
+    }
+
+    /** The cost of the && terminator, stated so a change to it fails here. */
+    @Test
+    void soACommentCannotContainAChain() {
+        assertEquals(List.of("in it"), run("## a note with && in it"),
+                "everything after the && is statements again");
     }
 
     @Test
@@ -134,6 +159,24 @@ class CommentsTest {
     void insideAGroupBody() {
         assertEquals(List.of("say hi", "say hi", "say hi"),
                 run("#repeat 3 (\n  ## why three\n  /say hi\n)"));
+    }
+
+    /** The macro shape this was built for: a one-liner annotated between steps. */
+    @Test
+    void anAnnotatedOneLiner() {
+        assertEquals(
+                List.of("setblock 1 2 3 redstone_block", "setblock 4 5 6 redstone_block"),
+                run("## bottom left && /setblock 1 2 3 redstone_block"
+                        + " && ## the other one && /setblock 4 5 6 redstone_block"));
+    }
+
+    /** The mistake the space rule invites, answered where it is made. */
+    @Test
+    void aMissingSpaceSaysWhatToDo() {
+        String error = ScriptParser.parseGeneratedLine("/say hi && ##note", "x", options()).error();
+        assertNotNull(error);
+        assertTrue(error.contains("##note"), error);
+        assertTrue(error.contains("space after ##"), error);
     }
 
     // ---------------------------------------------------------- the run paths
