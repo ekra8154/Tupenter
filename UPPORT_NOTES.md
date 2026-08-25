@@ -180,6 +180,7 @@ find out.
 
 ## Open items
 
-- `mod_version` is `1.0.0` on all four branches.
+- `mod_version` is `1.1.0` on master and `1.0.0` on the version branches —
+  they are a release behind until this cycle's work is backported.
 - Only the 1.21.10 build has been published. The others are built but unreleased;
   jars are collected in `tupenter-latest-builds/`.
