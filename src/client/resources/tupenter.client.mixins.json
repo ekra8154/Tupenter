@@ -6,6 +6,7 @@
 		"MixinConnection",
 		"MixinClientPacketListener",
 		"MixinCommandSuggestions",
+		"MixinClientSuggestionProvider",
 		"ChatComponentAccessor",
 		"MixinChatScreen",
 		"EditBoxAccessor",

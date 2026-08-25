@@ -360,6 +360,16 @@ final class ExpressionEvaluator {
 
             char current = peek();
             if (current == '(') {
+                // Parentheses GROUP, and that is all they do. The (a | b | c)
+                // list used to live here (and, before that, only in a #foreach
+                // header) — it moved into list(...) so that a list has one
+                // spelling and a parenthesis has one meaning.
+                int close = ListLiteral.groupEnd(input, index);
+                if (close > 0 && ListLiteral.hasSeparatorPipe(input, index + 1, close)) {
+                    throw new ExpressionException("Parentheses group an expression; they don't build a list. "
+                            + "Write list(" + input.substring(index + 1, close).trim() + ") — pipes make items of "
+                            + "literal TEXT, commas make computed values.");
+                }
                 index++;
                 Value value = parseTernary();
                 skipWhitespace();
@@ -485,6 +495,15 @@ final class ExpressionEvaluator {
                 return parsePick();
             }
 
+            // list(a | b | c) — the TEXT form. Intercepted before the arguments
+            // are parsed, because its items are never parsed at all: they are
+            // taken as typed, which is the whole point (bare words need no
+            // quotes) and is why "a(1)" or "0,0]}" are fine here.
+            Value literalList = parsePipeList(identifier);
+            if (literalList != null) {
+                return literalList;
+            }
+
             List<Value> args = parseFunctionArgs();
             if (skipping) {
                 // dead call: skip the builtin math AND the user-function call —
@@ -517,6 +536,7 @@ final class ExpressionEvaluator {
                 case "sqrt" -> sqrt(args);
                 case "rand" -> rand(args);
                 case "range" -> range(args);
+                case "list" -> listOf(args);
                 case "itemset" -> tagMembers("itemset", TagResolver.TagKind.ITEM, args);
                 case "blockset" -> tagMembers("blockset", TagResolver.TagKind.BLOCK, args);
                 case "effectset" -> tagMembers("effectset", TagResolver.TagKind.EFFECT, args);
@@ -524,6 +544,7 @@ final class ExpressionEvaluator {
                 case "block" -> blockAt(args);
                 case "simulated" -> simulatedAt(args);
                 case "vec" -> vec(args);
+                case "blockpos" -> blockpos(args);
                 case "component" -> component(args);
                 case "vadd" -> vecArith(args, "vadd", true);
                 case "vsub" -> vecArith(args, "vsub", false);
@@ -706,6 +727,31 @@ final class ExpressionEvaluator {
             return new Value.NumberValue(Rational.fromDouble(Math.sqrt(value.doubleValue())));
         }
 
+        /**
+         * list(a, b, ...) — an explicit list, the literal counterpart to range().
+         * The comma form COMPUTES its arguments; list(a | b | c) takes its
+         * items as literal text instead. Same function, same result type.
+         *
+         * <p>Nested lists FLATTEN. Not laziness: nothing downstream can consume a
+         * list-of-lists — #foreach would bind an element that is itself a list, and
+         * substituting it throws — so nesting could only ever produce a confusing
+         * error one step later. Flattening makes list(a, b) double as concatenation.
+         */
+        private Value listOf(List<Value> args) {
+            List<Value> values = new ArrayList<>();
+            for (Value arg : args) {
+                if (arg instanceof Value.ListValue nested) {
+                    values.addAll(nested.values());
+                } else {
+                    values.add(arg);
+                }
+                if (values.size() > 100000) {
+                    throw new ExpressionException("list(...) is too large");
+                }
+            }
+            return new Value.ListValue(values);
+        }
+
         /** range(start, stop[, step]) — inclusive whole-number list for #foreach. */
         private Value range(List<Value> args) {
             if (args.size() != 2 && args.size() != 3) {
@@ -738,9 +784,29 @@ final class ExpressionEvaluator {
             return new Value.ListValue(values);
         }
 
+        /**
+         * A function's arguments are always expressions, so a pipe among them is
+         * someone reaching for the literal-list form one pair of parentheses
+         * short.
+         */
+        private static String pipeInArgumentsMessage() {
+            return "Only list(...) takes pipes, and they build items of literal TEXT: list(a | b) is the two "
+                    + "words themselves, while list(a, b) COMPUTES a and b. Everywhere else a function's "
+                    + "arguments are expressions separated by commas.";
+        }
+
         /** Args already past '('; consumes through the closing ')'. */
         private List<Value> parseFunctionArgs() {
             List<Value> args = new ArrayList<>();
+            // Check for a separator pipe BEFORE parsing anything. Otherwise
+            // list(short | tall) — the whole reason someone reaches for pipes —
+            // reports "Unknown variable 'short'", because arguments evaluate
+            // left to right and the first one fails before the pipe is ever
+            // reached. The bare word isn't the mistake; the punctuation is.
+            int close = ListLiteral.groupEnd(input, index - 1);
+            if (close > 0 && ListLiteral.hasSeparatorPipe(input, index, close)) {
+                throw new ExpressionException(pipeInArgumentsMessage());
+            }
             skipWhitespace();
             if (!atEnd() && peek() == ')') {
                 index++;
@@ -757,6 +823,9 @@ final class ExpressionEvaluator {
                 if (current == ',') {
                     index++;
                     continue;
+                }
+                if (current == '|') {
+                    throw new ExpressionException(pipeInArgumentsMessage());
                 }
                 if (current == ')') {
                     index++;
@@ -970,6 +1039,35 @@ final class ExpressionEvaluator {
                 throw new ExpressionException(fn + "(x, y, z) or " + fn + "(\"x y z\") — e.g. " + fn + "(client.target.blockpos)");
             }
             return position;
+        }
+
+        /**
+         * blockpos(x, y, z) · blockpos(v) — whole-number block coordinates.
+         *
+         * <p>FLOORS, matching the client.blockpos variable (Entity#blockPosition):
+         * the block a position is INSIDE. round() answers a different question —
+         * which block is NEAREST — and that is the right one when you're sampling
+         * geometry, which is why the rainbow-tunnel recipe still rounds explicitly.
+         * The gap is half a block, so mixing them up bends a shape without ever
+         * looking like an error.
+         *
+         * <p>The one-argument form is the point: blockpos(raycast(50)) says what
+         * round(component(v, "x")) three times over used to.
+         */
+        private Value blockpos(List<Value> args) {
+            Rational[] parts;
+            if (args.size() == 1) {
+                parts = asVec3(args.get(0), "blockpos(v)");
+            } else if (args.size() == 3) {
+                parts = new Rational[] {
+                        asNumber(args.get(0), "blockpos(x, y, z)"),
+                        asNumber(args.get(1), "blockpos(x, y, z)"),
+                        asNumber(args.get(2), "blockpos(x, y, z)")};
+            } else {
+                throw new ExpressionException("blockpos(x, y, z) or blockpos(v) takes three numbers or one vec3, "
+                        + "e.g. blockpos(1, 64, -3) or blockpos(client.pos)");
+            }
+            return vec3(parts[0].floor(), parts[1].floor(), parts[2].floor());
         }
 
         /** vec(x, y, z) — a vec3 value ("x y z"), the clean way to spell a literal position. */
@@ -1323,19 +1421,62 @@ final class ExpressionEvaluator {
         }
 
         /**
-         * pick(a | b | c) — options are full expressions separated by
-         * top-level '|' ('||' is still boolean or inside an option), so
-         * picks nest and compute: pick(rand(1,5) | client.y | pick(1 | 2)).
-         * Quote literal text: pick("say hi" | "say nah"). Like ternary,
-         * every option evaluates; one result is returned at random.
+         * pick(a, b, c) — options are full EXPRESSIONS, so picks nest and
+         * compute: pick(rand(1,5), client.y, pick(1, 2)). Quote literal text:
+         * pick("say hi", "say nah"). Like ternary, every option evaluates; one
+         * result is returned at random.
+         *
+         * <p>The separator used to be '|', which now means "literal text" in
+         * list(...) and nowhere else. Rather than let one pipe in the language
+         * quietly compute, the old spelling errors and names this one.
          */
+        /**
+         * {@code list(a | b | c)} — the TEXT list, or null when this call uses
+         * commas and should be parsed as ordinary arguments.
+         *
+         * <p>Decided by scanning for a separator pipe BEFORE parsing anything,
+         * because a pipe item can be {@code a(1)} or {@code 0,0]}}: text no
+         * expression parser would accept. The call is claimed whole or not at all.
+         * {@code ||} is not a separator, so {@code list(a || b)} is still one
+         * boolean argument.
+         *
+         * <p>Only {@code list} takes pipes. Everywhere else a pipe among arguments
+         * is an error naming this form, so there is exactly one thing a pipe can
+         * mean inside a function call.
+         *
+         * <p>A pipe WINS over a comma, and there is no "mixed separators" error,
+         * because there could not be an honest one: {@code list(0,0]} | 5.0,1]})}
+         * is a real two-item list whose items contain commas. Once pipe mode is
+         * established the comma is content, exactly like a bracket or a space.
+         * So {@code list(1, 2 | 3)} is the two items "1, 2" and "3".
+         */
+        private Value parsePipeList(String identifier) {
+            if (!identifier.equalsIgnoreCase("list")) {
+                return null;
+            }
+            int close = ListLiteral.groupEnd(input, index - 1);
+            if (close < 0 || !ListLiteral.hasSeparatorPipe(input, index, close)) {
+                return null;
+            }
+            String inner = input.substring(index, close);
+            index = close + 1;
+            if (skipping) {
+                return SKIP;
+            }
+            try {
+                return new Value.ListValue(ListLiteral.values(inner));
+            } catch (IllegalArgumentException empty) {
+                throw new ExpressionException(empty.getMessage());
+            }
+        }
+
         private Value parsePick() {
             List<Value> options = new ArrayList<>();
             skipWhitespace();
             if (!atEnd() && peek() == ')') {
                 // otherwise the empty option falls into parseTernary and comes
                 // back as "Unexpected ')'", which says nothing about pick
-                throw new ExpressionException("pick(...) needs at least one option, e.g. pick(\"hi\" | \"bye\")");
+                throw new ExpressionException("pick(...) needs at least one option, e.g. pick(\"hi\", \"bye\")");
             }
             while (true) {
                 options.add(parseTernary());
@@ -1344,16 +1485,27 @@ final class ExpressionEvaluator {
                     throw new ExpressionException("pick(...) is missing its closing parenthesis");
                 }
                 char c = peek();
-                if (c == '|') {
+                if (c == ',') {
                     index++;
                     continue;
+                }
+                if (c == '|') {
+                    // pick's options used to be pipe-separated, and they were
+                    // EXPRESSIONS — the opposite of what a pipe means now. Left
+                    // working, it would be the one place in the language where a
+                    // pipe computes, so it errors instead. Loudly: silently
+                    // turning pick(rand(1,5) | client.pos.y) into two strings is
+                    // exactly the failure this whole design avoids.
+                    throw new ExpressionException("pick(...) separates its options with commas now: "
+                            + "pick(a, b, c). Its options are expressions that get computed, and a pipe "
+                            + "means literal text everywhere else, so it can't mean both here.");
                 }
                 if (c == ')') {
                     index++;
                     // dead pick: no random draw; options were still dry-parsed to advance
                     return skipping ? SKIP : options.get(context.random().nextInt(options.size()));
                 }
-                throw new ExpressionException("pick(...): expected '|' or ')' but found '" + c + "'");
+                throw new ExpressionException("pick(...): expected ',' or ')' but found '" + c + "'");
             }
         }
 

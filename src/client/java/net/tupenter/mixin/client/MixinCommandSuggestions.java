@@ -93,12 +93,22 @@ public abstract class MixinCommandSuggestions {
                     ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
                     : TupenterModClient.expressionCompletions(prefix);
         } else if ((tokenStart = ChatInputStyler.headerExprTokenStart(text, cursor)) >= 0) {
-            // a scanner directive's header (#foreach ... in itemset(#|), #if $x$>|)
-            // is an implicit expression zone — complete it like a marker
+            // a scanner directive's header (#foreach ... in itemset(#|), #if $x$>|),
+            // or an assignment's right-hand side — both are implicit expression
+            // zones, completed like a marker
             String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
-            candidates = prefix.startsWith("#")
-                    ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
-                    : TupenterModClient.expressionCompletions(prefix);
+            if (prefix.startsWith("#")) {
+                candidates = TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart));
+            } else {
+                // a coordinate-typed assignment gets the position forms FIRST:
+                // #local c:blockpos = | offers the block you're looking at
+                candidates = new java.util.ArrayList<>(TupenterModClient.positionForms(text, cursor, prefix));
+                candidates.addAll(TupenterModClient.expressionCompletions(prefix));
+            }
+        } else if ((tokenStart = ChatInputStyler.assignTypeTokenStart(text, cursor)) >= 0) {
+            // the :type of an assignment (#local c:bloc|) — the same keywords a
+            // custom command's <name:type> parameters take
+            candidates = net.tupenter.script.ParamTypeDocs.keywords();
         } else {
             // typing a directive word (#norec... / after-')' #elseif)
             tokenStart = ChatInputStyler.directiveTokenStart(text, cursor);
@@ -127,6 +137,7 @@ public abstract class MixinCommandSuggestions {
     private String tupenter$chainAwareValue(EditBox box) {
         String full = box.getValue();
         tupenter$reroot = false;
+        net.tupenter.command.ChainSuggestionScope.clear();
         if (!ChatInputStyler.chainRerootEnabled() || full.isEmpty()) {
             return full;
         }
@@ -137,6 +148,8 @@ public abstract class MixinCommandSuggestions {
         tupenter$reroot = true;
         tupenter$cmdStart = target[0];
         tupenter$segEnd = target[1];
+        // an ask-the-server suggestion has to be asked about this segment only
+        net.tupenter.command.ChainSuggestionScope.reroot(target[0]);
         String truncated = full.substring(0, target[1]);
         // '#'-led lines (prefixes, directives) must still take vanilla's
         // COMMAND branch: mask everything before the inner '/' with spaces
