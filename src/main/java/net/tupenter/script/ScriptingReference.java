@@ -255,6 +255,27 @@ public final class ScriptingReference {
             #set cmd = "/tp @s ~ ~10 ~" && $cmd$
             ```
 
+            ## Comments
+
+            `##` followed by a space starts a comment, which runs to the end of
+            that line and never runs:
+
+            ```
+            ## a counter that survives rejoins
+            #setdefault runs = 0 &&        ## start at zero
+            #set runs += 1 &&
+            /say run number $runs$
+            ```
+
+            A comment may begin only where a statement could — at the start of a
+            line, or right after an `&&`. Anywhere else the characters are
+            ordinary text, so `/say ## hi` still says `## hi`. The space is
+            required for the same reason: `##1 winner` is a message, not a note.
+
+            Comments are removed before parsing rather than being statements of
+            their own, so one needs no `&&` after it. The `&&` before a trailing
+            comment has already separated the statements around it.
+
             """;
 
     private static final String EXPRESSIONS = """

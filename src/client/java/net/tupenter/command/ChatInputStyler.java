@@ -13,6 +13,7 @@ import net.minecraft.client.multiplayer.ClientSuggestionProvider;
 import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 import net.tupenter.config.TupenterConfig;
+import net.tupenter.script.Comments;
 import net.tupenter.script.ListLiteral;
 import net.tupenter.script.ScriptParser;
 
@@ -38,6 +39,9 @@ public final class ChatInputStyler {
     // about how the line is sent/recorded, distinct from control-flow keywords
     private static final Style PREFIX_WORD = Style.EMPTY.withColor(ChatFormatting.LIGHT_PURPLE);
     private static final Style GROUP_PAREN = Style.EMPTY.withColor(ChatFormatting.DARK_GRAY);
+    // "## a note" - dark gray, and never italic: italic glyphs are wider, the
+    // same trap as bold, and a comment is the one span long enough for it to show
+    private static final Style COMMENT = Style.EMPTY.withColor(ChatFormatting.DARK_GRAY);
     private static final Style CHAT_TEXT = Style.EMPTY.withColor(ChatFormatting.WHITE);
     private static final Style ERROR = Style.EMPTY.withColor(ChatFormatting.RED).withUnderlined(true);
     // vanilla CommandSuggestions.LITERAL_STYLE — the soft gray of command
@@ -129,9 +133,52 @@ public final class ChatInputStyler {
                 return true; // /customfunction add|update — the tail is an expression
             }
             boolean chained = TupenterConfig.INSTANCE.commandChainingEnabled && segments(full).size() > 1;
-            return chained || containsMarker(full);
+            return chained || containsMarker(full) || hasComment(full);
         }
-        return ScriptParser.isDirectiveLine(full) || isModifierLine(full);
+        return ScriptParser.isDirectiveLine(full) || isModifierLine(full) || hasComment(full);
+    }
+
+    /**
+     * Comments in the chat bar, found the way the PARSER finds them.
+     *
+     * <p>The one wrinkle is the slash: vanilla strips it before the parser ever
+     * sees the line, so a leading "##" there begins a line even though what is on
+     * screen is "/## ...". Scanning past the slash keeps the highlighter and the
+     * parser looking at the same text.
+     */
+    private static List<int[]> commentSpans(String full) {
+        int offset = full.startsWith("/") ? 1 : 0;
+        List<int[]> spans = Comments.spans(full.substring(offset));
+        if (offset == 0) {
+            return spans;
+        }
+        List<int[]> shifted = new ArrayList<>(spans.size());
+        for (int[] span : spans) {
+            shifted.add(new int[]{span[0] + offset, span[1] + offset});
+        }
+        return shifted;
+    }
+
+    private static boolean hasComment(String full) {
+        return full.contains(Comments.MARK) && !commentSpans(full).isEmpty();
+    }
+
+    /** Blanks the given spans to spaces, so every other index stays where it was. */
+    private static String withoutComments(String text, List<int[]> spans) {
+        if (spans.isEmpty()) {
+            return text;
+        }
+        char[] out = text.toCharArray();
+        for (int[] span : spans) {
+            java.util.Arrays.fill(out, span[0], Math.min(span[1], out.length), ' ');
+        }
+        return new String(out);
+    }
+
+    private static void paintComments(Style[] styles, List<int[]> spans) {
+        for (int[] span : spans) {
+            fill(styles, span[0], Math.min(span[1], styles.length), COMMENT);
+        }
     }
 
     /**
@@ -513,9 +560,16 @@ public final class ChatInputStyler {
         }
         Style[] styles = new Style[full.length()];
         java.util.Arrays.fill(styles, Style.EMPTY);
-        styleStatements(full, 0, styles);
-        overlayMarkers(full, styles);
-        overlayListPipes(full, styles);
+        // Style the line with its comments blanked out, then paint them back.
+        // Blanking rather than removing keeps every index aligned with the array,
+        // and it stops an && inside a comment from inventing a statement the
+        // parser will never see.
+        List<int[]> comments = commentSpans(full);
+        String live = withoutComments(full, comments);
+        styleStatements(live, 0, styles);
+        overlayMarkers(live, styles);
+        overlayListPipes(live, styles);
+        paintComments(styles, comments);
         cachedText = full;
         cachedStyles = styles;
         return styles;
@@ -595,7 +649,11 @@ public final class ChatInputStyler {
      * so every index lines up). Definitions get their signature styled too.
      */
     public static Style[] editorStyles(String raw, boolean definition) {
-        String flat = raw.replace('\r', ' ').replace('\n', ' ');
+        // Comments are found in the RAW text, because they end at a newline
+        // and flattening would erase the very boundary that ends them. The
+        // flatten is 1:1, so the spans still address the right characters.
+        List<int[]> comments = Comments.spans(raw);
+        String flat = withoutComments(raw, comments).replace('\r', ' ').replace('\n', ' ');
         Style[] styles = new Style[flat.length()];
         java.util.Arrays.fill(styles, Style.EMPTY);
 
@@ -609,6 +667,7 @@ public final class ChatInputStyler {
         }
         styleStatements(flat, bodyStart, styles);
         overlayMarkers(flat, styles);
+        paintComments(styles, comments);
         return styles;
     }
 

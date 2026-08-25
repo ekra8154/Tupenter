@@ -2855,6 +2855,7 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine("§bChains, loops & conditions:");
         helpLine("§7Chain:§r /time set day && /weather clear — one line, sent in order. Each segment picks its form: /command, #directive, bare text = chat. A segment that is exactly one $expr$ runs its string result the same way ($cmd$ holding \"/tp ~ ~1 ~\" teleports).");
         helpLine("§7Groups (...)§r nest and can hold chains. Parens elsewhere are literal text.");
+        helpLine("§7Comment:§r ## followed by a space — a note that runs to the end of its line and never runs. It may start a line or follow an &&; anywhere else ## is ordinary text, so /say ## hi still says ## hi.");
         for (net.tupenter.script.DirectiveDocs.Doc doc : net.tupenter.script.DirectiveDocs.ALL) {
             switch (doc.group()) {
                 case LOOPS, CONDITIONS, TIMING ->

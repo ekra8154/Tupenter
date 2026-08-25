@@ -156,9 +156,14 @@ public final class ScriptParser {
 
     /** Parses a command-packet line (leading slash already stripped by vanilla). */
     public static ParseResult parse(String command, Options options) {
+        if (Comments.isOnlyComment(command)) {
+            return ParseResult.error(Comments.nothingToRunMessage());
+        }
+        String source = Comments.strip(command);
+
         LinePrefixes prefixes;
         try {
-            prefixes = stripLinePrefixes(command, options);
+            prefixes = stripLinePrefixes(source, options);
         } catch (ParseAbort abort) {
             return ParseResult.error(abort.getMessage());
         }
@@ -194,7 +199,10 @@ public final class ScriptParser {
      * through) unless the line starts with a known directive word.
      */
     public static ParseResult parseChatLine(String message, Options options) {
-        String trimmed = message.trim();
+        if (Comments.isOnlyComment(message)) {
+            return ParseResult.error(Comments.nothingToRunMessage());
+        }
+        String trimmed = Comments.strip(message).trim();
         if (!trimmed.startsWith("#")) {
             return ParseResult.unchanged(message);
         }
@@ -228,9 +236,12 @@ public final class ScriptParser {
      * always a runnable script. {@code originalLine} is what history records.
      */
     public static ParseResult parseGeneratedLine(String line, String originalLine, Options options) {
+        if (Comments.isOnlyComment(line)) {
+            return ParseResult.error(Comments.nothingToRunMessage());
+        }
         LinePrefixes prefixes;
         try {
-            prefixes = stripLinePrefixes(line, options);
+            prefixes = stripLinePrefixes(Comments.strip(line), options);
         } catch (ParseAbort abort) {
             return ParseResult.error(abort.getMessage());
         }
@@ -428,7 +439,7 @@ public final class ScriptParser {
 
         // mirrors the walker's own prefix run, so both paths agree on last-wins
         Script.HistoryMode history = fallback;
-        String body = definition.body().trim();
+        String body = definition.runnableBody().trim();
         while (body.startsWith("#")) {
             String word = firstWord(body).toLowerCase(Locale.ROOT);
             if (word.equals(SILENT)) {
@@ -1112,7 +1123,7 @@ public final class ScriptParser {
                 throw new ParseAbort("Alias expansion limit reached (" + MAX_ALIAS_EXPANSIONS + "). Possible recursive alias loop.");
             }
 
-            String body = definition.body().trim();
+            String body = definition.runnableBody().trim();
             Map<String, Value> bindings = new HashMap<>();
 
             if (definition.params().isEmpty()) {

@@ -36,6 +36,22 @@ A line is a command (`/...`), a directive (`#...`), or plain chat.
 /time set day && /weather clear
 ```
 
+### Comments — `##`
+
+```
+## a counter that survives rejoins
+#setdefault runs = 0 &&     ## start at zero
+#set runs += 1 &&
+/say run number $runs$
+```
+
+`##` followed by a space starts a note that runs to the end of that line
+and never runs. It may begin a line or follow an `&&`; anywhere else the
+characters are ordinary text, so `/say ## hi` still says `## hi` and
+`##1 winner` is still a chat message. Comments are removed before parsing,
+so one never needs an `&&` of its own — the `&&` before a trailing comment
+has already separated the statements around it.
+
 ### `#wait` — pause mid-line
 
 ```
@@ -48,7 +64,8 @@ statement's `$...$` markers evaluate *when it runs*, so the `/tp` above
 reads your target block *after* the jump boost landed — not at Enter-press.
 Re-running a line cancels its still-running previous instance (resend =
 restart, not stack); different lines run concurrently; `/tupenter abort`
-stops everything.
+stops the lines you ran and `/tupenter abort all` stops armed tick scripts
+too.
 
 ### Expressions — `$...$`
 

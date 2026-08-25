@@ -165,6 +165,64 @@ class ChatInputStylerTest {
         }
     }
 
+    // ---------------------------------------------------------------- comments
+
+    private static final TextColor COMMENT = TextColor.fromLegacyFormat(ChatFormatting.DARK_GRAY);
+
+    @Test
+    void aCommentIsGrayedOut() {
+        String line = "#set x = 1 && ## why";
+        assertTrue(ChatInputStyler.shouldStyle(line), "a line with a comment is worth styling");
+        assertEquals(COMMENT, colorAt(line, line.indexOf("##")));
+        assertEquals(COMMENT, colorAt(line, line.length() - 1), "to the end of the line");
+        assertEquals(GOLD, colorAt(line, 0), "and the statement before it is untouched");
+    }
+
+    /**
+     * The reason the styler blanks comments before styling rather than after:
+     * an && inside a comment would otherwise split the line into a statement
+     * that the parser is never going to see, and everything after it would be
+     * painted as if that split were real.
+     */
+    @Test
+    void anAmpersandInsideACommentSplitsNothing() {
+        String line = "#set x = 1 && ## why && how";
+        for (int i = line.indexOf("##"); i < line.length(); i++) {
+            assertEquals(COMMENT, colorAt(line, i), "index " + i + " of: " + line);
+        }
+    }
+
+    /** Mid-statement the characters are content, and content is not grayed out. */
+    @Test
+    void hashesInTheMiddleAreLeftAlone() {
+        String line = "#set x = 1 && #set y = 2 ## why";
+        assertFalse(COMMENT.equals(colorAt(line, line.indexOf("## why"))), line);
+    }
+
+    /**
+     * Vanilla strips the slash before the parser sees the line, so "/## note" is
+     * a comment to the parser. The highlighter has to scan past the slash to
+     * agree with it.
+     */
+    @Test
+    void aSlashDoesNotHideALeadingComment() {
+        assertTrue(ChatInputStyler.shouldStyle("/## note"),
+                "claimed for styling — the parser reads this one as a comment too");
+        assertFalse(ChatInputStyler.shouldStyle("/##note"), "no space, no comment, nothing to claim");
+    }
+
+    /** The editor finds comments in the RAW text, before newlines flatten to spaces. */
+    @Test
+    void theEditorGraysCommentLines() {
+        String raw = "## header" + "\n" + "#set x = 1";
+        Style[] styles = ChatInputStyler.editorStyles(raw, false);
+        assertEquals(raw.length(), styles.length);
+        assertEquals(COMMENT, styles[0].getColor());
+        assertEquals(COMMENT, styles[raw.indexOf("header")].getColor());
+        assertFalse(COMMENT.equals(styles[raw.indexOf("#set")].getColor()),
+                "the statement below it styles normally");
+    }
+
     /** A real missing && is still caught, so the step-over didn't blunt the check. */
     @Test
     void aStatementHeadAfterRealContentIsStillRed() {

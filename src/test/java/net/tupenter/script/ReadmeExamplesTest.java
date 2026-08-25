@@ -80,6 +80,12 @@ class ReadmeExamplesTest {
                 if (line.isEmpty() || needsAWorld(line) || notAScriptLine(line)) {
                     continue;
                 }
+                // A whole-line "## note" contributes nothing to run. It is only
+                // a line of its own because this test reads a block line by line;
+                // in the block it belongs to the statement below it.
+                if (Comments.isOnlyComment(line)) {
+                    continue;
+                }
                 if (line.startsWith("/") || line.startsWith("#")) {
                     ran++;
                     String error = parseError(line, store, aliases);
