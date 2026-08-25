@@ -961,6 +961,10 @@ public class TupenterConfigScreen {
                 && old.listWidget != null) {
             scroll = old.listWidget.getScroll();
         }
+        if (Minecraft.getInstance().gui.screen() instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen live
+                && live.listWidget != null) {
+            scrollTrace("captured", live, scroll);
+        }
         carryExpansion(); // before createScreen clears the row lists
         Screen screen = createScreen(cachedParent);
         if (screen instanceof me.shedaniel.clothconfig2.gui.AbstractConfigScreen cloth) {
@@ -996,7 +1000,22 @@ public class TupenterConfigScreen {
         if (Minecraft.getInstance().gui.screen() == cloth && cloth.listWidget != null) {
             cloth.listWidget.tickList();
             cloth.listWidget.capYPosition(target);
+            scrollTrace("restore", cloth, target);
         }
+    }
+
+    // TEMPORARY diagnostic — the scroll restore has been wrong twice from
+    // reasoning alone, so this prints what actually happens. Remove once the
+    // cause is known.
+    private static void scrollTrace(String stage, me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth,
+                                    double target) {
+        System.out.println("[tupenter-scroll] " + stage
+                + " target=" + String.format("%.1f", target)
+                + " actual=" + String.format("%.1f", cloth.listWidget.getScroll())
+                + " children=" + cloth.listWidget.children().size()
+                + " visible=" + cloth.listWidget.visibleChildren().size()
+                + " viewport=" + (cloth.listWidget.bottom - cloth.listWidget.top)
+                + " scrollBottom=" + cloth.listWidget.getScrollBottom());
     }
 
     /**

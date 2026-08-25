@@ -347,7 +347,11 @@ public class TupenterModClient implements ClientModInitializer {
             forms.add(constructor + "(" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + ")");
         }
         forms.add("client.blockpos");
-        forms.add("\"~ ~ ~\""); // relative coords aren't expression syntax — they go in quoted
+        // No "~ ~ ~". A relative coordinate is neither a number nor a variable —
+        // it only means anything to the command that receives it, so it can't be
+        // computed, offset or compared. A typed variable should hold a real
+        // position; offset it with arithmetic instead:
+        // blockpos(client.pos.x + 4, client.pos.y, client.pos.z).
         return forms;
     }
 
