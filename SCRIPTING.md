@@ -114,7 +114,7 @@ required for the same reason: `##1 winner` is a message, not a note.
 | string | `"hello"`, `"minecraft:stone"` | double quotes only |
 | boolean | `true`, `false` | |
 | vec3 | `"10 64 -20"`, `vec(1, 0, 0)` | a string of three numbers *is* a vec3 |
-| list | `blockset(#minecraft:wool)`, `range(1, 5)` | index with `nth(list, i)` |
+| list | `list(a \| b)`, `list(1, 2)`, `range(1, 5)`, `blockset(#minecraft:wool)` | index with `nth(list, i)` |
 
 Numbers stay exact: `1/3` is a third, not `0.333…`, and stays exact
 through arithmetic. Values only round when something demands a whole
@@ -173,6 +173,13 @@ always works regardless of mode.
 - Compound assignment works: `+= -= *= /= %=`.
 - The `$` around the name is optional: `#set i = i + 1` and
   `#set $i$ = $i + 1$` are the same.
+- An optional **type** goes after the name — `#local c:blockpos =
+  blockpos(-10, 20, 85)` — on all three directives. It uses the same
+  keywords a custom command's `<name:type>` parameters take
+  (`/customcommand help types`), it CHECKS the value, and it tells
+  the chat bar the value's shape *before the value exists*, so
+  `/tp $c$ ` keeps completing while you are still typing the line
+  that defines `c`.
 
 `/tupenter vars` lists everything currently set, live.
 
@@ -1806,6 +1813,15 @@ Parenthesising the right side does not help. Keep `&&` out of an
 assignment's right side — restructure so the assignment is a single
 expression, or nest `#if`s. Inside a `#if (...)` condition the
 parentheses protect it, so `&&`/`||` there are perfectly fine.
+
+### Parentheses never make a list
+
+They used to, in a `#foreach` header, and that spelling is gone:
+`(a | b | c)` is now a parenthesised expression like any other, and
+`pick(a | b)` is an error. Write `list(a | b | c)` and `pick(a, b)`.
+Both old forms fail with a message naming the new one, so nothing
+breaks silently — but a custom command or script saved before the
+change will stop at the first one it hits.
 
 ### `block()` and unloaded chunks
 
