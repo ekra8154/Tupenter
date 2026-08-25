@@ -1229,6 +1229,36 @@ public final class ChatInputStyler {
     }
 
     /**
+     * The type declared for the assignment whose right-hand side the cursor is
+     * in, or null. Lets the completer offer POSITION forms where a position was
+     * promised.
+     */
+    public static net.tupenter.script.AliasDefinition.ParamType assignRhsType(String text, int cursor) {
+        List<Segment> segs = segments(text, true);
+        Segment seg = segmentAt(segs, Math.min(cursor, text.length()));
+        int limit = Math.min(seg.end(), text.length());
+        int rest = statementStartAfterPrefixes(text, seg.textStart(), limit);
+        if (rest >= limit || text.charAt(rest) != '#') {
+            return null;
+        }
+        int wordEnd = rest;
+        while (wordEnd < limit && !Character.isWhitespace(text.charAt(wordEnd)) && text.charAt(wordEnd) != '(') {
+            wordEnd++;
+        }
+        if (!ASSIGN_DIRECTIVES.contains(text.substring(rest, wordEnd).toLowerCase(java.util.Locale.ROOT))) {
+            return null;
+        }
+        int equals = assignmentEquals(text, wordEnd, limit);
+        if (equals < 0 || cursor <= equals) {
+            return null; // still on the left of the "=", so not in the value yet
+        }
+        // the head is short and already scannable — reuse the declaration reader
+        java.util.Map<String, net.tupenter.script.AliasDefinition.ParamType> declared =
+                net.tupenter.script.VariableTypes.declaredOn(text.substring(rest, equals));
+        return declared.isEmpty() ? null : declared.values().iterator().next();
+    }
+
+    /**
      * When the cursor sits in the {@code :type} of an assignment
      * ({@code #local c:bloc|}), the index just after the colon — so the type
      * keywords can be offered there; -1 otherwise.

@@ -405,6 +405,46 @@ public class TupenterConfigScreen {
         return builder.build();
     }
 
+    /**
+     * Wrap-toggle state carried across a rebuild, keyed by the row's text.
+     *
+     * <p>Without this, {@code expanded} is re-derived from "does the text contain
+     * a newline" every time the screen is rebuilt — so a row you opened by hand
+     * closes again, and a multi-line row you closed springs back open. Adding one
+     * command silently re-laid-out the whole list.
+     *
+     * <p>It also broke the scroll restore, which is how it was found: an expanded
+     * row is 62px against a collapsed row's 18, so a few rows changing state moves
+     * the content height enough to land the restore a quarter-screen off. Getting
+     * the state right is what makes the position right.
+     *
+     * <p>Keyed by text because that is exactly what the row is rebuilt FROM —
+     * collectCommandRows() writes row.text() to the config and the constructor
+     * reads it straight back. A deque per key so two rows with identical text
+     * still get their own answers, in order.
+     */
+    private static final java.util.Map<String, java.util.ArrayDeque<Boolean>> carriedExpansion =
+            new java.util.HashMap<>();
+
+    /** Snapshot every open row's state, for the rebuild that is about to happen. */
+    private static void carryExpansion() {
+        carriedExpansion.clear();
+        for (List<? extends WrapRowEntry> rows : List.of(commandRows, globalScriptRows, worldScriptRows)) {
+            for (WrapRowEntry row : rows) {
+                if (!row.deleted) {
+                    carriedExpansion.computeIfAbsent(row.text(), key -> new java.util.ArrayDeque<>())
+                            .add(row.expanded);
+                }
+            }
+        }
+    }
+
+    /** The carried state for a row about to be built from {@code text}, or null. */
+    private static Boolean takeCarriedExpansion(String text) {
+        java.util.ArrayDeque<Boolean> queued = carriedExpansion.get(text);
+        return queued == null ? null : queued.poll();
+    }
+
     private static final List<GlobalScriptEntry> globalScriptRows = new ArrayList<>();
     private static final List<WorldScriptEntry> worldScriptRows = new ArrayList<>();
     private static final List<CommandRowEntry> commandRows = new ArrayList<>();
@@ -517,7 +557,10 @@ public class TupenterConfigScreen {
             super(Component.empty(), false);
             this.initialText = text.trim();
             this.multiValue = text;
-            this.expanded = text.contains("\n");
+            // Carried across a rebuild when there is one; the newline default is
+            // only for a row being seen for the first time.
+            Boolean carried = takeCarriedExpansion(text);
+            this.expanded = carried != null ? carried : text.contains("\n");
 
             this.singleBox = new net.minecraft.client.gui.components.EditBox(
                     Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty()) {
@@ -902,6 +945,7 @@ public class TupenterConfigScreen {
      * {@link ConfigScreenAccess}, which checks Cloth is installed first.
      */
     static void openAtTab(int tabIndex) {
+        carriedExpansion.clear(); // a fresh open starts from the newline default
         Minecraft client = Minecraft.getInstance();
         Screen screen = createScreen(client.gui.screen());
         if (screen instanceof me.shedaniel.clothconfig2.gui.AbstractConfigScreen cloth) {
@@ -917,6 +961,7 @@ public class TupenterConfigScreen {
                 && old.listWidget != null) {
             scroll = old.listWidget.getScroll();
         }
+        carryExpansion(); // before createScreen clears the row lists
         Screen screen = createScreen(cachedParent);
         if (screen instanceof me.shedaniel.clothconfig2.gui.AbstractConfigScreen cloth) {
             cloth.selectedCategoryIndex = tabIndex;

@@ -93,12 +93,18 @@ public abstract class MixinCommandSuggestions {
                     ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
                     : TupenterModClient.expressionCompletions(prefix);
         } else if ((tokenStart = ChatInputStyler.headerExprTokenStart(text, cursor)) >= 0) {
-            // a scanner directive's header (#foreach ... in itemset(#|), #if $x$>|)
-            // is an implicit expression zone — complete it like a marker
+            // a scanner directive's header (#foreach ... in itemset(#|), #if $x$>|),
+            // or an assignment's right-hand side — both are implicit expression
+            // zones, completed like a marker
             String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
-            candidates = prefix.startsWith("#")
-                    ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
-                    : TupenterModClient.expressionCompletions(prefix);
+            if (prefix.startsWith("#")) {
+                candidates = TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart));
+            } else {
+                // a coordinate-typed assignment gets the position forms FIRST:
+                // #local c:blockpos = | offers the block you're looking at
+                candidates = new java.util.ArrayList<>(TupenterModClient.positionForms(text, cursor, prefix));
+                candidates.addAll(TupenterModClient.expressionCompletions(prefix));
+            }
         } else if ((tokenStart = ChatInputStyler.assignTypeTokenStart(text, cursor)) >= 0) {
             // the :type of an assignment (#local c:bloc|) — the same keywords a
             // custom command's <name:type> parameters take

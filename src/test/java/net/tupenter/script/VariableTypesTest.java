@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -326,7 +327,9 @@ class VariableTypesTest {
     void everyOfferedKeywordParses() {
         List<String> keywords = ParamTypeDocs.keywords();
         assertTrue(keywords.contains("blockpos"), "the flagship type should be offered");
-        assertTrue(keywords.contains("vec3"), "synonyms are offered too");
+        assertFalse(keywords.contains("block_pos"),
+                "synonyms still PARSE but aren't offered — two spellings of one type read as two types");
+        assertFalse(keywords.contains("vec3"), "same for pos/vec3");
         assertTrue(keywords.stream().noneMatch(k -> k.equals("choice")),
                 "choice has no keyword — you write the options themselves");
         for (String keyword : keywords) {

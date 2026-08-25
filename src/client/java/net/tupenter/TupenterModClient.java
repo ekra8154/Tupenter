@@ -308,6 +308,49 @@ public class TupenterModClient implements ClientModInitializer {
         return new java.util.ArrayList<>(names);
     }
 
+    /**
+     * Ready-made position forms for the right-hand side of a coordinate-typed
+     * assignment: {@code #local c:blockpos = |} offers the block you're looking
+     * at, already spelled correctly.
+     *
+     * <p>"Spelled correctly" is the point, and it is why this can't just hand back
+     * the bare coordinates the way a vanilla blockpos argument does. A right-hand
+     * side is an EXPRESSION, so "-10 20 85" there is implicit multiplication and
+     * quietly becomes -17000. What you actually want typed is blockpos(-10, 20,
+     * 85) — so that is what gets offered, and the completion teaches the form.
+     *
+     * <p>Empty unless the cursor really is at the start of such a value; anything
+     * already typed there is a partial expression and belongs to the normal
+     * variable/function completer.
+     */
+    public static java.util.List<String> positionForms(String text, int cursor, String typedPrefix) {
+        if (!typedPrefix.isEmpty()) {
+            return java.util.List.of();
+        }
+        net.tupenter.script.AliasDefinition.ParamType type =
+                net.tupenter.command.ChatInputStyler.assignRhsType(text, cursor);
+        if (type == null) {
+            return java.util.List.of();
+        }
+        String constructor = switch (type) {
+            case BLOCKPOS -> "blockpos";
+            case POS -> "vec";
+            default -> null; // column_pos/rotation have no constructor to offer
+        };
+        if (constructor == null) {
+            return java.util.List.of();
+        }
+        java.util.List<String> forms = new java.util.ArrayList<>();
+        net.minecraft.world.phys.HitResult hit = Minecraft.getInstance().hitResult;
+        if (hit instanceof net.minecraft.world.phys.BlockHitResult blockHit) {
+            net.minecraft.core.BlockPos pos = blockHit.getBlockPos();
+            forms.add(constructor + "(" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + ")");
+        }
+        forms.add("client.blockpos");
+        forms.add("\"~ ~ ~\""); // relative coords aren't expression syntax — they go in quoted
+        return forms;
+    }
+
     /** The collapsed root a name lives under, or null if it isn't in a collapsed namespace. */
     private static String collapsedRootFor(String name) {
         String lower = name.toLowerCase(java.util.Locale.ROOT);

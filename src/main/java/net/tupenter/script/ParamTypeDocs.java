@@ -52,9 +52,9 @@ public final class ParamTypeDocs {
     }
 
     /**
-     * Every keyword and synonym, for tab-completion after a ":". CHOICE is left
-     * out for the same reason it is left out of keywordSummary: you write the
-     * options themselves, there is no keyword to type.
+     * The canonical keyword of every type, for tab-completion after a ":".
+     * CHOICE is left out for the same reason it is left out of keywordSummary:
+     * you write the options themselves, there is no keyword to type.
      */
     public static List<String> keywords() {
         List<String> keywords = new ArrayList<>();
@@ -62,8 +62,10 @@ public final class ParamTypeDocs {
             if (doc.type() == ParamType.CHOICE) {
                 continue;
             }
+            // CANONICAL only. Offering "blockpos" and "block_pos" side by side
+            // reads as two types rather than two spellings of one; the synonyms
+            // still parse, they just aren't taught.
             keywords.add(doc.keyword());
-            keywords.addAll(doc.synonyms());
         }
         return keywords;
     }
