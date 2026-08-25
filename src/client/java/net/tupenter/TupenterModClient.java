@@ -541,13 +541,43 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     /** /tupenter scripts — what would run right here, right now. */
-    /** /tupenter abort — panic stop: kills every running script + resend queue and turns the tick master off. */
-    private static int runAbortAllCommand(CommandContext<FabricClientCommandSource> context) {
+    /**
+     * /tupenter abort — stop what YOU set off, and leave the armed tick scripts
+     * running.
+     *
+     * <p>Aborting almost always means "stop the thing I just started", and an
+     * armed HUD is not that: it is a setting you turned on, and disarming it as
+     * collateral is a much bigger hammer than the moment calls for. The full
+     * sweep, including the master switch, is /tupenter abort all.
+     */
+    private static int runAbortChatCommand(CommandContext<FabricClientCommandSource> context) {
+        int aborted = SCRIPT_EXECUTOR.abortUserInstances();
+        pendingQueue.clear();
+        delayTimer = 0;
+        context.getSource().sendFeedback(Component.literal(
+                aborted > 0 ? "Aborted " + aborted + " running script(s)." : "Nothing to abort.")
+                .withStyle(ChatFormatting.YELLOW));
+        int tickLoops = SCRIPT_EXECUTOR.tickLoopCount();
+        if (tickLoops > 0) {
+            context.getSource().sendFeedback(Component.literal(
+                    tickLoops + " tick script(s) still armed — /tupenter abort all stops those too.")
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        return 1;
+    }
+
+    /**
+     * /tupenter abort all — everything, tick scripts included, and the master
+     * switch off with them.
+     *
+     * <p>The switch is the point: without it, aborting a tick loop achieves
+     * nothing, because the next tick re-submits it. This is the panic button.
+     */
+    private static int runAbortEverythingCommand(CommandContext<FabricClientCommandSource> context) {
         int aborted = SCRIPT_EXECUTOR.runningCount();
         SCRIPT_EXECUTOR.abortAll();
         pendingQueue.clear();
         delayTimer = 0;
-        // panic switch: aborting while tick scripts keep resubmitting every tick would be futile
         if (TupenterConfig.INSTANCE.tickScriptsEnabled) {
             TupenterConfig.INSTANCE.tickScriptsEnabled = false;
             TupenterConfig.save();
@@ -1416,7 +1446,11 @@ public class TupenterModClient implements ClientModInitializer {
 
                     dispatcher.register(literal("tupenter")
                             .then(literal("abort")
-                                    .executes(TupenterModClient::runAbortAllCommand)
+                                    .executes(TupenterModClient::runAbortChatCommand)
+                                    // "all" is a literal, so it wins over the name
+                                    // argument below even for a script called "all"
+                                    .then(literal("all")
+                                            .executes(TupenterModClient::runAbortEverythingCommand))
                                     .then(argument("id", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
                                             .executes(TupenterModClient::runAbortOneCommand))
                                     .then(argument("name", StringArgumentType.word())
@@ -2829,7 +2863,7 @@ public class TupenterModClient implements ClientModInitializer {
             }
         }
         helpLine("§7Variables have pages too:§r #set · #local · #setdefault — /tupenter help local is the one to read first");
-        helpLine("§7Overlap:§r re-running a line starts another concurrent instance (up to the concurrency cap) — they share the per-tick budget round-robin · /tupenter abort <id> stops one, /tupenter abort stops all");
+        helpLine("§7Overlap:§r re-running a line starts another concurrent instance (up to the concurrency cap) — they share the per-tick budget round-robin · /tupenter abort <id> stops one, /tupenter abort stops the lines you ran, /tupenter abort all stops armed tick scripts too");
         helpLine("§7Loops that DO something run free:§r a loop that sends or waits each iteration paces itself over ticks, however long it needs — Max Loop Iterations only caps a loop that spins WITHOUT sending or waiting (the runaway guard).");
         helpLine(navRow("prefixes", "#silent, #stage, #chat and friends", "/tupenter help prefixes"));
         helpLine(runLink("« help topics", ChatFormatting.DARK_GRAY, "/tupenter help"));

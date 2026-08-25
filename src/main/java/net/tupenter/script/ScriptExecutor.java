@@ -157,6 +157,44 @@ public final class ScriptExecutor {
     }
 
     /**
+     * Stop the instances YOU started — ad-hoc lines and #pid ones — and leave
+     * the persistent tick loops alone.
+     *
+     * <p>The split is the same one the concurrency cap already uses: a tick loop
+     * runs under id 0, everything a person typed has a real id. Aborting is
+     * usually "stop what I just set off", and taking the armed HUDs down with it
+     * is a much bigger hammer than the situation asks for.
+     *
+     * @return how many were stopped
+     */
+    public int abortUserInstances() {
+        int stopped = 0;
+        for (java.util.Iterator<Instance> it = running.iterator(); it.hasNext(); ) {
+            Instance instance = it.next();
+            if (instance.id != 0) {
+                instance.close();
+                it.remove();
+                stopped++;
+            }
+        }
+        if (running.isEmpty()) {
+            silenceGraceTicks = 0;
+        }
+        return stopped;
+    }
+
+    /** How many persistent tick loops (id 0) are live. */
+    public int tickLoopCount() {
+        int count = 0;
+        for (Instance instance : running) {
+            if (instance.id == 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
      * True shortly after a #silent statement was sent — the window in which
      * its server feedback arrives and gets suppressed.
      */

@@ -706,4 +706,58 @@ class ScriptExecutorTest {
         assertEquals(List.of("/say a"), sender.sent);
         assertTrue(executor.isIdle());
     }
+
+    // ------------------------------------------------------------- aborting
+
+    /**
+     * /tupenter abort stops what YOU ran and leaves the armed tick loops going.
+     *
+     * <p>The split rides on the id the concurrency cap already uses: a tick loop
+     * is id 0, anything a person typed has a real id. Aborting normally means
+     * "stop the thing I just set off", and disarming every HUD as collateral is a
+     * much bigger hammer than that.
+     */
+    @Test
+    void abortingUserInstancesLeavesTickLoopsRunning() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        executor.trySubmit(lazyLoop("say tick"));   // id 0 — a tick script
+        executor.submit(lazyLoop("say chat"));      // a line someone ran
+
+        assertEquals(1, executor.tickLoopCount(), "one persistent loop");
+        assertEquals(1, executor.abortUserInstances(), "only the typed one is stopped");
+        assertEquals(1, executor.tickLoopCount(), "the tick loop survives");
+        assertFalse(executor.isIdle(), "and is still running");
+    }
+
+    /** abort all is the bigger hammer, and takes everything with it. */
+    @Test
+    void abortAllStopsTickLoopsToo() {
+        RecordingSender sender = new RecordingSender();
+        ScriptExecutor executor = executor(sender, 16, 1000, 8);
+
+        executor.trySubmit(lazyLoop("say tick"));
+        executor.submit(lazyLoop("say chat"));
+
+        executor.abortAll();
+        assertEquals(0, executor.tickLoopCount());
+        assertTrue(executor.isIdle());
+    }
+
+    @Test
+    void abortingWithNothingRunningStopsNothing() {
+        ScriptExecutor executor = executor(new RecordingSender(), 16, 1000, 8);
+        assertEquals(0, executor.abortUserInstances());
+        assertEquals(0, executor.tickLoopCount());
+    }
+
+    /** A script that waits, so it is still parked when the abort arrives. */
+    private static Script lazyLoop(String command) {
+        List<Script.SendStatement> statements = new ArrayList<>();
+        statements.add(new Script.SendStatement(command, Script.Kind.COMMAND, false));
+        statements.add(Script.SendStatement.waitFor(40));
+        statements.add(new Script.SendStatement(command, Script.Kind.COMMAND, false));
+        return Script.ofStatements(command, statements, Script.HistoryMode.NORMAL);
+    }
 }

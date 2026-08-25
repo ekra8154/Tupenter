@@ -320,7 +320,7 @@ body forwards to a command that accepts tags.
 Mod Menu → Tupenter → **Scripts**: one-line scripts that run **every tick**
 while the master toggle is on. They never touch resend history, `#set`
 notices are muted, and a broken script errors once and is skipped until
-edited. `/tupenter abort` is the panic switch (it also flips the master
+edited. `/tupenter abort all` is the panic switch (it also flips the master
 toggle off).
 
 **Arming is per world.** The tab has two sections: **Global Scripts** are
@@ -415,7 +415,8 @@ thing to your clipboard.
   function and variable documents itself, with runnable examples)
 - `/unroll <line>` — dry-run debugger: prints what a line unrolls to,
   color-coded by kind (command/chat/echo), without sending anything
-- `/tupenter abort` — stop all running scripts
+- `/tupenter abort` — stop the scripts you ran from chat; `/tupenter abort all`
+  also stops armed tick scripts and flips the master switch off
 - `/tupenter vars`, `/tupenter var save|delete <name>` — variable management
 - `/tupenter menu` — the settings screen from chat; add `customcommands` or
   `scripts` to land on that tab

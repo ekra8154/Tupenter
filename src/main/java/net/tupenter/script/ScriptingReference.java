@@ -372,7 +372,9 @@ public final class ScriptingReference {
 
             Re-running a line cancels its own still-running instance (resend =
             restart, not stack). Different lines run concurrently.
-            `/tupenter abort` stops everything; `/tupenter running` lists what is
+            `/tupenter abort` stops the lines YOU ran (armed tick scripts keep going;
+            `/tupenter abort all` takes those down too, master switch included);
+            `/tupenter running` lists what is
             active.
 
             """;
