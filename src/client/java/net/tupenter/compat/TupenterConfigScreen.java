@@ -709,9 +709,11 @@ public class TupenterConfigScreen {
         void blurBoxesExceptAt(double mouseX, double mouseY) {
             if (!singleBox.isMouseOver(mouseX, mouseY)) {
                 singleBox.setFocused(false);
+                dropSelection(singleBox);
             }
             if (multiBox != null && !multiBox.isMouseOver(mouseX, mouseY)) {
                 multiBox.setFocused(false);
+                dropSelection(multiBox);
             }
         }
 
@@ -834,6 +836,7 @@ public class TupenterConfigScreen {
         void blurBoxExceptAt(double mouseX, double mouseY) {
             if (box != null && !box.isMouseOver(mouseX, mouseY)) {
                 box.setFocused(false);
+                dropSelection(box);
             }
         }
 
@@ -915,6 +918,25 @@ public class TupenterConfigScreen {
     // not drag Cloth onto the classpath just to read an int.
     private static final int TAB_ALIASES = ConfigScreenAccess.TAB_ALIASES;
     private static final int TAB_SCRIPTS = ConfigScreenAccess.TAB_SCRIPTS;
+
+    /**
+     * Collapse a box's selection to its cursor.
+     *
+     * <p>Losing focus does NOT clear a selection — an unfocused box goes on
+     * drawing its highlighted range quite happily — so starting a selection in a
+     * second box left the first one still looking selected, as if two places were
+     * live at once.
+     */
+    private static void dropSelection(net.minecraft.client.gui.components.EditBox box) {
+        box.setHighlightPos(box.getCursorPosition());
+    }
+
+    /** Same, for the multi-line editors: seekCursor syncs selectCursor when not selecting. */
+    private static void dropSelection(net.minecraft.client.gui.components.MultiLineEditBox box) {
+        net.minecraft.client.gui.components.MultilineTextField field = box.textField;
+        field.setSelecting(false);
+        field.seekCursor(net.minecraft.client.gui.components.Whence.ABSOLUTE, field.cursor());
+    }
 
     /**
      * Exactly one editor cursor at a time, across every row and both tabs --
