@@ -95,6 +95,38 @@ class DefaultExamplesTest {
         assertEquals(3, parsed.get("launch").params().size(), "launch: entity, speed, no_gravity");
     }
 
+    /**
+     * ironkit is the shipped demo of a literal list, so what it EXPANDS to is
+     * part of the example rather than an implementation detail. Nine bare words
+     * with a name built around each, and the shield left outside the loop
+     * because it is the one piece with no iron_ prefix.
+     */
+    @Test
+    void ironkitStillHandsOutTheWholeSet() {
+        TupenterConfig.INSTANCE.aliases = new java.util.ArrayList<>(DefaultExamples.aliases());
+        SessionVariableStore store = new SessionVariableStore();
+        ScriptParser.Options options = new ScriptParser.Options(true, NumberMathMode.AUTO_DETECT,
+                CommandAliasManager.getAliasMap(), true, true, true, true, 1000, 1000,
+                new Random(1), store, store);
+
+        ScriptParser.ParseResult result = ScriptParser.parse("ironkit", options);
+        assertNull(result.error());
+        assertEquals(
+                java.util.List.of(
+                        "give @s minecraft:iron_helmet",
+                        "give @s minecraft:iron_chestplate",
+                        "give @s minecraft:iron_leggings",
+                        "give @s minecraft:iron_boots",
+                        "give @s minecraft:iron_sword",
+                        "give @s minecraft:iron_pickaxe",
+                        "give @s minecraft:iron_axe",
+                        "give @s minecraft:iron_shovel",
+                        "give @s minecraft:iron_hoe",
+                        "give @s minecraft:shield"),
+                result.script().statements().stream()
+                        .map(net.tupenter.script.Script.SendStatement::content).toList());
+    }
+
     @Test
     void theCustomCommandNamesCollideWithNothing() {
         for (String name : new String[]{"blink", "ironkit", "portalcalc", "tickfreeze", "launch"}) {
