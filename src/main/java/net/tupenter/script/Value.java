@@ -95,12 +95,31 @@ public sealed interface Value {
             return builder.toString();
         }
 
+        /**
+         * Printed as {@code list(...)} — the spelling you would type to get this
+         * same list back, with the element types visible.
+         *
+         * <p>Both halves are deliberate. It ROUND-TRIPS: /calc a list, paste the
+         * output, delete the entries you don't want. And quoted-vs-bare shows the
+         * text/value split at the one moment you are looking straight at the data,
+         * so {@code /calc (a | b)} answering {@code list("a", "b")} teaches that
+         * the pipe form made text. The old {@code (1 | 2 | 3)} rendering did
+         * neither: it looked like source, and now that the pipe form parses
+         * everywhere it would have been source meaning something ELSE.
+         */
         @Override
         public String displayString() {
-            StringBuilder builder = new StringBuilder("(");
+            StringBuilder builder = new StringBuilder("list(");
             for (int i = 0; i < values.size(); i++) {
-                if (i > 0) builder.append(" | ");
-                builder.append(values.get(i).displayString());
+                if (i > 0) {
+                    builder.append(", ");
+                }
+                Value value = values.get(i);
+                if (value instanceof StringValue text) {
+                    builder.append('"').append(text.value().replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
+                } else {
+                    builder.append(value.displayString());
+                }
             }
             return builder.append(")").toString();
         }

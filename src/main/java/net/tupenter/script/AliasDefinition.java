@@ -20,6 +20,15 @@ public record AliasDefinition(String body, List<Param> params, String descriptio
         return new AliasDefinition(body, List.of(), "");
     }
 
+    /**
+     * The body as the parser should see it: comments removed. {@link #body()}
+     * stays the text the user wrote, because that is what gets shown, listed and
+     * saved back — only the RUN path strips.
+     */
+    public String runnableBody() {
+        return Comments.strip(body);
+    }
+
     /** The signature's description re-quoted for storage ("" when there is none). */
     public String descriptionSuffix() {
         return description.isEmpty() ? "" : "\"" + description.replace("\"", "\\\"") + "\"";

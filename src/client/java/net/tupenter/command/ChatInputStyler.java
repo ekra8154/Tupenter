@@ -13,6 +13,8 @@ import net.minecraft.client.multiplayer.ClientSuggestionProvider;
 import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 import net.tupenter.config.TupenterConfig;
+import net.tupenter.script.Comments;
+import net.tupenter.script.ListLiteral;
 import net.tupenter.script.ScriptParser;
 
 import java.util.ArrayList;
@@ -37,6 +39,9 @@ public final class ChatInputStyler {
     // about how the line is sent/recorded, distinct from control-flow keywords
     private static final Style PREFIX_WORD = Style.EMPTY.withColor(ChatFormatting.LIGHT_PURPLE);
     private static final Style GROUP_PAREN = Style.EMPTY.withColor(ChatFormatting.DARK_GRAY);
+    // "## a note" - dark gray, and never italic: italic glyphs are wider, the
+    // same trap as bold, and a comment is the one span long enough for it to show
+    private static final Style COMMENT = Style.EMPTY.withColor(ChatFormatting.DARK_GRAY);
     private static final Style CHAT_TEXT = Style.EMPTY.withColor(ChatFormatting.WHITE);
     private static final Style ERROR = Style.EMPTY.withColor(ChatFormatting.RED).withUnderlined(true);
     // vanilla CommandSuggestions.LITERAL_STYLE — the soft gray of command
@@ -54,28 +59,37 @@ public final class ChatInputStyler {
     /** Directives that START a statement — seeing one mid-statement means a missing && (#else/#elseif legitimately continue). */
     private static final java.util.Set<String> STATEMENT_STARTERS = java.util.Set.of(
             "#set", "#setdefault", "#local", "#wait", "#repeat", "#if", "#while", "#for", "#foreach",
-            "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
+            "#silent", "#norecord", "#record", "#stage", "#unstage", "#pid", "#chat",
             "#s", "#nr", "#r", "#st", "#ust", "#c");
 
     /** Line/statement prefixes — a statement-starter may legally follow these without &&: #silent #local x = ... */
     private static final java.util.Set<String> PREFIX_WORDS = java.util.Set.of(
-            "#silent", "#norecord", "#record", "#stage", "#chat",
+            "#silent", "#norecord", "#record", "#stage", "#pid", "#chat",
             "#s", "#nr", "#r", "#st", "#c");
 
     /** Line modifiers — colored as annotations (PREFIX_WORD), not control-flow keywords. */
     private static final java.util.Set<String> LINE_MODIFIERS = java.util.Set.of(
-            "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
+            "#silent", "#norecord", "#record", "#stage", "#unstage", "#pid", "#chat",
             "#s", "#nr", "#r", "#st", "#ust", "#c");
 
     /** Everything tab-completion should offer for a '#' word. */
     private static final List<String> DIRECTIVE_WORDS = List.of(
             "#set", "#setdefault", "#local", "#wait", "#repeat", "#if", "#elseif", "#else", "#while", "#for", "#foreach",
-            "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
+            "#silent", "#norecord", "#record", "#stage", "#unstage", "#pid", "#chat",
             "#s", "#nr", "#r", "#st", "#ust", "#c");
 
     /** Directives whose header carries an EXPRESSION (condition/iterable) — an implicit $...$ zone for styling and completion. */
     private static final java.util.Set<String> HEADER_EXPR_DIRECTIVES = java.util.Set.of(
             "#repeat", "#if", "#elseif", "#while", "#for", "#foreach");
+
+    /**
+     * The assignment directives. Their right-hand side is an expression zone too,
+     * but they are kept OUT of HEADER_EXPR_DIRECTIVES because that set also drives
+     * styling, and an assignment is styled by styleDirectiveCore. Completion is
+     * the only thing they join.
+     */
+    private static final java.util.Set<String> ASSIGN_DIRECTIVES = java.util.Set.of(
+            "#set", "#local", "#setdefault");
 
     public enum Kind {
         COMMAND,
@@ -119,9 +133,52 @@ public final class ChatInputStyler {
                 return true; // /customfunction add|update — the tail is an expression
             }
             boolean chained = TupenterConfig.INSTANCE.commandChainingEnabled && segments(full).size() > 1;
-            return chained || containsMarker(full);
+            return chained || containsMarker(full) || hasComment(full);
         }
-        return ScriptParser.isDirectiveLine(full) || isModifierLine(full);
+        return ScriptParser.isDirectiveLine(full) || isModifierLine(full) || hasComment(full);
+    }
+
+    /**
+     * Comments in the chat bar, found the way the PARSER finds them.
+     *
+     * <p>The one wrinkle is the slash: vanilla strips it before the parser ever
+     * sees the line, so a leading "##" there begins a line even though what is on
+     * screen is "/## ...". Scanning past the slash keeps the highlighter and the
+     * parser looking at the same text.
+     */
+    private static List<int[]> commentSpans(String full) {
+        int offset = full.startsWith("/") ? 1 : 0;
+        List<int[]> spans = Comments.spans(full.substring(offset));
+        if (offset == 0) {
+            return spans;
+        }
+        List<int[]> shifted = new ArrayList<>(spans.size());
+        for (int[] span : spans) {
+            shifted.add(new int[]{span[0] + offset, span[1] + offset});
+        }
+        return shifted;
+    }
+
+    private static boolean hasComment(String full) {
+        return full.contains(Comments.MARK) && !commentSpans(full).isEmpty();
+    }
+
+    /** Blanks the given spans to spaces, so every other index stays where it was. */
+    private static String withoutComments(String text, List<int[]> spans) {
+        if (spans.isEmpty()) {
+            return text;
+        }
+        char[] out = text.toCharArray();
+        for (int[] span : spans) {
+            java.util.Arrays.fill(out, span[0], Math.min(span[1], out.length), ' ');
+        }
+        return new String(out);
+    }
+
+    private static void paintComments(Style[] styles, List<int[]> spans) {
+        for (int[] span : spans) {
+            fill(styles, span[0], Math.min(span[1], styles.length), COMMENT);
+        }
     }
 
     /**
@@ -423,15 +480,44 @@ public final class ChatInputStyler {
             while (word < end && !Character.isWhitespace(text.charAt(word)) && text.charAt(word) != '(') {
                 word++;
             }
-            if (!PREFIX_WORDS.contains(text.substring(i, word).toLowerCase(java.util.Locale.ROOT))) {
+            String prefix = text.substring(i, word).toLowerCase(java.util.Locale.ROOT);
+            if (!PREFIX_WORDS.contains(prefix)) {
                 return i;
             }
             i = word;
             while (i < end && Character.isWhitespace(text.charAt(i))) {
                 i++;
             }
+            if (prefix.equals("#pid")) {
+                i = skipPidArguments(text, i, end);
+            }
         }
         return i;
+    }
+
+    /**
+     * Step past {@code #pid}'s id and optional {@code replace}.
+     *
+     * <p>#pid is the one prefix that takes an ARGUMENT before the statement it
+     * runs: {@code #pid 7 #while (...)}. Without this the statement start lands
+     * on the "7", which is neither "/" nor "#", so the whole rest of the line got
+     * painted as chat and the real statement never got styled at all.
+     */
+    private static int skipPidArguments(String text, int from, int end) {
+        int i = from;
+        while (i < end && Character.isDigit(text.charAt(i))) {
+            i++;
+        }
+        if (i == from) {
+            return from; // no id typed yet
+        }
+        int afterId = skipWhitespace(text, i);
+        int wordEnd = skipWord(text, afterId);
+        if (wordEnd - afterId == "replace".length()
+                && text.regionMatches(true, afterId, "replace", 0, "replace".length())) {
+            return skipWhitespace(text, wordEnd);
+        }
+        return afterId;
     }
 
     /** The segment the cursor sits in (separator gaps count toward the segment on their left). */
@@ -467,17 +553,94 @@ public final class ChatInputStyler {
         return FormattedCharSequence.composite(parts);
     }
 
-    private static Style[] stylesFor(String full) {
+    // package-private so ChatInputStylerTest can assert the finished styles
+    static Style[] stylesFor(String full) {
         if (full.equals(cachedText) && cachedStyles != null) {
             return cachedStyles;
         }
         Style[] styles = new Style[full.length()];
         java.util.Arrays.fill(styles, Style.EMPTY);
-        styleStatements(full, 0, styles);
-        overlayMarkers(full, styles);
+        // Style the line with its comments blanked out, then paint them back.
+        // Blanking rather than removing keeps every index aligned with the array,
+        // and it stops an && inside a comment from inventing a statement the
+        // parser will never see.
+        List<int[]> comments = commentSpans(full);
+        String live = withoutComments(full, comments);
+        styleStatements(live, 0, styles);
+        overlayMarkers(live, styles);
+        overlayListPipes(live, styles);
+        paintComments(styles, comments);
         cachedText = full;
         cachedStyles = styles;
         return styles;
+    }
+
+    /**
+     * Gold pipes inside a {@code list(a | b | c)} call.
+     *
+     * <p>A final overlay rather than a branch in one styler, because the call can
+     * appear anywhere an expression can: a $...$ marker, a #foreach header, an
+     * assignment's right-hand side, a custom function's body. One pass over the
+     * finished styles covers all of them and cannot drift from the evaluator,
+     * since it asks {@link ListLiteral} the same two questions the evaluator does.
+     *
+     * <p>Only where an expression could actually live — inside a directive
+     * statement, or somewhere already painted as marker text. In plain chat,
+     * "list(a | b)" is prose and gets left alone.
+     */
+    private static void overlayListPipes(String full, Style[] styles) {
+        for (Segment segment : segments(full, true)) {
+            int limit = Math.min(segment.end(), full.length());
+            int rest = statementStartAfterPrefixes(full, segment.textStart(), limit);
+            boolean directive = rest < limit && full.charAt(rest) == '#';
+            for (int i = segment.textStart(); i < limit; i++) {
+                if (!startsListCall(full, i) || !(directive || MARKER.equals(styles[i]))) {
+                    continue;
+                }
+                int open = i + "list".length();
+                int close = ListLiteral.groupEnd(full, open);
+                if (close < 0 || close > limit || !ListLiteral.hasSeparatorPipe(full, open + 1, close)) {
+                    continue;
+                }
+                paintSeparatorPipes(full, styles, open + 1, close);
+                i = close;
+            }
+        }
+    }
+
+    /** Is {@code list(} at {@code i}, as a whole word rather than a name ending in it? */
+    private static boolean startsListCall(String full, int i) {
+        return full.regionMatches(true, i, "list(", 0, "list(".length())
+                && (i == 0 || !Character.isLetterOrDigit(full.charAt(i - 1)) && full.charAt(i - 1) != '_');
+    }
+
+    /** The separator pipes in [from, end) — same rules the splitter uses. */
+    private static void paintSeparatorPipes(String full, Style[] styles, int from, int end) {
+        boolean insideSpan = false;
+        boolean insideQuotes = false;
+        int depth = 0;
+        for (int i = from; i < end; i++) {
+            char c = full.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '"' && !insideSpan) {
+                insideQuotes = !insideQuotes;
+            } else if (c == '$' && !insideQuotes) {
+                insideSpan = !insideSpan;
+            } else if (!insideSpan && !insideQuotes) {
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth--;
+                } else if (c == '|' && depth == 0) {
+                    if (i + 1 < end && full.charAt(i + 1) == '|') {
+                        i++; // boolean or, not a separator
+                    } else {
+                        styles[i] = SEPARATOR;
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -486,7 +649,11 @@ public final class ChatInputStyler {
      * so every index lines up). Definitions get their signature styled too.
      */
     public static Style[] editorStyles(String raw, boolean definition) {
-        String flat = raw.replace('\r', ' ').replace('\n', ' ');
+        // Comments are found in the RAW text, because they end at a newline
+        // and flattening would erase the very boundary that ends them. The
+        // flatten is 1:1, so the spans still address the right characters.
+        List<int[]> comments = Comments.spans(raw);
+        String flat = withoutComments(raw, comments).replace('\r', ' ').replace('\n', ' ');
         Style[] styles = new Style[flat.length()];
         java.util.Arrays.fill(styles, Style.EMPTY);
 
@@ -500,6 +667,7 @@ public final class ChatInputStyler {
         }
         styleStatements(flat, bodyStart, styles);
         overlayMarkers(flat, styles);
+        paintComments(styles, comments);
         return styles;
     }
 
@@ -707,8 +875,7 @@ public final class ChatInputStyler {
      * or iterable is an EXPRESSION, styled aqua like a $...$ marker (function
      * names, tags, and operators all read as "code"); the loop variable and
      * 'in' keyword get their own colors; and the trailing (...) body recurses
-     * as statements. Foreach's literal (a | b | c) list is styled as a list,
-     * not an expression.
+     * as statements.
      */
     private static void styleScannerHeader(String full, Style[] styles, int wordStart, int wordEnd,
                                            int end, String directive, int depth) {
@@ -732,12 +899,11 @@ public final class ChatInputStyler {
                 exprFrom = afterVar;
             }
         }
-        if (directive.equals("#foreach") && exprFrom < headerEnd && full.charAt(exprFrom) == '(') {
-            styleLiteralList(full, styles, exprFrom, headerEnd); // (a | b | c)
-        } else {
-            fill(styles, exprFrom, headerEnd, MARKER); // condition/iterable expression
-            flagUnbalancedParens(full, styles, exprFrom, headerEnd);
-        }
+        // Every scanner header is an EXPRESSION now, #foreach included: its list
+        // used to be bare parentheses styled as a list of their own, and that
+        // moved into list(...).
+        fill(styles, exprFrom, headerEnd, MARKER);
+        flagUnbalancedParens(full, styles, exprFrom, headerEnd);
         if (bodyOpen >= 0) {
             int close = matchingClose(full, bodyOpen, end);
             if (close < 0) {
@@ -746,30 +912,6 @@ public final class ChatInputStyler {
                 styles[bodyOpen] = GROUP_PAREN;
                 styles[close] = GROUP_PAREN;
                 styleStatements(full, bodyOpen + 1, close, styles, depth + 1);
-            }
-        }
-    }
-
-    /** #foreach's literal iterable: dim parens, gold '|' separators, gray items. */
-    private static void styleLiteralList(String full, Style[] styles, int from, int end) {
-        int close = matchingClose(full, from, end);
-        if (close < 0) {
-            styles[from] = ERROR;
-            return;
-        }
-        styles[from] = GROUP_PAREN;
-        styles[close] = GROUP_PAREN;
-        boolean marker = false;
-        for (int i = from + 1; i < close; i++) {
-            char c = full.charAt(i);
-            if (c == '\\') {
-                i++;
-            } else if (c == '$') {
-                marker = !marker;
-            } else if (!marker && c == '|') {
-                styles[i] = SEPARATOR;
-            } else if (!marker && !Character.isWhitespace(c)) {
-                styles[i] = COMMAND_LITERAL;
             }
         }
     }
@@ -1160,6 +1302,101 @@ public final class ChatInputStyler {
     }
 
     /**
+     * The index of an assignment's {@code =} within [from, end), or -1.
+     *
+     * <p>A variable name cannot contain '=', so the first one is always the
+     * assignment operator — including the compound spellings, where {@code +=}
+     * still puts the '=' last and the expression still starts after it.
+     */
+    private static int assignmentEquals(String text, int from, int end) {
+        for (int i = from; i < end && i < text.length(); i++) {
+            if (text.charAt(i) == '=') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * The type declared for the assignment whose right-hand side the cursor is
+     * in, or null. Lets the completer offer POSITION forms where a position was
+     * promised.
+     */
+    public static net.tupenter.script.AliasDefinition.ParamType assignRhsType(String text, int cursor) {
+        List<Segment> segs = segments(text, true);
+        Segment seg = segmentAt(segs, Math.min(cursor, text.length()));
+        int limit = Math.min(seg.end(), text.length());
+        int rest = statementStartAfterPrefixes(text, seg.textStart(), limit);
+        if (rest >= limit || text.charAt(rest) != '#') {
+            return null;
+        }
+        int wordEnd = rest;
+        while (wordEnd < limit && !Character.isWhitespace(text.charAt(wordEnd)) && text.charAt(wordEnd) != '(') {
+            wordEnd++;
+        }
+        if (!ASSIGN_DIRECTIVES.contains(text.substring(rest, wordEnd).toLowerCase(java.util.Locale.ROOT))) {
+            return null;
+        }
+        int equals = assignmentEquals(text, wordEnd, limit);
+        if (equals < 0 || cursor <= equals) {
+            return null; // still on the left of the "=", so not in the value yet
+        }
+        // the head is short and already scannable — reuse the declaration reader
+        java.util.Map<String, net.tupenter.script.AliasDefinition.ParamType> declared =
+                net.tupenter.script.VariableTypes.declaredOn(text.substring(rest, equals));
+        return declared.isEmpty() ? null : declared.values().iterator().next();
+    }
+
+    /**
+     * When the cursor sits in the {@code :type} of an assignment
+     * ({@code #local c:bloc|}), the index just after the colon — so the type
+     * keywords can be offered there; -1 otherwise.
+     */
+    public static int assignTypeTokenStart(String text, int cursor) {
+        if (markerTokenStart(text, cursor) >= 0) {
+            return -1;
+        }
+        List<Segment> segs = segments(text, true);
+        Segment seg = segmentAt(segs, Math.min(cursor, text.length()));
+        int rest = statementStartAfterPrefixes(text, seg.textStart(), Math.min(seg.end(), text.length()));
+        if (rest >= seg.end() || text.charAt(rest) != '#') {
+            return -1;
+        }
+        int wordEnd = rest;
+        while (wordEnd < seg.end() && !Character.isWhitespace(text.charAt(wordEnd)) && text.charAt(wordEnd) != '(') {
+            wordEnd++;
+        }
+        if (!ASSIGN_DIRECTIVES.contains(text.substring(rest, wordEnd).toLowerCase(java.util.Locale.ROOT))) {
+            return -1;
+        }
+        int i = skipWhitespace(text, wordEnd);
+        if (i < seg.end() && text.charAt(i) == '$') {
+            i++;
+        }
+        int nameStart = i;
+        while (i < seg.end() && (Character.isLetterOrDigit(text.charAt(i)) || text.charAt(i) == '_'
+                || text.charAt(i) == '.')) {
+            i++;
+        }
+        if (i == nameStart) {
+            return -1; // no name yet
+        }
+        if (i < seg.end() && text.charAt(i) == '$') {
+            i++; // the $name$:type spelling
+        }
+        if (i >= seg.end() || text.charAt(i) != ':') {
+            return -1;
+        }
+        int keywordStart = i + 1;
+        int keywordEnd = keywordStart;
+        while (keywordEnd < seg.end() && (Character.isLetterOrDigit(text.charAt(keywordEnd))
+                || text.charAt(keywordEnd) == '_')) {
+            keywordEnd++;
+        }
+        return cursor >= keywordStart && cursor <= keywordEnd ? keywordStart : -1;
+    }
+
+    /**
      * When the cursor sits in the condition/iterable EXPRESSION of a scanner
      * directive (#repeat/#if/#for/#foreach — outside its body group and any
      * literal (a|b) list), the identifier start for expression/tag
@@ -1181,10 +1418,13 @@ public final class ChatInputStyler {
             wordEnd++;
         }
         String dir = text.substring(rest, wordEnd).toLowerCase(java.util.Locale.ROOT);
-        if (!HEADER_EXPR_DIRECTIVES.contains(dir) || cursor <= wordEnd) {
+        boolean assign = ASSIGN_DIRECTIVES.contains(dir);
+        if ((!assign && !HEADER_EXPR_DIRECTIVES.contains(dir)) || cursor <= wordEnd) {
             return -1; // still typing the directive word — let #-word completion cycle
         }
-        int bodyOpen = lastTopLevelGroupOpen(text, wordEnd, seg.end());
+        // An assignment has no body group: a (...) on its right-hand side is part
+        // of the expression, so the whole rest of the segment is the zone.
+        int bodyOpen = assign ? -1 : lastTopLevelGroupOpen(text, wordEnd, seg.end());
         int headerEnd = bodyOpen >= 0 ? bodyOpen : seg.end();
         int exprFrom = skipWhitespace(text, wordEnd);
         if (dir.equals("#foreach") || dir.equals("#for")) {
@@ -1200,6 +1440,13 @@ public final class ChatInputStyler {
         }
         if (dir.equals("#foreach") && exprFrom < headerEnd && text.charAt(exprFrom) == '(') {
             return -1; // literal (a|b) list — not an expression
+        }
+        if (assign) {
+            int equals = assignmentEquals(text, wordEnd, headerEnd);
+            if (equals < 0) {
+                return -1; // still on the name or its :type — nothing to complete yet
+            }
+            exprFrom = skipWhitespace(text, equals + 1);
         }
         if (cursor < exprFrom || cursor > headerEnd) {
             return -1;

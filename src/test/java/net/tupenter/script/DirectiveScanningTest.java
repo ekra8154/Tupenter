@@ -188,26 +188,34 @@ class DirectiveScanningTest {
 
     @Test
     void parenthesesInsideAListItemDoNotSplitIt() {
-        assertEquals(List.of("say a(1)", "say b"), sentBothWays("#foreach $x$ in (a(1) | b) (/say $x$)"));
+        assertEquals(List.of("say a(1)", "say b"), sentBothWays("#foreach $x$ in list(a(1) | b) (/say $x$)"));
     }
 
     @Test
     void anEscapedSeparatorStaysInsideItsItem() {
-        assertEquals(List.of("say a|b"), sentBothWays("#foreach $x$ in (a\\|b) (/say $x$)"));
+        assertEquals(List.of("say a|b", "say c"), sentBothWays("#foreach $x$ in list(a\\|b | c) (/say $x$)"));
     }
 
-    /** An empty list is a typo, not a no-op loop, and says what one looks like. */
+    /**
+     * Bare parentheses are grouping now, so an empty pair is a malformed
+     * expression rather than an empty list. list() IS an empty list, and looping
+     * over it zero times is correct, not a typo.
+     */
     @Test
-    void anEmptyLiteralListIsRefusedWithAnExample() {
-        assertTrue(errorFrom("#foreach $x$ in () (/say $x$)", false).contains("at least one list item"));
-        assertTrue(errorFrom("#foreach $x$ in () (/say $x$)", true).contains("(a | b)"));
+    void emptyParenthesesAreNotAnEmptyList() {
+        assertTrue(errorFrom("#foreach $x$ in () (/say $x$)", true).length() > 0,
+                "an empty group is not a list");
+        assertEquals(List.of(), sentBothWays("#foreach $x$ in list() (/say $x$)"),
+                "an empty list loops zero times");
     }
 
     @Test
     void aLiteralListKeepsItsItemsVerbatim() {
-        assertEquals(List.of("say a", "say b", "say c"), sentBothWays("#foreach $x$ in (a | b | c) (/say $x$)"));
-        assertEquals(List.of("say one two"), sentBothWays("#foreach $x$ in (one two) (/say $x$)"),
+        assertEquals(List.of("say a", "say b", "say c"), sentBothWays("#foreach $x$ in list(a | b | c) (/say $x$)"));
+        assertEquals(List.of("say one two", "say three"), sentBothWays("#foreach $x$ in list(one two | three) (/say $x$)"),
                 "spaces inside an item are part of it");
+        assertEquals(List.of("say one two"), sentBothWays("#foreach $x$ in list(\"one two\") (/say $x$)"),
+                "a ONE-item text list has no pipe to switch on, so it takes quotes");
     }
 
     // ------------------------------------------------------------- groups

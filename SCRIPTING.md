@@ -77,6 +77,33 @@ as a command:
 #set cmd = "/tp @s ~ ~10 ~" && $cmd$
 ```
 
+## Comments
+
+`##` followed by a space starts a note that never runs. It ends at
+the next `&&` or the end of its line, whichever comes first:
+
+```
+## a counter that survives rejoins
+#setdefault runs = 0 &&        ## start at zero
+#set runs += 1 &&
+/say run number $runs$
+```
+
+```
+## bottom left && /activate 1 2 3 && ## the other one && /activate 2 3 4
+```
+
+The line ending is for scripts written over several lines; the `&&`
+ending is what lets a one-liner carry notes between its statements.
+The `&&` that ends a note is eaten with it, so what runs is just the
+line with the notes lifted out. A comment therefore cannot contain
+`&&` — that is the price of being able to end one mid-line.
+
+A comment may begin only where a statement could — at the start of a
+line, or right after an `&&`. Anywhere else the characters are
+ordinary text, so `/say ## hi` still says `## hi`. The space is
+required for the same reason: `##1 winner` is a message, not a note.
+
 ## Expressions
 
 ### Values
@@ -182,7 +209,9 @@ statement runs*, not when you pressed Enter. So a read after a
 
 Re-running a line cancels its own still-running instance (resend =
 restart, not stack). Different lines run concurrently.
-`/tupenter abort` stops everything; `/tupenter running` lists what is
+`/tupenter abort` stops the lines YOU ran (armed tick scripts keep going;
+`/tupenter abort all` takes those down too, master switch included);
+`/tupenter running` lists what is
 active.
 
 ## Custom commands
@@ -306,7 +335,7 @@ transition happens.
 a session variable — lives until you leave the world
 
 ```
-#set name = value
+#set name[:type] = value
 ```
 
 - Bare name is normal: #set x = 5. The name is x — $x$ is just x with EXPLICIT wrapping. Both the target (#set x = / #set $x$ =) and reads in expression world (#if (x > 3), x + 1, function args) take the bare name.
@@ -314,6 +343,7 @@ a session variable — lives until you leave the world
 - Compound forms: #set x += 1 (also -= *= /= %=) · dotted groups organize: #set hitlist.bob = "wanted".
 - Session-scoped: cleared when you leave, unless kept with /tupenter var save <name> (the composed example makes a permanent home).
 - Prints a notice when it sets — #silent mutes it. For a value that shouldn't outlive the line, use #local instead.
+- Optional type: #local c:blockpos = blockpos(-10, 20, 85) — the same keywords a custom command's <name:type> params take. It CHECKS the value (three whole numbers, or the line stops) and it tells the chat bar the SHAPE before the value exists, so /tp $c$ keeps completing the rest of the line. /customcommand help types lists them.
 
 ```
 #set x = rand(1,10) && /give @s stick $x$ && /echo got $x$!
@@ -325,13 +355,14 @@ a session variable — lives until you leave the world
 the workhorse: compute ONCE, use many times, save NOTHING
 
 ```
-#local name = value
+#local name[:type] = value
 ```
 
 - Line-scoped and silent: nothing written to the session, no notice printed — a tick script using #local stays stateless between runs.
 - One evaluation: every later read sees the SAME value — a rand doesn't re-roll, a raycast doesn't re-cast (the composed example reads two fields off one hit).
 - Bare name is normal — #local hit, then hit in the condition and hit inside entity(...); $r$ only where it substitutes into command text.
 - The choosing rule: #local by default; #set only when the value must OUTLIVE the line.
+- Optional type: #local c:blockpos = blockpos(-10, 20, 85) — the same keywords a custom command's <name:type> params take. It CHECKS the value (three whole numbers, or the line stops) and it tells the chat bar the SHAPE before the value exists, so /tp $c$ keeps completing the rest of the line. /customcommand help types lists them.
 
 ```
 #local r = rand(1, 5) && /give @s stick $r$ && /echo gave $r$ (same roll, both places)
@@ -343,7 +374,7 @@ the workhorse: compute ONCE, use many times, save NOTHING
 guarantee a variable exists: create it if absent, keep it as-is if present
 
 ```
-#setdefault name = value
+#setdefault name[:type] = value
 ```
 
 - Already defined means session, saved, or live — an existing value always wins.
@@ -352,6 +383,7 @@ guarantee a variable exists: create it if absent, keep it as-is if present
 - The stateful-command idiom: first run initializes, every run advances — paste it anywhere, no separate setup line.
 - Only track what the game DOESN'T tell you: for live state read the real variable — $world.frozen$, $client.held.id$, $client.riding$. A self-tracked flag drifts the moment anything else changes it (or you rejoin), and then your toggle does the opposite of what you meant.
 - Create-once-across-sessions: #setdefault x = 0 && /tupenter var save x.
+- Optional type: #local c:blockpos = blockpos(-10, 20, 85) — the same keywords a custom command's <name:type> params take. It CHECKS the value (three whole numbers, or the line stops) and it tells the chat bar the SHAPE before the value exists, so /tp $c$ keeps completing the rest of the line. /customcommand help types lists them.
 
 ```
 #setdefault maxy = 80 && /echo building up to $maxy$
@@ -397,14 +429,15 @@ count a whole-number range, inclusive — direction automatic
 walk options you wrote, or any LIST value
 
 ```
-#foreach $x$ in (a | b | c) (body) · #foreach $x$ in <list> (body)
+#foreach $x$ in <list> (body)
 ```
 
-- Two sources: (a | b | c) options written in place, or any list — range(1, 10), registry sets, entities(radius), client.effects.
+- Any list will do: list(a | b | c) written in place, list(1, 2, 3), range(1, 10), registry sets, entities(radius), client.effects.
+- The header is just an expression — nothing is special about it, so #local kinds = list(short | tall) then #foreach $k$ in kinds is the same loop. list(a | b) items are literal TEXT (bare words, no quotes); list(a, b) items are COMPUTED.
 - The set pairing is the classic: every member of a #tag, one command each.
 
 ```
-#foreach $m$ in (zombie | skeleton) (/summon $m$)
+#foreach $m$ in list(zombie | skeleton) (/summon $m$)
 #foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)
 ```
 
@@ -836,20 +869,36 @@ a random decimal in [min, max)
 /tp @s ~$randf(-0.5, 0.5)$ ~ ~$randf(-0.5, 0.5)$
 ```
 
-#### `pick(a | b | c)`
+#### `pick(a, b, c)`
 
 one of the options you wrote, chosen at random
 
-- Options are full expressions separated by a single top-level | (|| is still boolean-or) — they nest and compute: pick(rand(1,5) | client.pos.y).
-- Quote literal text: pick("say hi" | "say nah").
+- Options are full EXPRESSIONS — they nest and compute: pick(rand(1,5), client.pos.y) rolls or reads, it doesn't hand back the words.
+- Quote literal text: pick("say hi", "say nah").
+- Commas, not pipes: pick(a | b) was the old spelling and now errors on purpose — a pipe builds literal TEXT everywhere else, and pick's options COMPUTE, so it can't mean both. list(a | b) is the text form.
 - pick vs rand: a set is ONE value, so pick(entityset(...)) is one option holding a whole list — rand(entityset(...)) is how you draw one member.
 
 ```
-/echo $pick("heads" | "tails")$
-/summon $pick("zombie" | "skeleton" | rand(entityset(#minecraft:skeletons)))$
+/echo $pick("heads", "tails")$
+/summon $pick("zombie", "skeleton", rand(entityset(#minecraft:skeletons)))$
 ```
 
 ### Lists
+
+#### `list(a, b, ...)`
+
+exactly the values you name, as one list
+
+- The literal counterpart to range: range makes a RUN of numbers — list makes the exact values you name, of any type.
+- Two separators, two meanings: COMMAS compute — list(2 * 3, 7) is 6 and 7. PIPES take items as typed, so bare words need no quotes — list(short | tall) is the two words, and list(1 | 2) is the STRINGS, where x + 1 concatenates to "11".
+- Lists flatten: list(range(1, 3), 9) is 1 2 3 9, which makes list(a, b) double as "join these two lists".
+- One item, or a comma inside one? Quote it — list("one two"). With no pipe there is nothing to switch on, and once there IS a pipe a comma is content: list(1, 2 | 3) is the two items "1, 2" and "3".
+- Printed as source: /calc shows a list as list(...) with quotes on the text, so you can see which elements are numbers and paste the whole thing back.
+
+```
+/calc list(1, 2, 3)
+#foreach $b$ in list(blockpos(1, 2, 3), blockpos(-4, 5, 6)) (/setblock $b$ glowstone)
+```
 
 #### `range(start, stop[, step])`
 
@@ -977,6 +1026,19 @@ three numbers as one vec3 value ("x y z")
 ```
 /calc vec(0, 64, 0)
 /echo ground below: $raycast(client.eye_pos, vec(0, -1, 0), 100)$
+```
+
+#### `blockpos(x, y, z) · blockpos(v)`
+
+whole block coordinates — floors a position to the block it's in
+
+- Whole numbers: blockpos(10.7, 64.2, -3.4) is 10 64 -4. /setblock and /fill reject decimals, so this is what makes a computed position usable.
+- Floors, like client.blockpos: the block a position is INSIDE. round(...) picks the NEAREST block instead — half a block away, and the right answer when you're plotting geometry.
+- One vec3 in: blockpos(raycast(50)) says what three round(component(v, "x")) calls used to. Already whole? It changes nothing.
+
+```
+/calc blockpos(10.7, 64.2, -3.4)
+/setblock $blockpos(raycast(50))$ minecraft:torch
 ```
 
 #### `component(v, axis)`
