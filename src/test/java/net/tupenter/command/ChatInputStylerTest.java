@@ -105,4 +105,71 @@ class ChatInputStylerTest {
         String line = "#local g = list(a | b)";
         assertEquals(line.length(), ChatInputStyler.stylesFor(line).length);
     }
+
+    // -------------------------------------------------------------------- #pid
+
+    private static final TextColor RED = TextColor.fromLegacyFormat(ChatFormatting.RED);
+    private static final TextColor PREFIX = TextColor.fromLegacyFormat(ChatFormatting.LIGHT_PURPLE);
+
+    private static TextColor colorAt(String line, int index) {
+        return ChatInputStyler.stylesFor(line)[index].getColor();
+    }
+
+    /**
+     * #pid is client-side, so the parser deliberately doesn't know it - and for a
+     * while nothing in the styler did either, which meant a #pid line got no
+     * highlighting at all.
+     */
+    @Test
+    void pidLinesAreStyled() {
+        assertTrue(ChatInputStyler.shouldStyle("#pid 7 #while (true) (#set x = 1)"),
+                "a #pid line should be claimed for styling");
+        assertEquals(PREFIX, colorAt("#pid 7 #while (true) (#set x = 1)", 1),
+                "the #pid word is an annotation, like #silent");
+    }
+
+    /**
+     * The trap this form sets: #pid is the one prefix with an ARGUMENT between it
+     * and the statement it runs. Ordinary header text marks "content seen", and a
+     * statement head after content is painted red as a missing && - so the id has
+     * to be stepped over deliberately or a valid line looks broken.
+     */
+    @Test
+    void theStatementAfterAPidIsNotFlaggedAsMissingAnAmpersand() {
+        String line = "#pid 7 #while (true) (#set x = 1)";
+        int whileAt = line.indexOf("#while");
+        assertEquals(false, RED.equals(colorAt(line, whileAt)),
+                "#while follows the pid's id legitimately, not a missing &&");
+    }
+
+    @Test
+    void theIdAndReplaceBelongToThePrefix() {
+        String line = "#pid 7 replace #while (true) (#set x = 1)";
+        assertEquals(PREFIX, colorAt(line, line.indexOf('7')), "the id is part of the prefix");
+        assertEquals(PREFIX, colorAt(line, line.indexOf("replace")), "and so is replace");
+    }
+
+    /**
+     * The statement after the prefix has to be styled as a STATEMENT. It was
+     * being painted as chat instead: the statement start landed on the id, which
+     * is neither "/" nor "#", so everything from there was treated as plain text
+     * and the #while never got its directive colour.
+     */
+    @Test
+    void theStatementAfterAPidIsStyledAsOne() {
+        for (String line : java.util.List.of(
+                "#pid 7 #while (true) (#set x = 1)",
+                "#pid 7 replace #while (true) (#set x = 1)")) {
+            assertEquals(GOLD, colorAt(line, line.indexOf("#while")),
+                    "#while is a directive, not chat: " + line);
+        }
+    }
+
+    /** A real missing && is still caught, so the step-over didn't blunt the check. */
+    @Test
+    void aStatementHeadAfterRealContentIsStillRed() {
+        String line = "#set x = 1 #set y = 2";
+        assertEquals(RED, colorAt(line, line.lastIndexOf("#set")),
+                "the second #set has no && before it");
+    }
 }

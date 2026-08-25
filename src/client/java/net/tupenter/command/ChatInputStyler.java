@@ -55,23 +55,23 @@ public final class ChatInputStyler {
     /** Directives that START a statement — seeing one mid-statement means a missing && (#else/#elseif legitimately continue). */
     private static final java.util.Set<String> STATEMENT_STARTERS = java.util.Set.of(
             "#set", "#setdefault", "#local", "#wait", "#repeat", "#if", "#while", "#for", "#foreach",
-            "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
+            "#silent", "#norecord", "#record", "#stage", "#unstage", "#pid", "#chat",
             "#s", "#nr", "#r", "#st", "#ust", "#c");
 
     /** Line/statement prefixes — a statement-starter may legally follow these without &&: #silent #local x = ... */
     private static final java.util.Set<String> PREFIX_WORDS = java.util.Set.of(
-            "#silent", "#norecord", "#record", "#stage", "#chat",
+            "#silent", "#norecord", "#record", "#stage", "#pid", "#chat",
             "#s", "#nr", "#r", "#st", "#c");
 
     /** Line modifiers — colored as annotations (PREFIX_WORD), not control-flow keywords. */
     private static final java.util.Set<String> LINE_MODIFIERS = java.util.Set.of(
-            "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
+            "#silent", "#norecord", "#record", "#stage", "#unstage", "#pid", "#chat",
             "#s", "#nr", "#r", "#st", "#ust", "#c");
 
     /** Everything tab-completion should offer for a '#' word. */
     private static final List<String> DIRECTIVE_WORDS = List.of(
             "#set", "#setdefault", "#local", "#wait", "#repeat", "#if", "#elseif", "#else", "#while", "#for", "#foreach",
-            "#silent", "#norecord", "#record", "#stage", "#unstage", "#chat",
+            "#silent", "#norecord", "#record", "#stage", "#unstage", "#pid", "#chat",
             "#s", "#nr", "#r", "#st", "#ust", "#c");
 
     /** Directives whose header carries an EXPRESSION (condition/iterable) — an implicit $...$ zone for styling and completion. */
@@ -433,15 +433,44 @@ public final class ChatInputStyler {
             while (word < end && !Character.isWhitespace(text.charAt(word)) && text.charAt(word) != '(') {
                 word++;
             }
-            if (!PREFIX_WORDS.contains(text.substring(i, word).toLowerCase(java.util.Locale.ROOT))) {
+            String prefix = text.substring(i, word).toLowerCase(java.util.Locale.ROOT);
+            if (!PREFIX_WORDS.contains(prefix)) {
                 return i;
             }
             i = word;
             while (i < end && Character.isWhitespace(text.charAt(i))) {
                 i++;
             }
+            if (prefix.equals("#pid")) {
+                i = skipPidArguments(text, i, end);
+            }
         }
         return i;
+    }
+
+    /**
+     * Step past {@code #pid}'s id and optional {@code replace}.
+     *
+     * <p>#pid is the one prefix that takes an ARGUMENT before the statement it
+     * runs: {@code #pid 7 #while (...)}. Without this the statement start lands
+     * on the "7", which is neither "/" nor "#", so the whole rest of the line got
+     * painted as chat and the real statement never got styled at all.
+     */
+    private static int skipPidArguments(String text, int from, int end) {
+        int i = from;
+        while (i < end && Character.isDigit(text.charAt(i))) {
+            i++;
+        }
+        if (i == from) {
+            return from; // no id typed yet
+        }
+        int afterId = skipWhitespace(text, i);
+        int wordEnd = skipWord(text, afterId);
+        if (wordEnd - afterId == "replace".length()
+                && text.regionMatches(true, afterId, "replace", 0, "replace".length())) {
+            return skipWhitespace(text, wordEnd);
+        }
+        return afterId;
     }
 
     /** The segment the cursor sits in (separator gaps count toward the segment on their left). */
