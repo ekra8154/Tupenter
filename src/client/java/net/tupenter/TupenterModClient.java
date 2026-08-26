@@ -857,7 +857,7 @@ public class TupenterModClient implements ClientModInitializer {
     }
 
     private static String scriptPreview(String line) {
-        String single = line.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();
+        String single = net.tupenter.script.Comments.flatten(line);
         return single.length() > 50 ? single.substring(0, 50) + "…" : single;
     }
 
@@ -1632,7 +1632,12 @@ public class TupenterModClient implements ClientModInitializer {
 				TupenterModClient::renderRunningHud);
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			net.tupenter.compat.TupenterConfigScreen.tickPendingRestore();
+			// both guarded: Cloth is only SUGGESTED, and neither call may be the
+			// thing that drags TupenterConfigScreen onto a classpath without it
+			if (net.tupenter.compat.ConfigScreenAccess.isAvailable()) {
+				net.tupenter.compat.ConfigScreenAccess.tickPendingOpen();
+				net.tupenter.compat.TupenterConfigScreen.tickPendingRestore();
+			}
             if (client.player == null) return;
 
             // Drain any scripts still holding statements (budget-stretched ones).
