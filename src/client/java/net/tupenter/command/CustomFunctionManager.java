@@ -218,7 +218,7 @@ public final class CustomFunctionManager {
     }
 
     private static String toSingleLine(String text) {
-        return text.replaceAll("\\s*[\\r\\n]+\\s*", " ");
+        return net.tupenter.script.Comments.flatten(text);
     }
 
     private static int firstSpace(String text) {
