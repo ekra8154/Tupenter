@@ -201,7 +201,7 @@ public final class CommandAliasManager {
 
     /** Newlines in stored definitions are formatting only — runtime always sees one line. */
     private static String toSingleLine(String text) {
-        return text.replaceAll("\\s*[\\r\\n]+\\s*", " ");
+        return net.tupenter.script.Comments.flatten(text);
     }
 
     private static int firstSpace(String text) {

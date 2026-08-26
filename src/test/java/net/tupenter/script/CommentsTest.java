@@ -179,6 +179,45 @@ class CommentsTest {
         assertTrue(error.contains("space after ##"), error);
     }
 
+    // ------------------------------------------------------------- flattening
+
+    /**
+     * A body is WRITTEN over several lines and RUN as one — the config screen
+     * collapses a row, and the tick runner collapses a script before parsing.
+     * Turning the newlines into spaces silently broke every comment: the note
+     * lost the thing that ended it and ran on to the next &&, eating the
+     * statement below. The line still parsed, so the only symptom was a
+     * variable that had never been assigned.
+     */
+    @Test
+    void aNewlineThatEndedACommentBecomesAChain() {
+        assertEquals("## set up && #set i = 0",
+                Comments.flatten("## set up\n#set i = 0"));
+        assertEquals("say one", run(Comments.flatten("## a note\n/say one")).get(0));
+    }
+
+    /** The statement below a note must survive the collapse, which is the bug. */
+    @Test
+    void collapsingKeepsEveryStatement() {
+        String body = "## first\n#local x = 5 &&\n## second\n/say $x$";
+        assertEquals(List.of("say 5"), run(Comments.flatten(body)));
+    }
+
+    /** A newline that ended nothing still collapses to a plain space. */
+    @Test
+    void ordinaryNewlinesAreStillJustSpaces() {
+        assertEquals("/say one && /say two", Comments.flatten("/say one &&\n/say two"));
+        assertEquals("#repeat 3 ( /say hi )", Comments.flatten("#repeat 3 (\n  /say hi\n)"));
+        assertEquals("/say one /say two", Comments.flatten("/say one\n/say two"),
+                "flatten only joins lines - it does not invent chaining");
+    }
+
+    /** A trailing note leaves a dangling && , which is an empty segment and skipped. */
+    @Test
+    void aTrailingNoteCollapsesHarmlessly() {
+        assertEquals(List.of("say one"), run(Comments.flatten("/say one &&\n## why")));
+    }
+
     // ---------------------------------------------------------- the run paths
 
     @Test

@@ -38,19 +38,40 @@ public final class ConfigScreenAccess {
         return FabricLoader.getInstance().isModLoaded("cloth-config");
     }
 
+    /** -1 when nothing is waiting; a tab index when an open is pending. */
+    private static int pendingTab = -1;
+
     /**
-     * Open the settings on {@code tabIndex}, or return false if Cloth is missing.
+     * Ask for the settings on {@code tabIndex}; false if Cloth is missing.
      *
-     * <p>Deferred to the next tick on purpose. A client command runs inside
-     * ChatScreen's Enter handling, which calls setScreen(null) immediately
-     * afterwards — opening synchronously would put up the screen and have chat
-     * close it a moment later.
+     * <p>The open has to happen on a LATER tick. A client command runs inside
+     * ChatScreen's Enter handling, which calls setScreen(null) right afterwards
+     * — so opening during the command puts up a screen that chat immediately
+     * closes, and the command silently appears to do nothing.
+     *
+     * <p>{@code Minecraft.execute} does not defer this. Its scheduling test is
+     * {@code runningTask() || !isSameThread()}, and during command dispatch on
+     * the render thread both are false, so the task runs INLINE — which is what
+     * made /tupenter menu and the Open Config keybind no-ops. The flag below is
+     * picked up from the client tick instead, which is genuinely later.
      */
     public static boolean open(int tabIndex) {
         if (!isAvailable()) {
             return false;
         }
-        Minecraft.getInstance().execute(() -> TupenterConfigScreen.openAtTab(tabIndex));
+        pendingTab = tabIndex;
         return true;
+    }
+
+    /** Called once per client tick; opens a screen that {@link #open} asked for. */
+    public static void tickPendingOpen() {
+        if (pendingTab < 0) {
+            return;
+        }
+        int tab = pendingTab;
+        pendingTab = -1;
+        if (isAvailable()) {
+            TupenterConfigScreen.openAtTab(tab);
+        }
     }
 }

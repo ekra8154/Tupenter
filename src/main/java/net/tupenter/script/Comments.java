@@ -184,6 +184,74 @@ public final class Comments {
         return out.toString();
     }
 
+    /**
+     * {@code text} as ONE line, with every comment still ending where it did.
+     *
+     * <p>Bodies are written over several lines and RUN as one — the config
+     * screen collapses a row to a single line, and the tick runner collapses a
+     * script before parsing it. Both did that by turning newlines into spaces,
+     * which is exactly right until a comment is involved: a note that ended at
+     * its newline suddenly has no newline, so it runs on to the next {@code &&}
+     * and swallows the statement below it. The line still parses, so the only
+     * symptom is a variable that was never assigned.
+     *
+     * <p>So a newline that ENDED a comment becomes {@code &&} rather than a
+     * space. That terminates the note exactly where it terminated before, and
+     * the empty segment it leaves behind is skipped like any other.
+     *
+     * <pre>
+     * ## set up          →   ## set up && #set i = 0     (not "## set up #set i = 0")
+     * #set i = 0
+     * </pre>
+     */
+    public static String flatten(String text) {
+        java.util.Set<Integer> endsAComment = new java.util.HashSet<>();
+        for (int[] span : spans(text)) {
+            if (span[1] < text.length() && isLineBreak(text.charAt(span[1]))) {
+                endsAComment.add(span[1]);
+            }
+        }
+
+        StringBuilder out = new StringBuilder(text.length() + 8);
+        int i = 0;
+        while (i < text.length()) {
+            char c = text.charAt(i);
+            if (!Character.isWhitespace(c)) {
+                out.append(c);
+                i++;
+                continue;
+            }
+            // a run of blanks holding at least one line break collapses to a
+            // single separator; blanks within a line are left alone
+            int j = i;
+            boolean sawBreak = false;
+            boolean chain = false;
+            while (j < text.length() && Character.isWhitespace(text.charAt(j))) {
+                if (isLineBreak(text.charAt(j))) {
+                    sawBreak = true;
+                    if (endsAComment.contains(j)) {
+                        chain = true;
+                    }
+                }
+                j++;
+            }
+            if (!sawBreak) {
+                out.append(text, i, j);
+            } else {
+                while (out.length() > 0 && Character.isWhitespace(out.charAt(out.length() - 1))) {
+                    out.setLength(out.length() - 1);
+                }
+                out.append(chain ? " && " : " ");
+            }
+            i = j;
+        }
+        return out.toString().trim();
+    }
+
+    private static boolean isLineBreak(char c) {
+        return c == '\r' || c == '\n';
+    }
+
     /** True when everything in {@code text} is comment or blank space. */
     public static boolean isOnlyComment(String text) {
         return !text.isBlank() && strip(text).isBlank();

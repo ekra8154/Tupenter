@@ -600,7 +600,7 @@ public class TupenterConfigScreen {
         }
 
         static String singleLine(String text) {
-            return text.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();
+            return net.tupenter.script.Comments.flatten(text);
         }
 
         private Component wrapLabel() {

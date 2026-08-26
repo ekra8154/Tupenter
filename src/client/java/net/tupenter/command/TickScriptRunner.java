@@ -65,7 +65,7 @@ public final class TickScriptRunner {
         if (on) {
             for (String line : TupenterConfig.INSTANCE.armedScriptLines(TupenterModClient.currentWorldKey())) {
                 // newlines are Mod Menu formatting only — a script runs as one line
-                String collapsed = line.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();
+                String collapsed = net.tupenter.script.Comments.flatten(line);
                 if (collapsed.isEmpty() || collapsed.startsWith("//")) {
                     continue;
                 }
