@@ -15,7 +15,6 @@ import net.tupenter.command.ChatInputStyler;
 import net.tupenter.config.TupenterConfig;
 import net.tupenter.script.AutoBracket;
 import net.tupenter.script.UndoHistory;
-import org.lwjgl.glfw.GLFW;
 
 /**
  * MultiLineEditBox with Tupenter script smarts (via access widener):
@@ -113,12 +112,16 @@ public class ScriptEditBox extends MultiLineEditBox {
     @Override
     public boolean keyPressed(KeyEvent event) {
         ensureHistory();
-        if (event.hasControlDown() && !event.hasShiftDown() && event.key() == GLFW.GLFW_KEY_Z) {
+        // Letter shortcuts match on shortcutKey() — the layout-aware SDL keycode,
+        // which for letters is the lowercase character — as vanilla's isCopy()
+        // does, so Ctrl+Z is the key labelled Z on AZERTY too. key() is the
+        // physical scancode and would put undo under W there.
+        if (event.hasControlDown() && !event.hasShiftDown() && event.shortcutKey() == 'z') {
             applyRestore(undoHistory.undo());
             return true;
         }
-        if (event.hasControlDown() && (event.key() == GLFW.GLFW_KEY_Y
-                || (event.hasShiftDown() && event.key() == GLFW.GLFW_KEY_Z))) {
+        if (event.hasControlDown() && (event.shortcutKey() == 'y'
+                || (event.hasShiftDown() && event.shortcutKey() == 'z'))) {
             applyRestore(undoHistory.redo());
             return true;
         }
@@ -132,7 +135,7 @@ public class ScriptEditBox extends MultiLineEditBox {
             recordUndo();
             return true;
         }
-        if (event.key() == GLFW.GLFW_KEY_BACKSPACE && autoBracketEnabled() && !this.textField.hasSelection()) {
+        if (event.key() == InputConstants.KEY_BACKSPACE && autoBracketEnabled() && !this.textField.hasSelection()) {
             AutoBracket.Edit edit = AutoBracket.onBackspace(getValue(), this.textField.cursor());
             if (edit != null) {
                 applyEdit(edit);

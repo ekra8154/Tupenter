@@ -1,5 +1,6 @@
 package net.tupenter.mixin.client;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -7,7 +8,6 @@ import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.tupenter.config.TupenterConfig;
 import net.tupenter.script.AutoBracket;
-import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -49,7 +49,7 @@ public abstract class MixinEditBox {
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void tupenter$autoBracketBackspace(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
-        if (event.key() != GLFW.GLFW_KEY_BACKSPACE || !tupenter$active()) {
+        if (event.key() != InputConstants.KEY_BACKSPACE || !tupenter$active()) {
             return;
         }
         EditBox self = (EditBox) (Object) this;

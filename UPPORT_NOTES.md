@@ -1,4 +1,4 @@
-# Tupenter — 1.21.10 → 26.2 up-port notes
+# Tupenter — 1.21.10 → 26.3 up-port notes
 
 Up-ported from the released `version/1.21.10` baseline. `main` (here, `master`)
 tracks the newest Minecraft; every older range is a git worktree beside it.
@@ -15,14 +15,15 @@ range it wasn't compiled for.
 
 | Worktree folder | Branch | MC versions | Java |
 |---|---|---|---|
-| tupenter | master | 26.2.x | 25 |
+| tupenter | master | 26.3.x | 25 |
+| tupenter-26.2.x | version/26.2.x | 26.2.x | 25 |
 | tupenter-26.1.x | version/26.1.x | 26.1.x | 25 |
 | tupenter-1.21.11 | version/1.21.11 | 1.21.11 | 21 |
 | tupenter-1.21.9-1.21.10 | version/1.21.9-1.21.10 | 1.21.9, 1.21.10 | 21 |
 | tupenter-1.21.6-1.21.8 | version/1.21.6-1.21.8 | 1.21.6, 1.21.7, 1.21.8 | 21 |
 | tupenter-1.21.5 | version/1.21.5 | 1.21.5 | 21 |
 
-Six branches covering nine Minecraft versions. Every adjacent pair breaks on
+Seven branches covering eleven Minecraft versions. Every adjacent pair breaks on
 something the mod actually touches, so no two of these ranges can share a jar —
 each boundary below was confirmed by compiling, not inferred.
 
@@ -41,6 +42,7 @@ so identical class bytes mean identical intermediary references.
 
 | MC | loader | loom | Gradle | fabric_version | modmenu | cloth_config |
 |----|--------|------|--------|----------------|---------|--------------|
+| 26.3    | 0.19.5 | 1.17.12       | 9.6.0 | 0.160.6+26.3   | 21.0.0-beta.1   | 26.3.157  |
 | 26.2    | 0.19.3 | 1.17.12       | 9.6.0 | 0.152.2+26.2   | 20.0.0-beta.3   | 26.2.155  |
 | 26.1.2  | 0.19.2 | 1.16.2        | 9.4.1 | 0.149.0+26.1.2 | 18.0.0-alpha.8  | 26.1.154  |
 | 1.21.11 | 0.18.2 | 1.14-SNAPSHOT | 9.2.1 | 0.141.3+1.21.11| 17.0.0          | 21.11.153 |
@@ -55,7 +57,9 @@ Range branches pin the *top* of their range; swap those four values to build
 another member.
 
 `fabric.mod.json` declares a loader *floor*, not the exact build version, so the
-26.2 jar says `>=0.19.2` while building against 0.19.3.
+26.2 jar says `>=0.19.2` while building against 0.19.3. The 26.3 jar says
+`>=0.19.3` — Fabric API 0.160.x itself requires that, so a lower floor would
+only advertise a loader that can never actually run it.
 
 `minecraft_support_range` is a filename label AND the source of the Fabric
 version predicate, which are different grammars: `1.21.9-1.21.10` names the jar,
@@ -111,6 +115,29 @@ Never hand-write the predicate — one property, or the jar can lie about itself
   `gui.setScreen()`, `Gui.getChat` → `gui.hud.getChat()`,
   `Gui.setOverlayMessage` → `gui.hud.setOverlayMessage()`, and `Options.hideGui`
   → `gui.hud.isHidden()`. `ColorArgument` → `TeamColorArgument`.
+- **26.2 → 26.3**: GLFW is replaced by **SDL3**. `org.lwjgl.glfw` is gone from
+  the classpath, and `InputConstants.KEY_*` are now SDL *scancodes*, not GLFW
+  key tokens (`KEY_A` 65 → 4, `KEY_SPACE` 32 → 44, `KEY_ESCAPE` 256 → 41). Key
+  constants are inlined at compile time, so this is a jar boundary even where
+  the names still match — a 26.2 jar would test the wrong keys on 26.3. Also
+  `InputConstants.Type.KEYSYM` → `KEYBOARD`, `isKeyDown(Window, int)` →
+  `isKeyDown(int)` (it indexes `SDL_GetKeyboardState` by scancode), some
+  constant names shortened (`KEY_ENTER` → `KEY_RETURN`, `KEY_LEFT_CONTROL` →
+  `KEY_LCONTROL`, `KEY_PAGE_UP` → `KEY_PAGEUP`, `KEY_GRAVE_ACCENT` →
+  `KEY_GRAVE`, …), and `KeyEvent.scancode()` → `keycode()` plus a new
+  `shortcutKey()`. Two traps:
+  - **Digits aren't contiguous from 0.** SDL orders them 1..9 then 0
+    (`KEY_1` = 30, `KEY_0` = 39), so `KEY_0 + n` compiles and reads every
+    digit one key off. `KeyStateProvider` lists them explicitly; letters and
+    F1–F12 are still contiguous.
+  - **Letter shortcuts match `shortcutKey()`, not `key()`.** `key()` is the
+    physical scancode; `shortcutKey()` is the layout-aware keycode (the
+    lowercase character for letters), which is what vanilla's `isCopy()`
+    compares. `ScriptEditBox`'s Ctrl+Z/Ctrl+Y use it so undo stays on the key
+    labelled Z on AZERTY. Positional keys (Space, Backspace, Tab) stay on `key()`.
+
+  Nothing outside input moved: every mixin target, all four `updateCommandInfo`
+  redirect call sites and the access-widener members are unchanged from 26.2.
 
 ## What was verified vs. what needs manual in-world testing
 
@@ -136,6 +163,11 @@ range**. Specific things to check:
   and Ctrl+C, the Mod Menu script editors, and the running-scripts HUD panel.
 - **1.21.11 and up**: `world.moon_phase`. Vanilla's helper is gone and the value
   is now computed locally; it should still read 0–7 with 0 = full moon.
+- **26.3 and up**: every keyboard path, since all of them now go through SDL —
+  the resend keybind (default R), `client.key.*` / `client.keypress.*`
+  (especially digits), Ctrl+Space send, Ctrl+scroll history, auto-close
+  bracket backspace in chat and the editor, and the script editor's
+  Tab/Enter/Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z.
 - **26.x**: everything that draws. The GUI rewrite touched `ChatSelection`'s
   highlight, `ScriptEditBox`'s syntax overdraw, all three Mod Menu list entries,
   and the HUD panel. These compile and the mixins apply, but pixel placement was

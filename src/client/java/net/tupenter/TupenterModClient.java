@@ -55,7 +55,6 @@ import net.tupenter.script.VariableRegistry;
 import java.util.Map;
 import java.util.Random;
 import net.tupenter.compat.ConfigScreenAccess;
-import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.platform.InputConstants;
 
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
@@ -1413,21 +1412,21 @@ public class TupenterModClient implements ClientModInitializer {
 
 		resendKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 			"key.tupenter.resend",
-			InputConstants.Type.KEYSYM,
-			GLFW.GLFW_KEY_R,
+			InputConstants.Type.KEYBOARD,
+			InputConstants.KEY_R,
 			tupenterCategory
 		));
 
 		configKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 			"key.tupenter.config",
-			InputConstants.Type.KEYSYM,
+			InputConstants.Type.KEYBOARD,
 			InputConstants.UNKNOWN.getValue(),
 			tupenterCategory
 		));
 
 		recordHistoryKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 			"key.tupenter.toggle_recording",
-			InputConstants.Type.KEYSYM,
+			InputConstants.Type.KEYBOARD,
 			InputConstants.UNKNOWN.getValue(),
 			tupenterCategory
 		));

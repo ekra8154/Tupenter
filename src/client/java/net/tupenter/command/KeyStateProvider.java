@@ -6,7 +6,6 @@ import net.minecraft.client.Minecraft;
 import net.tupenter.script.ExpressionException;
 import net.tupenter.script.Value;
 import net.tupenter.script.VariableProvider;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -41,7 +40,7 @@ public final class KeyStateProvider implements VariableProvider {
     private static final String HELD = "client.key.";
     private static final String EDGE = "client.keypress.";
 
-    /** Physical key name -> GLFW code. Arrows are *_arrow to dodge the strafe binds. */
+    /** Physical key name -> SDL scancode. Arrows are *_arrow to dodge the strafe binds. */
     private static final Map<String, Integer> PHYSICAL = buildPhysical();
 
     /** Suffixes a keypress query has asked about + their down-state as of the previous tick. */
@@ -98,8 +97,8 @@ public final class KeyStateProvider implements VariableProvider {
             return bind.isDown();
         }
         Integer code = PHYSICAL.get(suffix);
-        if (code != null && mc.getWindow() != null) {
-            return InputConstants.isKeyDown(mc.getWindow(), code);
+        if (code != null) {
+            return InputConstants.isKeyDown(code);
         }
         return false;
     }
@@ -134,48 +133,58 @@ public final class KeyStateProvider implements VariableProvider {
 
     private static Map<String, Integer> buildPhysical() {
         Map<String, Integer> keys = new LinkedHashMap<>();
+        // SDL scancodes run a..z and F1..F12 contiguously, so those two can be
+        // counted. Digits can't: SDL orders them 1..9 then 0 (KEY_1 = 30,
+        // KEY_0 = 39), so KEY_0 + n would read every digit one key off.
         for (char c = 'a'; c <= 'z'; c++) {
-            keys.put(String.valueOf(c), GLFW.GLFW_KEY_A + (c - 'a'));
+            keys.put(String.valueOf(c), InputConstants.KEY_A + (c - 'a'));
         }
-        for (char d = '0'; d <= '9'; d++) {
-            keys.put(String.valueOf(d), GLFW.GLFW_KEY_0 + (d - '0'));
-        }
+        keys.put("0", InputConstants.KEY_0);
+        keys.put("1", InputConstants.KEY_1);
+        keys.put("2", InputConstants.KEY_2);
+        keys.put("3", InputConstants.KEY_3);
+        keys.put("4", InputConstants.KEY_4);
+        keys.put("5", InputConstants.KEY_5);
+        keys.put("6", InputConstants.KEY_6);
+        keys.put("7", InputConstants.KEY_7);
+        keys.put("8", InputConstants.KEY_8);
+        keys.put("9", InputConstants.KEY_9);
         for (int f = 1; f <= 12; f++) {
-            keys.put("f" + f, GLFW.GLFW_KEY_F1 + (f - 1));
+            keys.put("f" + f, InputConstants.KEY_F1 + (f - 1));
         }
-        keys.put("space", GLFW.GLFW_KEY_SPACE);
-        keys.put("enter", GLFW.GLFW_KEY_ENTER);
-        keys.put("tab", GLFW.GLFW_KEY_TAB);
-        keys.put("backspace", GLFW.GLFW_KEY_BACKSPACE);
-        keys.put("escape", GLFW.GLFW_KEY_ESCAPE);
-        keys.put("delete", GLFW.GLFW_KEY_DELETE);
-        keys.put("insert", GLFW.GLFW_KEY_INSERT);
-        keys.put("home", GLFW.GLFW_KEY_HOME);
-        keys.put("end", GLFW.GLFW_KEY_END);
-        keys.put("page_up", GLFW.GLFW_KEY_PAGE_UP);
-        keys.put("page_down", GLFW.GLFW_KEY_PAGE_DOWN);
-        keys.put("caps_lock", GLFW.GLFW_KEY_CAPS_LOCK);
-        keys.put("left_shift", GLFW.GLFW_KEY_LEFT_SHIFT);
-        keys.put("right_shift", GLFW.GLFW_KEY_RIGHT_SHIFT);
-        keys.put("left_control", GLFW.GLFW_KEY_LEFT_CONTROL);
-        keys.put("right_control", GLFW.GLFW_KEY_RIGHT_CONTROL);
-        keys.put("left_alt", GLFW.GLFW_KEY_LEFT_ALT);
-        keys.put("right_alt", GLFW.GLFW_KEY_RIGHT_ALT);
+        keys.put("space", InputConstants.KEY_SPACE);
+        keys.put("enter", InputConstants.KEY_RETURN);
+        keys.put("tab", InputConstants.KEY_TAB);
+        keys.put("backspace", InputConstants.KEY_BACKSPACE);
+        keys.put("escape", InputConstants.KEY_ESCAPE);
+        keys.put("delete", InputConstants.KEY_DELETE);
+        keys.put("insert", InputConstants.KEY_INSERT);
+        keys.put("home", InputConstants.KEY_HOME);
+        keys.put("end", InputConstants.KEY_END);
+        keys.put("page_up", InputConstants.KEY_PAGEUP);
+        keys.put("page_down", InputConstants.KEY_PAGEDOWN);
+        keys.put("caps_lock", InputConstants.KEY_CAPSLOCK);
+        keys.put("left_shift", InputConstants.KEY_LSHIFT);
+        keys.put("right_shift", InputConstants.KEY_RSHIFT);
+        keys.put("left_control", InputConstants.KEY_LCONTROL);
+        keys.put("right_control", InputConstants.KEY_RCONTROL);
+        keys.put("left_alt", InputConstants.KEY_LALT);
+        keys.put("right_alt", InputConstants.KEY_RALT);
         // the four arrows: *_arrow keeps them distinct from the strafe binds
-        keys.put("up_arrow", GLFW.GLFW_KEY_UP);
-        keys.put("down_arrow", GLFW.GLFW_KEY_DOWN);
-        keys.put("left_arrow", GLFW.GLFW_KEY_LEFT);
-        keys.put("right_arrow", GLFW.GLFW_KEY_RIGHT);
+        keys.put("up_arrow", InputConstants.KEY_UP);
+        keys.put("down_arrow", InputConstants.KEY_DOWN);
+        keys.put("left_arrow", InputConstants.KEY_LEFT);
+        keys.put("right_arrow", InputConstants.KEY_RIGHT);
         // a few common punctuation keys
-        keys.put("minus", GLFW.GLFW_KEY_MINUS);
-        keys.put("equal", GLFW.GLFW_KEY_EQUAL);
-        keys.put("comma", GLFW.GLFW_KEY_COMMA);
-        keys.put("period", GLFW.GLFW_KEY_PERIOD);
-        keys.put("slash", GLFW.GLFW_KEY_SLASH);
-        keys.put("semicolon", GLFW.GLFW_KEY_SEMICOLON);
-        keys.put("grave", GLFW.GLFW_KEY_GRAVE_ACCENT);
-        keys.put("left_bracket", GLFW.GLFW_KEY_LEFT_BRACKET);
-        keys.put("right_bracket", GLFW.GLFW_KEY_RIGHT_BRACKET);
+        keys.put("minus", InputConstants.KEY_MINUS);
+        keys.put("equal", InputConstants.KEY_EQUALS);
+        keys.put("comma", InputConstants.KEY_COMMA);
+        keys.put("period", InputConstants.KEY_PERIOD);
+        keys.put("slash", InputConstants.KEY_SLASH);
+        keys.put("semicolon", InputConstants.KEY_SEMICOLON);
+        keys.put("grave", InputConstants.KEY_GRAVE);
+        keys.put("left_bracket", InputConstants.KEY_LBRACKET);
+        keys.put("right_bracket", InputConstants.KEY_RBRACKET);
         return keys;
     }
 }

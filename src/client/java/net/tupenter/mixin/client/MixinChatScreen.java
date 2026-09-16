@@ -54,11 +54,10 @@ public abstract class MixinChatScreen extends Screen {
     }
 
     private static boolean tupenter$ctrlHeld() {
-        com.mojang.blaze3d.platform.Window window = net.minecraft.client.Minecraft.getInstance().getWindow();
-        return window != null && (com.mojang.blaze3d.platform.InputConstants.isKeyDown(window,
+        return com.mojang.blaze3d.platform.InputConstants.isKeyDown(
                         com.mojang.blaze3d.platform.InputConstants.KEY_LCONTROL)
-                || com.mojang.blaze3d.platform.InputConstants.isKeyDown(window,
-                        com.mojang.blaze3d.platform.InputConstants.KEY_RCONTROL));
+                || com.mojang.blaze3d.platform.InputConstants.isKeyDown(
+                        com.mojang.blaze3d.platform.InputConstants.KEY_RCONTROL);
     }
 
     /**
@@ -152,7 +151,7 @@ public abstract class MixinChatScreen extends Screen {
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void tupenter$ctrlSpaceSend(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
         if (net.tupenter.config.TupenterConfig.INSTANCE.ctrlSpaceSend
-                && event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE && event.hasControlDown()) {
+                && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_SPACE && event.hasControlDown()) {
             this.handleChatInput(this.input.getValue(), true);
             this.minecraft.gui.setScreen(null);
             cir.setReturnValue(true);
