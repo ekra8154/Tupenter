@@ -410,8 +410,11 @@ public final class ScriptingReference {
             /attribute @s minecraft:jump_strength base set 30 && #wait 2t && /tp @s $client.target.blockpos$
             ```
 
-            Re-running a line cancels its own still-running instance (resend =
-            restart, not stack). Different lines run concurrently.
+            Scripts run concurrently, up to Max Concurrent Scripts (8 by
+            default), and re-running a line starts another instance alongside
+            the one still running, so it stacks rather than restarting. To keep a
+            single copy, run it under a fixed id: `#pid 7 replace <line>`
+            restarts pid 7 in place.
             `/tupenter abort` stops the lines YOU ran (armed tick scripts keep going;
             `/tupenter abort all` takes those down too, master switch included);
             `/tupenter running` lists what is
