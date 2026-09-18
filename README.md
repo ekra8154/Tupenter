@@ -1,274 +1,123 @@
 # Tupenter
 
-A client-side Fabric mod for Minecraft 1.21.10 that supercharges the chat bar:
-resend messages and commands with a keybind, and script them with chaining,
-math, variables, loops, and conditionals — all running on your client, sending
-plain vanilla commands to the server.
+Tupenter is a client-side Fabric mod that acts as a command-helper. It allows you to resend commands or messages with a keybind, use inline math and scripting, and create your own commands and scripts, with autocomplete! 
+
+It works by transforming all the custom scripting and syntax into pure vanilla commands, flattened and then sent in order to the server, if sent to the server at all. (Many pure computational scripts will only echo or show a message to the client and nothing else). All a server sees is pure /setblock commands, even if the mod is doing real compute to make it into a rainbow spiral.
 
 ## The resender
 
-Tupenter records what you send and replays it on a keybind (default `R`):
+The name comes from me always having to use the T + up + enter combo to resend commands in the past, but now, Tupenter records what you send and replays it on a keybind (default `R`):
 
-- **Press & Hold** for rapid fire, or **Toggle** for hands-free.
+- **Press & Hold** mode for rapid fire, or **Toggle** for hands-free.
 - Batch the last N messages, in either order, with per-message and per-batch
   delays, preset message lists, and command-feedback suppression.
-- Everything lives in Mod Menu → Tupenter, with a keybind to open the config.
+- The mod is highly customizable in mod menu, with a toggle and settings for almost all of the mod's features.
 
-## The scripting layer
+## Scripting
 
-*A tour follows. For the complete reference — every directive, function,
-parameter type and variable — see **[SCRIPTING.md](SCRIPTING.md)**, or run
+For the complete reference (every directive, function,
+parameter type and variable) see **[SCRIPTING.md](SCRIPTING.md)**, or run
 `/tupenter reference` in game to copy it to your clipboard.*
 
-Three things to learn:
+There are three main types of syntax this mod employs:
 
 | Syntax | Meaning |
-|---|---|
-| `$...$` | an **inline value**, evaluated before sending |
-| `#word` | a **Tupenter directive** (never sent to the server) |
-| `(...)` | **grouping**, only after a directive — literal everywhere else |
+| --- | --- |
+| `$...$` | Expressions: can be used directly inline with vanilla syntax. They get evaluated, and substituted before being sent. |
+| `#word` | Directives: instructions for Tupenter. The basis for conditionals, loops, and history modification. Never sent to the server. |
+| `(...)` | Grouping: after a directive, parentheses hold a condition or a group of statements, as in `#if (...) (...)`. Inside expressions they work like code, for function calls such as `list(...)` and `blockset(...)` and for math like `$(2 + 3) * 4$`. In plain command text they're ordinary characters. |
 
-A line is a command (`/...`), a directive (`#...`), or plain chat.
+### Chain commands
 
-### Chaining
-
-```
-/time set day && /weather clear
-```
-
-### Comments — `##`
+The simplest inline scripting and the one I use the most is chaining commands with &&. Each command gets its own brigadier autocomplete and syntax highlighting. Since it resolves before sending to the server, it is compatible with mods such as WorldEdit.
 
 ```
-## a counter that survives rejoins
-#setdefault runs = 0 &&     ## start at zero
-#set runs += 1 &&
-/say run number $runs$
+/time set day && /weather clear && /say ready
+
+//undo 2 && //replacenear 30 oak_planks spruce_planks && //replacenear 30 oak_stairs ^spruce_stairs
 ```
+
+### Commenting
+
+`##` followed by a space starts a note that never runs. It ends at the next `&&` or the end of the line, so even a one-liner can carry notes between its statements:
 
 ```
 ## bottom left && /activate 1 2 3 && ## the other one && /activate 2 3 4
 ```
 
-`##` followed by a space starts a note that never runs. It ends at the next
-`&&` or the end of its line, whichever comes first — the line ending is for
-scripts written over several lines, the `&&` ending is what lets a one-liner
-carry notes between its statements. The `&&` that ends a note is eaten with
-it, so a note cannot contain `&&`.
+### Compute inline
 
-A note may begin only where a statement could: at the start of a line, or
-right after an `&&`. Anywhere else `##` is ordinary text, so `/say ## hi`
-still says `## hi` and `##1 winner` is still a chat message.
-
-### `#wait` — pause mid-line
+Expressions allow both simple and complex math to exist directly inside normal vanilla commands.
 
 ```
-/attribute @s minecraft:jump_strength base set 30 && #wait 2t && /tp @s $client.target.blockpos$
+/give @s stick $32 + 5$
+/give @s diamond $3s$                        (s = stacks of 64)
+/summon $pick("zombie", "skeleton")$
+/tp @s ~ ~$client.pos.y > 60 ? 10 : 0$ ~
 ```
 
-`#wait 10t / 1.5s / 3d` (ticks/seconds/days, or bare ticks) pauses the
-script without freezing anything else. Scripts run **lazily**: each
-statement's `$...$` markers evaluate *when it runs*, so the `/tp` above
-reads your target block *after* the jump boost landed — not at Enter-press.
-Re-running a line cancels its still-running previous instance (resend =
-restart, not stack); different lines run concurrently; `/tupenter abort`
-stops the lines you ran and `/tupenter abort all` stops armed tick scripts
-too.
+Math is exact, `1/3` stays a third, with no floating-point drift.
 
-### Expressions — `$...$`
+Lists come in two flavours: commas compute each item, while pipes take items exactly as typed, so block and item names need no quotes.
 
 ```
-/give @s stick $32+5$                          → 37
-/give @s diamond $3s$                          → 192   (s = stacks of 64)
-/give @s stick $rand(1, 64)$                   → random amount, inclusive
-/summon $pick("zombie", "skeleton", "creeper")$    → random choice (options are expressions; quote literal text)
-/tp @s ~ ~$client.pos.y > 60 ? 10 : 0$ ~           → conditional value
-/say $client.health < 5 ? "help!" : "fine"$    → strings, comparisons
-/setblock $blockpos(raycast(50))$ torch        → snap a computed position to a block
+list(1, 2 + 3)
+list(oak_log | birch_log | spruce_log)
 ```
 
-Exact rational math (no float drift), `int(...)`/`float(...)` casts,
-`true`/`false`, `&&`/`||`/`!` in conditions. Write `\$` for a literal dollar
-sign. **Auto-detect mode** also solves bare math like `32+4` outside NBT
-braces. A bad `$...$` expression shows a local error and sends nothing.
+`/calc <expression>` prints any result locally without sending anything, which is handy for checking an expression before you use it.
 
-World reads: `block(x, y, z)` (or `block("x y z")`) returns the block id at
-a position, read from **your client's copy of the world** — no server round
-trip, no delay, so `#if`/`#else` handle "is that block air?" instantly
-(this is `/execute if block` folded into the expression world). Loaded
-chunks only. `$client.target.hit$` ("block"/"entity"/"miss") tells you
-whether the crosshair actually found something; `$client.target.blockpos$` now
-errors on a miss instead of quietly returning the ray's endpoint.
+### Read the world
+
+Over ninety live variables such as position, health, biome, light level, held item,
+what your crosshair is on, weather, the entity you're looking at, its NBT.
 
 ```
-#if ($client.target.hit$ == "block") (/tp @s $client.target.blockpos$)
-#else (/echo &cnothing in range)
+/echo standing on $block(client.blockpos.x, client.blockpos.y - 1, client.blockpos.z)$
+#if (client.target.hit == "block") (/tp @s $client.target.blockpos$)
 ```
 
-Registry sets: `blockset(#minecraft:logs)` / `itemset(#c:ores)` /
-`effectset(#...)` / `entityset(#minecraft:skeletons)` resolve a tag to its
-member list through the live
-connection's registries — no quotes needed, and typing `#` inside the
-parens tab-completes the available tags for that registry (Fabric `c:`
-convention tags included). With **no argument** you get the *entire*
-registry. Either way it's a plain list, so `rand(list)`, `len(list)`,
-`nth(list, i)`, and `#foreach` all apply:
+And many variables that aren't built in are still accessible through NBT paths directly:
 
 ```
-/setblock ~ ~-1 ~ $rand(blockset(#minecraft:logs))$
-/effect give @s $rand(effectset())$ 30 1
-#foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)
+/echo elytra damage: $entity("self", "nbt.equipment.chest.components.minecraft:damage", 0)$
+
+/echo $client.target.nbt.Health$
 ```
+Use /tupenter dump to browse the NBT tree and find the path you want.
 
-(Quoted tags still work; quote them when a tag sits right before a
-ternary's `:`.) A **concrete id** makes a one-element set —
-`blockset("stone")` is `[minecraft:stone]` — so a block-or-blockset
-parameter feeds the same functions either way, and `contains(list, v)`
-tests membership: `contains(blockset(#minecraft:logs), block(client.target.blockpos))`.
 
-`nth(list, i)` (0-based) plus the `%` operator (floored modulo) make lists
-cyclable — a custom command that steps through the wool colors, one block
-per run:
+### Variables, loops, conditionals
 
-```
-woolstep = #set $i$ = $i$ + 1 && /setblock ~ ~-1 ~ $nth(blockset("#minecraft:wool"), i % len(blockset("#minecraft:wool")))$
-```
-
-(`#set $i$ = 0` once to start it; `/tupenter var save i` keeps the counter
-across sessions.)
-
-**Vectors.** A `"x y z"` string *is* a vec3, so anything positional composes:
-`vadd` / `vsub` / `scale` / `mag` / `dist` / `normalize` / `dot` / `cross`,
-plus `vec(x, y, z)` to build one and `component(v, "x")` to read an axis.
-`client.look` is your aim as a unit vector and `client.motion` is your
-velocity, which is all the trigonometry most scripts need:
-
-```
-/summon arrow $vadd(client.eye_pos, scale(client.look, 1.5))$    → just in front of your eyes
-/echo $round(dist(client.pos, spawn))$ blocks from spawn
-```
-
-**Entities and rays.** `raycast(dist)` returns where your look hits (or
-`"miss"`), `raycast_entity(dist)` what it hits; `entities(radius[, type])`
-lists nearby UUIDs and `nearest_entity(radius[, type])` finds the closest;
-`entity(uuid, field[, fallback])` reads one — `type`, `name`, `health`,
-`pos`, `nbt.<path>`. The fallback is what keeps a tick script from faulting
-when something wanders out of range.
-
-**Is it loaded, is it running?** `block(x, y, z)` reads your client's copy
-of the world (a chunk you've never received reads as
-`"minecraft:void_air"`), while `simulated(x, y, z)` answers a different
-question: is the *server* ticking entities there? That's what governs item
-despawn, mob spawning and crop growth, and it's often a shorter radius than
-what you can see.
-
-### Lists
-
-```
-list(1, 2, 3)                     → values — arguments are expressions, computed
-list(short | tall | dry)          → text — items taken as typed, no quotes needed
-#local kinds = list(short | tall) && #foreach $k$ in kinds (/say $k$)
-```
-
-One function, two separators, and the difference is the **elements**:
-
-- **Commas compute.** `list(2 * 3, client.pos.y)` is `6` and your Y.
-- **Pipes don't.** `list(1 | 2)` holds the *strings*, so `$x + 1$` concatenates
-  to `"11"` instead of adding — but bare words need no quotes, which is the
-  whole point for a list of block or item names.
-
-Pipe items are deliberately permissive: parentheses, commas, spaces and NBT
-braces are ordinary content, so `list({Count:1b} | {id:5})` goes in raw. Use
-`\|` for a literal pipe, and quote a one-item list — `list("one two")` — since
-with no pipe there is nothing to switch on. **Parentheses never make a list;
-they only ever group.**
-
-`range(1, 10)` and the registry sets (`blockset` / `itemset` / `effectset` /
-`entityset`) are lists too, and `len` / `nth` / `indexof` / `contains` / `rand` /
-`#foreach` take any of them. `/calc` prints a list back as `list(...)` with
-quotes on the text, so you can see which elements are numbers — and paste the
-whole thing straight back.
-
-### Variables
+Tupenter allows the creation of single-send scoped variables (#local), session persistent ones (#set), cross-session saved variables with /tupenter var save \<var\>, and #setdefault, which only creates a variable if it doesn't exist yet.
 
 ```
 #set spawn = "100 64 -200"
-/tp @s $spawn$
-#setdefault i = 0 && #set i += 1   (compound assignment: += -= *= /= %=)
-#local x = rand(1, 10) && /give @s stick $x$ && /say I got $x$!
-#local c:blockpos = blockpos(-10, 20, 85) && /tp $c$    (optional type)
-```
-
-- `#set` = session (clears on join, configurable; echoes a notice);
-  `#local` = this line only, silent. `/tupenter vars` lists everything.
-  The `$` around the name is optional, and the right side is already an
-  expression — `#set i = i + 1` and `#set i = $i + 1$` both work
-  (`$...$` always evaluates its inside, everywhere).
-- **An optional type** — `#local c:blockpos = ...` — uses the same keywords a
-  custom command's `<name:type>` parameters take, on `#set` and `#setdefault`
-  too. It *checks* the value (three whole numbers, or the line stops) and tells
-  the chat bar the value's **shape before the value exists**, so `/tp $c$ `
-  keeps completing the rest of the line while you are still typing the one that
-  defines `c`. `/customcommand help types` lists the keywords.
-- `/tupenter var save <name>` promotes one to the config file forever;
-  `/tupenter var delete <name>` removes it.
-- Live client state: `$client.pos$` (+ `.x/.y/.z`), `blockpos`, `eye_pos`,
-  `look`, `yaw` `pitch` `facing` `health` `food` `air` `name` `dimension` —
-  plus environment (`biome`, `light`/`light_block`/`light_sky`,
-  `chunk_x`/`chunk_z`), movement (`motion`, `speed`, `speed_xz`, `on_ground`,
-  `sneaking`, `sprinting`, `swimming`, `flying`, `gliding`,
-  `fall_distance`), stats (`max_health`, `absorption`, `armor`,
-  `saturation`, `xp_level`, `xp_progress`), hazards (`in_water`,
-  `underwater`, `in_lava`, `on_fire`), `effects` (a list — `#foreach` it),
-  `riding`, and session (`gamemode`, `ping`, `fps`, `uuid`,
-  `selected_slot`). Computed subjects hang off their own roots:
-  `client.target.*` (`hit`, `blockpos`, `block`, `type`, `name`, `health`,
-  `uuid`), `client.held.*` / `client.offhand.*` / `client.slot.<n>.*`,
-  and `client.vehicle.*`. World state is `$world.difficulty$` `time`
-  `time_total` `day` `raining` `thundering` `moon_phase` `spawn` `min_y`
-  `max_y` `frozen` `tickrate` `key`; wall-clock is `$real.timestamp$`
-  `hour` `minute` `second` `day_of_week`. `/tupenter vars` lists every one
-  live, and `/tupenter help <name>` documents it.
-- **Events are one-tick edges** you poll, since a script *is* a loop:
-  `$client.just_died$`, `$client.just_respawned$`, `$world.just_joined$`,
-  and `$client.keypress.<key>$` each read true for exactly the tick their
-  transition happens.
-- **Everything else** via raw NBT paths: `$client.nbt.Pos.1$`,
-  `$client.nbt.Inventory.0.id$`, `$target.nbt.Health$` (entity under your
-  crosshair). Browse paths with `/tupenter dump [client|target] [path]`.
-
-### Loops and conditionals
-
-```
-#repeat 5 (/say Tick $i$!)
+#local roll = rand(1, 10) && /give @s stick $roll$ && /say I got $roll$!
+#local c:blockpos = blockpos(-10, 20, 85) && /tp $c$
+#repeat 5 (/say tick $i$)
 #for $x$ in 1..10 step 2 (/summon zombie ~$x$ ~ ~)
 #foreach $mob$ in list(zombie | skeleton | creeper) (/summon $mob$ ~ ~ ~)
-#foreach $n$ in range(1, 10) (/give @s stick $n$)
-#if ($client.pos.y$ > 60) (/say high!) #elseif ($client.pos.y$ > 30) (/say mid) #else (/say low)
+#foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)
+#if (client.health < 6) (/effect give @s regeneration 5 1)
+#setdefault runs = 0 && #set runs += 1 && /say run number $runs$
 ```
 
-Groups nest and can contain `&&` chains. Every loop is capped
-(`Max Loop Iterations`, default 100) and every script is bounded
-(`Max Commands Per Script`, default 1000; sends are throttled to
-`Max Commands Per Tick`, default 48, as kick protection). `/tupenter abort`
-stops everything.
+Registry tags resolve through the live connection, and typing `#` inside
+`blockset(...)` tab-completes the tags available on that server.
 
-### Chat-bar highlighting
+### Waits
 
-The chat input understands Tupenter while you type (toggle: *Chat Input
-Highlighting*): every `&&` segment is styled by its statement form — commands
-get vanilla-style per-argument colors from their own parse, `#directives`
-turn gold with dimmed group parens, bare chat goes yellow — `$...$` markers
-are aqua, and `&&` separators gold. Autocomplete is chain-aware too:
-`/time set day && /weather cl<tab>` completes the *second* command, and
-commands containing `$...$` markers no longer light up as errors.
+Use #wait <time> in ticks, seconds, minutes, or minecraft days to create delays between Tupenter actions. By default it counts game time, so it speeds up during /tick sprint and stops when the game is frozen or paused. Scripts evaluate lazily, meaning a value read after a #wait sees the world as it is then, not as it was when you pressed Enter.
 
-### Selectable chat
+Waiting does not prevent future commands from being run concurrently. By default, Tupenter allows 8 scripts to be running at once. /tupenter running shows all the commands and scripts that are active and their pids, and /tupenter abort <pid> lets you kill them.
 
-Click and drag across chat messages (chat open) to select text — something
-vanilla never had — then **Ctrl+C** to copy. Selections span messages
-(newlines at message boundaries, spaces at soft wraps), follow their lines
-as new messages push things up, and plain clicks still fire chat
-click-events. Toggle: *Selectable Chat Text*.
+```
+/say ready && #wait 3s && /say GO
+#wait 5m realtime && /echohud &ecows are ready to be fed!
+/echo you're at y=$client.pos.y$ && #wait 3s && /echo now you're at y=$client.pos.y$
+```
+
 
 ### Silence, privacy, local output
 
@@ -280,189 +129,104 @@ click-events. Toggle: *Selectable Chat Text*.
 #unstage 2                                       (drop the newest 2 resend-history entries)
 ```
 
-`#silent` hides command feedback on your screen (and `#set` notices) — the
-server and other players are unaffected. Works in chat, as `/#silent ...`,
-and inside custom command bodies.
+`#silent` hides things on *your* screen: the command's feedback, and the notices Tupenter prints when a `#set` creates or updates a variable. The commands still run normally, and anything other players would see still reaches them, like the feedback from a /setblock command.
 
-### Custom commands
+### Make your own commands
 
-```
-/customcommand add sunny = /time set day && /weather clear
-/sunny
-
-/customcommand add smite <target:player> = /execute at $target$ run summon lightning_bolt
-/smite Steve
-
-/customcommand add waves <count:int> <mob:word> = #repeat $count$ (/summon $mob$ ~ ~ ~)
-/waves 3 zombie
-```
-
-Typed parameters get real autocomplete prompts, bind as `$name$` or
-`$1$..$n$`, and commands added via `/customcommand` register immediately —
-no relaunch. Bodies can contain anything: chains, expressions, directives,
-other custom commands (recursion capped at 50 expansions). Edit with
-`/customcommand update <name> <body>` (signature changes re-register the
-autocomplete tree too); `add` refuses names that already exist and offers a
-clickable "update it instead".
-
-Append `=default` to make a parameter optional: `<r:int=5>`,
-`<p:pos=~ ~ ~>`. Defaults may hold `$...$` expressions, evaluated when the
-param is omitted (earlier params are visible). Strictly-typed optionals can
-even be skipped mid-command — with `<p:pos=~ ~ ~> <dim:to_overworld,to_nether=...>`,
-`/portal`, `/portal 64 64 64`, and `/portal to_nether` all work. Loose
-types (`string`/`word`/`text`) always grab the next argument, so put
-optional loose params last.
-
-Available types: `int`, `float`, `string` (the default — a word or
-`"anything quoted"`), `word`, `text` (greedy, must be last), `player`,
-`selector`, a comma list like `<dim:to_overworld,to_nether>`, plus:
-
-| Type | Input | Binds |
-|------|-------|-------|
-| `pos` | whole `x y z`, `~` ok, targeted-block tab-complete | `$p$` = `"x y z"` + `$p.x$ $p.y$ $p.z$` |
-| `vec3` | decimal `x y z`, `~` ok | same shape as `pos` |
-| `column_pos` | whole `x z`, `~` ok | `$c$` + `$c.x$ $c.z$` |
-| `rotation` | `yaw pitch`, `~` ok | `$r$` + `$r.yaw$ $r.pitch$` |
-| `angle` | one yaw, `~` ok | a number |
-| `time` | `10t` / `1.5s` / `3d` or plain ticks | ticks as a number |
-| `dimension` | dimension id, tab-completed | the id string |
-| `color` | one of the 16 chat colors, tab-completed | the color name |
-| `id` | any namespaced id | the id string |
-| `item` | item id + optional `[components]`, full registry tab-complete | verbatim text |
-| `block` | block id + optional `[states]`, full registry tab-complete | verbatim text |
-| `itemset` | item id **or** `#item_tag`, tab-completes both | verbatim text |
-| `blockset` | block id **or** `#block_tag` + optional `[states]`, tab-completes both | verbatim text |
-| `entity` | entity type id, `/summon`-style registry tab-complete | verbatim text |
-| `bool` | `true`/`false`, tab-completed | a boolean — for `#if` and ternaries |
-
-`blockset`/`itemset` mirror vanilla's block/item *predicate* arguments (the
-filter in `/fill ... replace <filter>`), so they're the right type when the
-body forwards to a command that accepts tags.
-
-### Tick scripts — the walking mcfunction file
-
-Mod Menu → Tupenter → **Scripts**: one-line scripts that run **every tick**
-while the master toggle is on. They never touch resend history, `#set`
-notices are muted, and a broken script errors once and is skipped until
-edited. `/tupenter abort all` is the panic switch (it also flips the master
-toggle off).
-
-**Arming is per world.** The tab has two sections: **Global Scripts** are
-shared definitions whose On/Off toggle arms them *for the world you're in*
-(write nukeOnDeath once, arm it only where it's funny), and **This World's
-Scripts** belong to the current world/server alone — switch worlds and the
-section shows a different list. A world you never configured runs *nothing*,
-so joining your survival server with op is safe by default. `/tupenter
-scripts` shows what's armed where you stand.
+/customcommand as well as the custom commands tab accessible through mod menu and /tupenter menu allows you to create your own commands that use vanilla commands and Tupenter syntax. They can be easily edited or removed, and will be automatically updated in Mojang's Brigadier autocomplete, meaning they are never stale.
 
 ```
-#if ($client.nbt.Health$ < 6) (/give @s totem_of_undying)
-#if ($client.pos.y$ > $maxy$) (/tp @s ~ $maxy$ ~)      ← update $maxy$ live with #set
+/customcommand add waves <count:int> <mob:entity> = #repeat $count$ (/summon $mob$ ~ ~ ~)
+/waves 5 zombie
 ```
 
-Each armed line is wrapped in a loop — literally
-`#while (true) (YOUR LINE && #wait 1t)` — so it's *one* long-running script,
-not a fresh parse each tick. That's why `#set`/`#setdefault` values persist
-across ticks (a counter keeps counting) and `#wait` composes naturally. Use
-`#setdefault` for knobs you want to retune live: it creates the variable if
-absent and leaves it alone if not, so a later `#set radius = 8` typed in
-chat wins and the loop reads the new value on its next pass.
+Here's how the pre-installed `/blink` is defined. (`add` refuses a name that already exists, so give your own version a new name, or change an existing one with `/customcommand update`.)
 
-**Fair warning**: an unguarded command in a tick script fires 20×/second —
-on a multiplayer server that is chat-spam machinery. Guard with `#if`, or
-play where `sendCommandFeedback` is off.
+```
+/customcommand add blink <maxdistance:int=100> "teleport to where you're looking" = #silent #local hit = raycast(maxdistance) && #if (hit == "miss") (/tp @s ^ ^ ^$maxdistance$) #else (/tp @s $hit$)
+```
 
-### Batteries included
+`/blink` is a real command with real autocomplete, typed parameters, and
+optional arguments. The pre-installed `/portalcalc` is another:
 
-A fresh install ships with working examples so nothing starts empty — five
-custom commands, ready to use:
+```
+/customcommand add portalcalc <p:blockpos=~ ~ ~> <dim:to_overworld,to_nether=$client.dimension == "minecraft:the_nether" ? "to_overworld" : "to_nether"$> = /echo $dim$: $floor(dim == "to_nether" ? p.x / 8 : p.x * 8)$ $p.y$ $floor(dim == "to_nether" ? p.z / 8 : p.z * 8)$
+```
+/portalcalc with no arguments tells you where your matching portal goes in the other dimension, and it figures out which way to convert from where you're standing. This one sends nothing to the server at all. /echo is Tupenter's client-side way to send messages to the sender alone and no one else.
 
-| Command | What it does |
-|---|---|
-| `/blink [maxdistance]` | teleport to where you're looking, stopping at walls |
-| `/ironkit` | a full set of iron gear |
-| `/portalcalc [pos] [dim]` | convert coordinates between the Nether and Overworld |
-| `/tickfreeze` | toggle `/tick freeze` |
-| `/launch <entity> [speed] [no_gravity]` | hurl an entity where you're looking |
-
-…and five tick scripts, all **disabled by default** — flip one on in
-Mod Menu → Scripts:
-
-| Script | What it does |
-|---|---|
-| `rainbowTunnel` | press `]` and fly: a spiralling wool tunnel follows your motion, lit by glowstone (every block is placed with `keep`, so it never overwrites a build) |
-| `itemDespawnTimer` | marks where you died and counts down your items' 5 minutes — pausing whenever that chunk isn't simulated |
-| `creeperAlert` | warns once, with the distance, when a creeper gets within 8 blocks (survival only) |
-| `elytraWarning` | a durability heads-up before your elytra gives out |
-| `restockReminder` | villagers restock at dawn |
-
-They double as documentation: read them to see vectors, events, timers, and
-edge-detection in practice.
-
-### Local calculator
-
-`/calc <expr>` evaluates anything the expression engine supports and prints
-the result without sending anything. The `/$ expr $` shorthand is top-down:
-numbers, booleans, and lists print locally like `/calc`, but a **string**
-result runs as a fresh line using the three statement forms — `"/..."` is a
-command, `"#..."` a directive, anything else plain chat. So
-`/$pick("hi", "bye")$` chats one of them, and
-`/$pick("/tp ~ ~1 ~", "/tp ~ ~-1 ~")$` teleports. (The `/` in `/$...$`
-just marks the line as script.) Resending re-rolls — history keeps the
-original `/$...$` form. pick options are expressions, so picks nest:
-`/$pick(pick("say hi", "say yo"), "say nah")$`.
-
-### Custom functions
-
-`/customfunction add <name> <params> = <expression>` defines a value function
-you call inside `$...$`, alongside the built-ins:
+There are custom *functions* too, for values you want to reuse inside `$...$`. A function computes a value and never sends anything, which is what custom commands are for:
 
 ```
 /customfunction add midpoint <a:vec3> <b:vec3> = scale(vadd(a, b), 0.5)
 /tp @s $midpoint(client.pos, spawn)$
 ```
 
-Parameters are typed like custom-command ones (a `<p:vec3>` also binds
-`p.x`/`p.y`/`p.z`), bodies may use `#if`/`#for`/`#while`/`#return` for real
-algorithms, and functions may recurse. A body computes a value — it can
-never send a command, which is what `/customcommand` is for.
+### Scripts that run every tick
 
-## Reference
+Mod Menu → Tupenter → **Scripts** holds one-line scripts that run every tick while the master toggle is on. Each armed line is wrapped in a loop, so it's one long-running script rather than a fresh parse each tick: `#set` values persist across ticks and `#wait` works naturally.
 
-**[SCRIPTING.md](SCRIPTING.md) is the complete reference** — the model, every
-directive, every built-in function, every parameter type, every variable, and
-the gotchas, in one file. It is generated from the same registries the in-game
-help reads, so it is never out of date. `/tupenter reference` copies the whole
-thing to your clipboard.
+Scripts are armed per world, so a script you wrote for creative never fires on your survival server, and a world you never configured runs nothing. `/tupenter scripts` shows what's armed where you stand, and `/tupenter abort all` is the panic switch: it stops every script and flips the master toggle off.
 
-- `/tupenter help` — in-game quick reference (every command, directive,
-  function and variable documents itself, with runnable examples)
-- `/unroll <line>` — dry-run debugger: prints what a line unrolls to,
-  color-coded by kind (command/chat/echo), without sending anything
-- `/tupenter abort` — stop the scripts you ran from chat; `/tupenter abort all`
-  also stops armed tick scripts and flips the master switch off
-- `/tupenter vars`, `/tupenter var save|delete <name>` — variable management
-- `/tupenter menu` — the settings screen from chat; add `customcommands` or
-  `scripts` to land on that tab
-- Every feature has an on/off toggle in Mod Menu → Tupenter → Scripting.
-
-## Development
+Since a script is a loop, events are one-tick flags you test:
 
 ```
-gradlew build      # builds the mod + runs the unit test suite
-gradlew test       # parser/evaluator/executor tests (600+)
-gradlew runClient  # dev-launch the client
+#if (client.just_died) (/echo died at $client.blockpos$)
+#if (client.keypress.g) (/togglenightvision)
 ```
 
-The scripting core (`net.tupenter.script`) is deliberately free of any
-Minecraft import, so the language is testable as plain Java — the suite
-covers it to 90% branches, and the help screens are generated from doc
-registries that the tests check against the real implementation, so
-documentation can't drift from behaviour without failing the build.
+**Warning for using scripts**: an unguarded command in a tick script will fire 20 times a second, which on a multiplayer server is chat spam. Guard it with `#if`, like the examples above.
 
-Design notes live in [docs/SCRIPTING_DESIGN.md](docs/SCRIPTING_DESIGN.md).
+## Pre-provided commands and scripts
+
+After downloading the mod, it will already be supplied with a list of both custom commands and scripts. These are ones that I consider useful or fun, and demonstrate many aspects of the mod's functionality. They can be easily deleted or removed, and the scripts are disabled by default.
+
+**Commands, ready to use:**
+
+| Command | What it does |
+| --- | --- |
+| `/blink [maxdistance]` | teleport to where you're looking, stopping at walls |
+| `/ironkit` | a full set of iron gear |
+| `/portalcalc [pos] [dim]` | convert coordinates between Nether and Overworld |
+| `/tickfreeze` | toggle `/tick freeze` |
+| `/launch <entity> [speed] [no_gravity]` | hurl an entity where you're looking |
+
+**Scripts, all disabled until you turn them on:**
+
+| Script | What it does |
+| --- | --- |
+| `rainbowTunnel` | press `]` and fly, and a spiralling wool tunnel follows your motion, lit by glowstone |
+| `itemDespawnTimer` | marks where you died and counts down your items' five minutes, pausing whenever that chunk isn't being simulated |
+| `creeperAlert` | warns once, with the distance, when a creeper gets within 8 blocks |
+| `elytraWarning` | a durability heads-up before your elytra gives out |
+| `restockReminder` | villagers restock at dawn |
+
+
+## Quality of life
+
+- **Chat-bar syntax highlighting**: each `&&` segment is coloured by what it is;
+  commands get per-argument colouring from their own parse
+- **Chain-aware autocomplete**: `/time set day && /weather cl⇥` completes the
+  *second* command
+- **Selectable chat**: click and drag across messages, Ctrl+C to copy
+- **`/unroll`**: dry-run any line and see exactly what it would send, without
+  sending it
+- **`/tupenter vars`** lists your variables, and `/tupenter var save|delete <name>`
+  manages the saved ones
+- **`/tupenter menu`** opens the settings screen from chat; add `customcommands`
+  or `scripts` to land on that tab
+- Every feature has an on/off switch in Mod Menu
+
+## Documentation
+
+- `/tupenter help`: Every command, directive, function and variable documents
+  itself in game, with runnable examples
+- `/tupenter reference`: Copies the **entire** reference to your clipboard
+- [SCRIPTING.md](https://github.com/ekra8154/Tupenter/blob/master/SCRIPTING.md): 
+  the same reference on GitHub: the model, every directive, every function, every
+  parameter type, every variable, and the gotchas
+
+The documentation is generated from the same registries the code uses, so it cannot drift out of date as I update the mod.
 
 ## License
 
-[MIT](LICENSE) — use it, fork it, ship it in a modpack; just keep the
-copyright notice.
+License is [MIT](LICENSE)
