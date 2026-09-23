@@ -112,16 +112,19 @@ public abstract class MixinChatScreen extends Screen {
         net.tupenter.TupenterModClient.endUserDrivenSend();
     }
 
+    // The left button is MOUSE_BUTTON_LEFT, not a literal 0: on 26.3 SDL
+    // numbers the buttons 1/3 where GLFW used 0/1, so a hardcoded 0 silently
+    // stops matching and chat selection never starts.
     @Inject(method = "mouseClicked", at = @At("HEAD"))
     private void tupenter$selectionStart(MouseButtonEvent event, boolean doubleClick, CallbackInfoReturnable<Boolean> cir) {
-        if (event.button() == 0) {
+        if (event.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT) {
             ChatSelection.onMouseDown(this.minecraft, event.x(), event.y());
         }
     }
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-        if (event.button() == 0) {
+        if (event.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT) {
             ChatSelection.onMouseDrag(this.minecraft, event.x(), event.y());
         }
         return super.mouseDragged(event, dragX, dragY);
@@ -129,7 +132,7 @@ public abstract class MixinChatScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
-        if (event.button() == 0) {
+        if (event.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT) {
             ChatSelection.onMouseUp();
         }
         return super.mouseReleased(event);
