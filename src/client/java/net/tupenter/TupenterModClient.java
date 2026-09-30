@@ -826,20 +826,26 @@ public class TupenterModClient implements ClientModInitializer {
         }
         if (key != null && !config.scriptNames(key).isEmpty()) {
             context.getSource().sendFeedback(Component.literal(
-                    "Toggle a named one: /tupenter scripts enable|disable <name> (no name = master on/off) · stop a running one: /tupenter abort <id|name>")
+                    "Toggle a named one: /tupenter enable|disable <name> (no name = master on/off) · stop a running one: /tupenter abort <id|name>")
                     .withStyle(ChatFormatting.DARK_GRAY));
         }
 
         int armedCount = key == null ? 0 : config.armedScriptLines(key).size();
-        String verdict;
+        net.minecraft.network.chat.MutableComponent verdict;
         if (key == null) {
-            verdict = "Not in a world — nothing runs.";
+            verdict = Component.literal("Not in a world, so nothing runs.").withStyle(ChatFormatting.YELLOW);
         } else if (!config.tickScriptsEnabled) {
-            verdict = armedCount + " armed here, but the master switch is OFF. /tupenter scripts enable";
+            verdict = Component.literal(armedCount + " armed here, but the master switch is OFF. ")
+                    .withStyle(ChatFormatting.YELLOW)
+                    .append(suggestLink("[enable them]", "/tupenter enable"));
         } else {
-            verdict = armedCount + " running here, 20x/second." + (armedCount == 0 ? " This world is safe." : "");
+            verdict = Component.literal(armedCount + " running here, 20x/second."
+                    + (armedCount == 0 ? " This world is safe." : " ")).withStyle(ChatFormatting.YELLOW);
+            if (armedCount > 0) {
+                verdict.append(suggestLink("[disable them]", "/tupenter disable"));
+            }
         }
-        context.getSource().sendFeedback(Component.literal(verdict).withStyle(ChatFormatting.YELLOW));
+        context.getSource().sendFeedback(verdict);
         return 1;
     }
 
@@ -910,11 +916,16 @@ public class TupenterModClient implements ClientModInitializer {
                     .withStyle(ChatFormatting.GRAY));
             return 1;
         }
-        String note = enable && !TupenterConfig.INSTANCE.tickScriptsEnabled
-                ? " Master is OFF — /tupenter scripts enable to run it." : "";
-        context.getSource().sendFeedback(Component.literal(
-                verb + " '" + name + "' (" + scope + ")." + note)
-                .withStyle(ChatFormatting.YELLOW));
+        net.minecraft.network.chat.MutableComponent line = Component.literal(
+                verb + " '" + name + "' (" + scope + ").").withStyle(ChatFormatting.YELLOW);
+        // Arming a script while the master is off is the one case where the
+        // thing you just did has no effect yet, so hand over the fix as a click
+        // rather than a sentence to retype.
+        if (enable && !TupenterConfig.INSTANCE.tickScriptsEnabled) {
+            line.append(Component.literal(" Tick scripts are OFF: ").withStyle(ChatFormatting.GRAY))
+                    .append(suggestLink("[enable them]", "/tupenter enable"));
+        }
+        context.getSource().sendFeedback(line);
         return 1;
     }
 
@@ -1482,6 +1493,24 @@ public class TupenterModClient implements ClientModInitializer {
                                             .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_ALIASES)))
                                     .then(literal("scripts")
                                             .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_SCRIPTS))))
+                            // Shortcut for the tab people open most: /tupenter
+                            // scripts is already taken by the armed-script
+                            // status, so only this one gets a bare spelling.
+                            .then(literal("customcommands")
+                                    .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_ALIASES)))
+                            // Bare shortcuts for the two verbs you reach for most.
+                            // Same meaning as under "scripts": a name arms that
+                            // script here, no name is the master switch.
+                            .then(literal("enable")
+                                    .executes(context -> runScriptsMasterCommand(context, true))
+                                    .then(argument("name", StringArgumentType.word())
+                                            .suggests(TupenterModClient::suggestScriptNames)
+                                            .executes(context -> runSetArmedByName(context, true))))
+                            .then(literal("disable")
+                                    .executes(context -> runScriptsMasterCommand(context, false))
+                                    .then(argument("name", StringArgumentType.word())
+                                            .suggests(TupenterModClient::suggestScriptNames)
+                                            .executes(context -> runSetArmedByName(context, false))))
                             .then(literal("reference")
                                     .executes(TupenterModClient::runReferenceCommand))
                             .then(literal("vars")
@@ -2817,7 +2846,7 @@ public class TupenterModClient implements ClientModInitializer {
         helpLine(navRow("flow", "&& chains, #repeat, #for, #foreach, #if/#elseif, #while", "/tupenter help flow"));
         helpLine(navRow("prefixes", "#silent, #norecord, #stage, /echo", "/tupenter help prefixes"));
         helpLine(navRow("scripts", "the every-tick Scripts tab", "/tupenter help scripts"));
-        helpLine(navRow("/tupenter menu", "open the settings — add customcommands or scripts to land on that tab", "/tupenter menu"));
+        helpLine(navRow("/tupenter menu", "open the settings; add customcommands or scripts to land on that tab (/tupenter customcommands is a shortcut)", "/tupenter menu"));
         helpLine("§8Anything by name: /tupenter help <command | function | directive | variable> — e.g. help echo, help blockset, help local");
         helpLine(Component.literal("Quick taste: ").withStyle(ChatFormatting.GRAY).append(suggestLink(taste, taste)));
         endHelpPage();
