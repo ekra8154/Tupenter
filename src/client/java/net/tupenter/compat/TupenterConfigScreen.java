@@ -690,30 +690,76 @@ public class TupenterConfigScreen {
 
         /**
          * The entry list never tells OTHER rows to unfocus, so clicking a
-         * second box used to leave two blinking cursors. Any click anywhere
-         * on a row first blurs every editor box, then normal handling
-         * focuses the one actually hit.
+         * second box used to leave two blinking cursors. Vanilla handles the
+         * click first (focusing whatever it hit), then every OTHER row is
+         * cleared, which leaves exactly one live cursor.
+         *
+         * <p>Deliberately no hit-testing: an earlier version blurred by mouse
+         * position and skipped the box under the cursor, but a hit test that
+         * missed by a pixel stranded the very box being clicked. The parent's
+         * setFocused(child) returns early when that child is already its
+         * focused one, so nothing undid the blur, and the caret stayed hidden
+         * until you clicked a different box. Rows with leading widgets (the
+         * scripts tab, whose box shifts as the On/Off and ! buttons come and
+         * go) hit that constantly. Never touching the clicked row's boxes
+         * removes the failure mode rather than narrowing it.
          */
         @Override
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            blurEditorBoxesExceptAt(mouseX, mouseY);
-            return super.mouseClicked(mouseX, mouseY, button);
+            boolean handled = super.mouseClicked(mouseX, mouseY, button);
+            blurEditorBoxesExcept(this);
+            return handled;
+        }
+
+        /** The box this row had when it was last told to unfocus; see setFocused(boolean). */
+        private net.minecraft.client.gui.components.events.GuiEventListener focusBeforeBlur;
+
+        /**
+         * Survive Cloth's subcategory re-focusing us. The script rows live inside
+         * a Cloth subcategory, and its setFocused(child) has no "already
+         * focused" check: clicking a row it already has focused calls
+         * row.setFocused(false) then row.setFocused(true). For a container,
+         * false means "drop your focused child" and true does nothing at all,
+         * so the second click on a script box left the row with NO focused
+         * child: no caret, keystrokes going nowhere,
+         * and every further click repeating it. Custom-command rows sit
+         * directly in the list, whose setFocused does have the check, which is
+         * why only the scripts tab broke.
+         *
+         * <p>So remember the child on false, and hand it back when true arrives
+         * with nothing focused. A genuine move to another row only ever sends
+         * false, so this row stays blurred then.
+         */
+        @Override
+        public void setFocused(boolean focused) {
+            if (focused) {
+                if (getFocused() == null && focusBeforeBlur != null) {
+                    setFocused(focusBeforeBlur);
+                }
+                focusBeforeBlur = null;
+            } else {
+                focusBeforeBlur = getFocused();
+                setFocused((net.minecraft.client.gui.components.events.GuiEventListener) null);
+            }
         }
 
         /**
-         * Blur this row's boxes UNLESS the click landed in one. Blurring the box
-         * that is about to be clicked strands it: the parent's setFocused(child)
-         * returns early when that child is already its focused one, so it never
-         * calls setFocused(true) to undo our blur. The caret then stays hidden
-         * and the box ignores drag-selection until you click a different box.
+         * Give up focus and any highlight in this row's boxes, THROUGH the row.
+         * Calling box.setFocused(false) directly left the row still believing
+         * that box was its focused child, so the next click on it hit the
+         * row's "already focused" early return and never called
+         * setFocused(true). On 26.3 that is doubly fatal: setFocused is also
+         * what starts and stops SDL text input, so the box stayed caretless
+         * AND deaf to typing until focus went somewhere else and came back.
          */
-        void blurBoxesExceptAt(double mouseX, double mouseY) {
-            if (!singleBox.isMouseOver(mouseX, mouseY)) {
-                singleBox.setFocused(false);
-                dropSelection(singleBox);
+        void blurBoxes() {
+            if (getFocused() != null) {
+                setFocused(null);
             }
-            if (multiBox != null && !multiBox.isMouseOver(mouseX, mouseY)) {
-                multiBox.setFocused(false);
+            blurStray(singleBox);
+            dropSelection(singleBox);
+            if (multiBox != null) {
+                blurStray(multiBox);
                 dropSelection(multiBox);
             }
         }
@@ -834,9 +880,13 @@ public class TupenterConfigScreen {
             }
         }
 
-        void blurBoxExceptAt(double mouseX, double mouseY) {
-            if (box != null && !box.isMouseOver(mouseX, mouseY)) {
-                box.setFocused(false);
+        /** Same as WrapRowEntry.blurBoxes: unfocus through the row, not the box. */
+        void blurBox() {
+            if (getFocused() != null) {
+                setFocused(null);
+            }
+            if (box != null) {
+                blurStray(box);
                 dropSelection(box);
             }
         }
@@ -856,8 +906,9 @@ public class TupenterConfigScreen {
 
         @Override
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            blurEditorBoxesExceptAt(mouseX, mouseY);
-            return super.mouseClicked(mouseX, mouseY, button);
+            boolean handled = super.mouseClicked(mouseX, mouseY, button);
+            blurEditorBoxesExcept(this);
+            return handled;
         }
 
         private List<net.minecraft.client.gui.components.AbstractWidget> allWidgets() {
@@ -940,22 +991,41 @@ public class TupenterConfigScreen {
     }
 
     /**
-     * Exactly one editor cursor at a time, across every row and both tabs --
-     * but never blur the box the click actually landed in. See
-     * blurBoxesExceptAt for why blurring the clicked box strands it.
+     * Exactly one editor cursor at a time, across every row and both tabs. The
+     * row that was clicked keeps whatever vanilla just focused; every other one
+     * is cleared. See WrapRowEntry.mouseClicked for why the clicked row is left
+     * strictly alone.
      */
-    private static void blurEditorBoxesExceptAt(double mouseX, double mouseY) {
+    /**
+     * A box that is still focused after its row let go of it (a row that never
+     * tracked it, or an entry base class that clears the reference without
+     * unfocusing the child). Only touches a box that really is focused, so an
+     * idle box never sends a stray "stop text input".
+     */
+    private static void blurStray(net.minecraft.client.gui.components.AbstractWidget box) {
+        if (box.isFocused()) {
+            box.setFocused(false);
+        }
+    }
+
+    private static void blurEditorBoxesExcept(Object clickedRow) {
         for (WrapRowEntry row : commandRows) {
-            row.blurBoxesExceptAt(mouseX, mouseY);
+            if (row != clickedRow) {
+                row.blurBoxes();
+            }
         }
         for (WrapRowEntry row : globalScriptRows) {
-            row.blurBoxesExceptAt(mouseX, mouseY);
+            if (row != clickedRow) {
+                row.blurBoxes();
+            }
         }
         for (WrapRowEntry row : worldScriptRows) {
-            row.blurBoxesExceptAt(mouseX, mouseY);
+            if (row != clickedRow) {
+                row.blurBoxes();
+            }
         }
-        if (presetBox != null) {
-            presetBox.blurBoxExceptAt(mouseX, mouseY);
+        if (presetBox != null && presetBox != clickedRow) {
+            presetBox.blurBox();
         }
     }
 
