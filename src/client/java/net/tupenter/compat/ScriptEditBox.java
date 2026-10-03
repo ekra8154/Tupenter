@@ -157,12 +157,22 @@ public class ScriptEditBox extends MultiLineEditBox {
     }
 
     /**
-     * When the box is already at its scroll limit (or too short to scroll),
-     * don't swallow the wheel — let the Mod Menu page scroll instead. Vanilla
-     * consumes every scroll while hovered, which traps you inside the editor.
+     * The wheel belongs to the page unless you are editing this box. Vanilla
+     * consumes every scroll while hovered, so each expanded editor the cursor
+     * crossed ate a notch (even one with only its padding left to scroll),
+     * and a page with a few of them scrolled in fits and felt slow. Cloth
+     * also offers the wheel to every visible row, not just the hovered one,
+     * which made it worse.
+     *
+     * <p>So an unfocused box never takes it, and a focused one gives it back at
+     * its top and bottom, so scrolling past the end of what you're editing
+     * carries on down the page.
      */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (!isFocused()) {
+            return false;
+        }
         boolean atTop = scrollAmount() <= 0.0;
         boolean atBottom = scrollAmount() >= maxScrollAmount();
         if ((scrollY > 0 && atTop) || (scrollY < 0 && atBottom)) {
