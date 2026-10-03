@@ -855,9 +855,15 @@ public class TupenterModClient implements ClientModInitializer {
         TupenterConfig.save();
         String key = currentWorldKey();
         int armed = key == null ? 0 : TupenterConfig.INSTANCE.armedScriptLines(key).size();
-        context.getSource().sendFeedback(Component.literal(on
-                ? "Tick scripts ON — " + armed + " armed in this world now running (per-script arming unchanged)."
-                : "Tick scripts OFF — all paused (still armed; /tupenter scripts enable resumes them).").withStyle(ChatFormatting.YELLOW));
+        if (on) {
+            context.getSource().sendFeedback(Component.literal(
+                    "Tick scripts ON: " + armed + " armed in this world now running (per-script arming unchanged).")
+                    .withStyle(ChatFormatting.YELLOW));
+        } else {
+            context.getSource().sendFeedback(Component.literal(
+                    "Tick scripts OFF: all paused, still armed. ").withStyle(ChatFormatting.YELLOW)
+                    .append(suggestLink("[enable them]", "/tupenter enable")));
+        }
         return 1;
     }
 
@@ -889,13 +895,13 @@ public class TupenterModClient implements ClientModInitializer {
         String name = StringArgumentType.getString(context, "name");
         String worldKey = currentWorldKey();
         if (worldKey == null) {
-            context.getSource().sendFeedback(Component.literal("Not in a world — nothing to arm.").withStyle(ChatFormatting.GRAY));
+            context.getSource().sendFeedback(Component.literal("Not in a world, so there is nothing to arm.").withStyle(ChatFormatting.GRAY));
             return 0;
         }
         java.util.List<TupenterConfig.ScriptRef> matches = TupenterConfig.INSTANCE.scriptsByName(worldKey, name);
         if (matches.isEmpty()) {
             context.getSource().sendFeedback(Component.literal(
-                    "No tick script named '" + name + "' here — /tupenter scripts lists names, /tupenter running lists ids (only named scripts toggle by name).")
+                    "No tick script named '" + name + "' here. /tupenter scripts lists names, /tupenter running lists ids (only named scripts toggle by name).")
                     .withStyle(ChatFormatting.GRAY));
             return 0;
         }
@@ -910,17 +916,15 @@ public class TupenterModClient implements ClientModInitializer {
         }
         long globals = matches.stream().filter(TupenterConfig.ScriptRef::global).count();
         String scope = scopeLabel(globals, matches.size() - globals);
-        if (changed == 0) {
-            context.getSource().sendFeedback(Component.literal(
-                    "'" + name + "' is already " + (enable ? "enabled" : "off") + " (" + scope + ").")
-                    .withStyle(ChatFormatting.GRAY));
-            return 1;
-        }
-        net.minecraft.network.chat.MutableComponent line = Component.literal(
-                verb + " '" + name + "' (" + scope + ").").withStyle(ChatFormatting.YELLOW);
-        // Arming a script while the master is off is the one case where the
-        // thing you just did has no effect yet, so hand over the fix as a click
-        // rather than a sentence to retype.
+        net.minecraft.network.chat.MutableComponent line = changed == 0
+                ? Component.literal("'" + name + "' is already " + (enable ? "enabled" : "off") + " (" + scope + ").")
+                        .withStyle(ChatFormatting.GRAY)
+                : Component.literal(verb + " '" + name + "' (" + scope + ").").withStyle(ChatFormatting.YELLOW);
+        // Enabling a script while the master is off is the one case where the
+        // thing you asked for has no effect yet, so hand over the fix as a click
+        // rather than a sentence to retype. That holds whether or not this call
+        // changed anything: "already enabled" with scripts off is the same
+        // dead end, and the one more likely to confuse.
         if (enable && !TupenterConfig.INSTANCE.tickScriptsEnabled) {
             line.append(Component.literal(" Tick scripts are OFF: ").withStyle(ChatFormatting.GRAY))
                     .append(suggestLink("[enable them]", "/tupenter enable"));
