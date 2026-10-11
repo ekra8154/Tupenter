@@ -60,6 +60,16 @@ public class TupenterConfig {
     public boolean autoCloseBrackets = false;
     /** Ctrl+scroll in the chat bar steps through sent-message history instead of scrolling chat. */
     public boolean ctrlScrollHistory = true;
+    /**
+     * Keep # directive lines in the up-arrow history across restarts. Vanilla
+     * only saves lines that start with "/" to command_history.txt.
+     */
+    public boolean saveDirectiveHistory = true;
+    /**
+     * The Scripts tab's "About tick scripts" section: 0 = never opened (show it
+     * expanded once), 1 = keep expanded, 2 = keep collapsed.
+     */
+    public int scriptsHelpState = 0;
     /** Ctrl+Space in the chat bar submits the line (a mouse-hand-friendly manual send). */
     public boolean ctrlSpaceSend = true;
     public boolean lazyExecutionEnabled = true;
@@ -388,6 +398,8 @@ public class TupenterConfig {
                     INSTANCE.chatSelectionEnabled = loaded.chatSelectionEnabled;
                     INSTANCE.autoCloseBrackets = loaded.autoCloseBrackets;
                     INSTANCE.ctrlScrollHistory = loaded.ctrlScrollHistory;
+                    INSTANCE.scriptsHelpState = clamp(loaded.scriptsHelpState, 0, 2, 0);
+                    INSTANCE.saveDirectiveHistory = loaded.saveDirectiveHistory;
                     INSTANCE.ctrlSpaceSend = loaded.ctrlSpaceSend;
                     INSTANCE.lazyExecutionEnabled = loaded.lazyExecutionEnabled;
                     INSTANCE.chatInputLength = clamp(loaded.chatInputLength, 256, 32766, 256);
