@@ -501,9 +501,10 @@ public final class ScriptingReference {
             - An error reports once and pauses that script until it is edited or
               re-enabled.
 
-            **Arming is per world.** Global scripts are shared definitions you
-            arm world-by-world; This World's scripts exist only where you made
-            them. A world you never configured runs nothing.
+            **Arming is per world.** Each script is either Global, a shared
+            definition you arm world-by-world, or World, which exists only where
+            you made it. The Global/World button beside a script's On/Off moves
+            it between the two. A world you never configured runs nothing.
 
             Give a script a name by starting it with `name =`, then toggle it
             from chat with `/tupenter scripts enable|disable <name>`.
