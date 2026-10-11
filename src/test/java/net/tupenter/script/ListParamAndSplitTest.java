@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -165,6 +166,71 @@ class ListParamAndSplitTest {
     @Test
     void theFallbackIsOnlyInsideList() {
         assertThrows(IllegalArgumentException.class, () -> eval("max(stone, 1)"));
+    }
+
+    // ---- edges ----
+
+    @Test
+    void splitRejectsTheWrongNumberOfArguments() {
+        assertThrows(ExpressionException.class, () -> eval("split()"));
+        assertThrows(ExpressionException.class, () -> eval("split(\"a\", \"b\", \"c\")"));
+    }
+
+    @Test
+    void whatCountsAsABareWord() {
+        assertTrue(ListLiteral.isBareWord("_x1"));
+        assertTrue(ListLiteral.isBareWord("minecraft:dirt"));
+        assertFalse(ListLiteral.isBareWord(""));
+        assertFalse(ListLiteral.isBareWord("TRUE"), "booleans stay booleans");
+        assertFalse(ListLiteral.isBareWord("3s"), "a digit first is a number");
+        assertFalse(ListLiteral.isBareWord("a.b"), "a dotted name is a variable read");
+    }
+
+    @Test
+    void aBareWordMayHaveSpaceBeforeItsComma() {
+        assertEquals(List.of("a", "b"), items(eval("list(a , b )")));
+    }
+
+    @Test
+    void anUntakenBranchSkipsItsListWithoutEvaluating() {
+        assertEquals("1", eval("false ? list(nope, nada) : 1").displayString());
+    }
+
+    @Test
+    void listArgumentLengthEdges() {
+        assertEquals(0, ScriptParser.listArgumentLength(""));
+        assertEquals("(a)".length(), ScriptParser.listArgumentLength("(a) x"), "no name: one plain token");
+        assertEquals("list(a b".length(), ScriptParser.listArgumentLength("list(a b"), "unclosed takes the rest");
+        assertEquals("list(\"a\\\")\")".length(), ScriptParser.listArgumentLength("list(\"a\\\")\") x"),
+                "an escaped quote inside a string doesn't end it");
+    }
+
+    @Test
+    void aListParamReportsABrokenExpressionAsItself() {
+        String message = error("replacenearmult 5 list(1 +)", REPLACE);
+        assertFalse(message.contains("must be a list"), message);
+    }
+
+    @Test
+    void aListParamRejectsAComputedNonList() {
+        String message = error("replacenearmult 5 max(1, 2)", REPLACE);
+        assertTrue(message.contains("must be a list"), message);
+    }
+
+    @Test
+    void aListParamTakesAVariableHoldingAList() {
+        Map<String, String> aliases = Map.of("each", "<xs:list> = #foreach $x$ in xs (/say $x$)");
+        assertEquals(List.of("say a", "say b"),
+                stripSlashes(sends("#local mine = list(a | b) && /each mine", aliases)));
+    }
+
+    @Test
+    void tickLoopHoistingEdges() {
+        assertEquals("#record #while (1 > 0) (/say hi && #wait 1t)", ScriptParser.tickLoopLine("#r /say hi"));
+        assertEquals("#while (1 > 0) (#if (1 > 0) (/say hi) && #wait 1t)",
+                ScriptParser.tickLoopLine("#if (1 > 0) (/say hi)"), "only line modifiers move");
+        assertEquals("#while (1 > 0) (#silent && #wait 1t)", ScriptParser.tickLoopLine("#silent"),
+                "a bare #silent with nothing after stays put, so the parser reports it");
     }
 
     private static List<String> items(Value value) {
