@@ -8,6 +8,7 @@
 		"MixinCommandSuggestions",
 		"MixinClientSuggestionProvider",
 		"ChatComponentAccessor",
+		"MixinChatComponentHistory",
 		"MixinChatScreen",
 		"EditBoxAccessor",
 		"MixinEditBox"
