@@ -528,6 +528,7 @@ final class ExpressionEvaluator {
                 case "lower" -> new Value.StringValue(single(args, "lower").displayString().toLowerCase(java.util.Locale.ROOT));
                 case "substr" -> substr(args);
                 case "replace" -> replace(args);
+                case "split" -> split(args);
                 case "randf" -> randf(args);
                 // trig takes DEGREES — Minecraft rotations (client.yaw/pitch) are degrees
                 case "sin" -> mathFunction("sin", args, degrees -> Math.sin(Math.toRadians(degrees)));
@@ -679,6 +680,37 @@ final class ExpressionEvaluator {
                 throw new ExpressionException("replace(...): the text to find can't be empty");
             }
             return new Value.StringValue(args.get(0).displayString().replace(find, args.get(2).displayString()));
+        }
+
+        /**
+         * split(text[, separator]): text into a list. With no separator it
+         * splits on runs of whitespace; with one, on that exact text. Every
+         * piece is trimmed and empty pieces are dropped, so "a ^b | c ^d" split
+         * on "|" is the two pairs, not pairs with stray spaces.
+         */
+        private Value split(List<Value> args) {
+            if (args.isEmpty() || args.size() > 2) {
+                throw new ExpressionException("split(text[, separator]) takes the text, and optionally what to split on");
+            }
+            String text = args.get(0).displayString();
+            String[] pieces;
+            if (args.size() == 1) {
+                pieces = text.trim().split("\\s+");
+            } else {
+                String separator = args.get(1).displayString();
+                if (separator.isEmpty()) {
+                    throw new ExpressionException("split(...): the separator can't be empty");
+                }
+                pieces = text.split(java.util.regex.Pattern.quote(separator), -1);
+            }
+            List<Value> values = new ArrayList<>();
+            for (String piece : pieces) {
+                String trimmed = piece.trim();
+                if (!trimmed.isEmpty()) {
+                    values.add(Value.of(trimmed));
+                }
+            }
+            return new Value.ListValue(values);
         }
 
         /** nth(list, i) — 0-based element access; pairs with % for cycling. */
@@ -1558,7 +1590,7 @@ final class ExpressionEvaluator {
             String best = null;
             int bestDistance = 3; // suggest only within edit distance 2
             List<String> candidates = new ArrayList<>(context.variables().names());
-            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains", "indexof", "trim", "upper", "lower", "substr", "replace", "raycast", "raycast_block"));
+            candidates.addAll(List.of("rand", "pick", "int", "float", "true", "false", "itemset", "blockset", "effectset", "entityset", "block", "nth", "contains", "indexof", "trim", "upper", "lower", "substr", "replace", "split", "raycast", "raycast_block"));
             for (String candidate : candidates) {
                 int distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
                 if (distance < bestDistance) {

@@ -243,6 +243,13 @@ public final class BuiltinFunctions {
                         "/calc replace(\"oak_log\", \"oak\", \"birch\")",
                         "/echo holding $replace(client.held.id, \"minecraft:\", \"\")$",
                         "§7All occurrences,§r plain-text matching. The text to find can't be empty."),
+                doc("split", Group.TEXT, "split(text[, separator])",
+                        "text into a list: on spaces, or on the separator you give",
+                        "/calc split(\"oak birch  spruce\")",
+                        "#foreach $p$ in split(\"stone ^dirt | sand ^gravel\", \"|\") (/echo $p$)",
+                        "§7Trimmed, no empties:§r each piece loses the spaces around it and empty pieces are dropped, so splitting \"a b | c d\" on \"|\" gives a b and c d.",
+                        "§7The separator is plain text,§r not a pattern, and can't be empty. Leave it out to split on spaces.",
+                        "§7For custom commands:§r a <pairs:text> param plus split(pairs, \"|\") turns one argument into a list. A <name:list> param takes a list directly."),
 
                 // ---- Random ----
                 doc("rand", Group.RANDOM, "rand(min, max) · rand(list)",

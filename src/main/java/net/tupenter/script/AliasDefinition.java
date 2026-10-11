@@ -76,6 +76,7 @@ public record AliasDefinition(String body, List<Param> params, String descriptio
         ITEMSET,  // item id OR #item_tag (+ optional [components]), registry tab-complete
         BLOCKSET, // block id OR #block_tag (+ optional [states]), registry tab-complete
         ENTITY,   // entity type id, registry tab-complete (what /summon takes)
+        LIST,     // a list expression (list(a | b), range(1, 5), ...); binds a real list, parens end it
         BOOL;     // true/false, tab-completed; binds as a boolean for #if and ternaries
 
         public static ParamType fromKeyword(String keyword) {
@@ -101,6 +102,7 @@ public record AliasDefinition(String body, List<Param> params, String descriptio
                 case "itemset" -> ITEMSET;
                 case "blockset" -> BLOCKSET;
                 case "entity" -> ENTITY;
+                case "list" -> LIST;
                 case "bool", "boolean" -> BOOL;
                 // the list derives from the ParamTypeDocs registry — it can't go stale
                 default -> throw new IllegalArgumentException("Unknown parameter type '" + keyword

@@ -859,6 +859,19 @@ swap every occurrence of find — literal text, not a pattern
 /echo holding $replace(client.held.id, "minecraft:", "")$
 ```
 
+#### `split(text[, separator])`
+
+text into a list: on spaces, or on the separator you give
+
+- Trimmed, no empties: each piece loses the spaces around it and empty pieces are dropped, so splitting "a b | c d" on "|" gives a b and c d.
+- The separator is plain text, not a pattern, and can't be empty. Leave it out to split on spaces.
+- For custom commands: a <pairs:text> param plus split(pairs, "|") turns one argument into a list. A <name:list> param takes a list directly.
+
+```
+/calc split("oak birch  spruce")
+#foreach $p$ in split("stone ^dirt | sand ^gravel", "|") (/echo $p$)
+```
+
 ### Random
 
 #### `rand(min, max) · rand(list)`
@@ -1536,6 +1549,20 @@ one of the 16 chat colors, tab-completed
 
 ```
 /customcommand add team <c:color> = /echo joining the $c$ team
+```
+
+### Lists
+
+#### `list`
+
+a list, written as in a script; binds a real list for #foreach
+
+- Written like in a script: list(a | b) takes items exactly as typed, list(a, b) computes each one. range(1, 5), blockset(#minecraft:wool), split(...) and a variable holding a list work too.
+- Parentheses end it, so it can hold spaces and still sit anywhere, not just last: /kit list(oak_log | iron_ingot) works.
+- A real list: #foreach, nth, contains and rand take it directly. A command gets one item at a time; the whole list can't be inserted into one.
+
+```
+/customcommand add kit <items:list> = #foreach $i$ in items (/give @s $i$)
 ```
 
 ### Fixed choices
