@@ -84,45 +84,14 @@ public abstract class MixinCommandSuggestions {
             return;
         }
         int cursor = this.input.getCursorPosition();
-        int tokenStart = ChatInputStyler.markerTokenStart(text, cursor);
-        List<String> candidates;
-        if (tokenStart >= 0) {
-            // inside a $...$ marker: variables/functions, or tags after '#'
-            String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
-            candidates = prefix.startsWith("#")
-                    ? TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart))
-                    : TupenterModClient.expressionCompletions(prefix);
-        } else if ((tokenStart = ChatInputStyler.headerExprTokenStart(text, cursor)) >= 0) {
-            // a scanner directive's header (#foreach ... in itemset(#|), #if $x$>|),
-            // or an assignment's right-hand side — both are implicit expression
-            // zones, completed like a marker
-            String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
-            if (prefix.startsWith("#")) {
-                candidates = TupenterModClient.tagCompletions(ChatInputStyler.enclosingCallName(text, tokenStart));
-            } else {
-                // a coordinate-typed assignment gets the position forms FIRST:
-                // #local c:blockpos = | offers the block you're looking at
-                candidates = new java.util.ArrayList<>(TupenterModClient.positionForms(text, cursor, prefix));
-                candidates.addAll(TupenterModClient.expressionCompletions(prefix));
-            }
-        } else if ((tokenStart = ChatInputStyler.assignTypeTokenStart(text, cursor)) >= 0) {
-            // the :type of an assignment (#local c:bloc|) — the same keywords a
-            // custom command's <name:type> parameters take
-            candidates = net.tupenter.script.ParamTypeDocs.keywords();
-        } else {
-            // typing a directive word (#norec... / after-')' #elseif)
-            tokenStart = ChatInputStyler.directiveTokenStart(text, cursor);
-            if (tokenStart < 0) {
-                return;
-            }
-            candidates = ChatInputStyler.directiveWordSuggestions(text, tokenStart);
+        net.tupenter.command.ExpressionCompletion.Result completion =
+                net.tupenter.command.ExpressionCompletion.forLine(text, cursor);
+        if (completion == null) {
+            return; // plain command text: Brigadier's suggestions
         }
-        String prefix = text.substring(tokenStart, cursor).toLowerCase(Locale.ROOT);
-        SuggestionsBuilder builder = new SuggestionsBuilder(text.substring(0, cursor), tokenStart);
-        for (String name : candidates) {
-            if (name.toLowerCase(Locale.ROOT).startsWith(prefix)) {
-                builder.suggest(name);
-            }
+        SuggestionsBuilder builder = new SuggestionsBuilder(text.substring(0, cursor), completion.start());
+        for (String name : completion.suggestions()) {
+            builder.suggest(name);
         }
         this.commandUsage.clear();
         this.pendingSuggestions = CompletableFuture.completedFuture(builder.build());
