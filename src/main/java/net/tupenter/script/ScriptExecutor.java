@@ -30,6 +30,16 @@ public final class ScriptExecutor {
 
         void error(String message);
 
+        /**
+         * A running script died. {@code originalLine} is what it was started
+         * from (a tick script's body) and {@code customCommand} the custom
+         * command whose body failed, or null, so the client can offer to
+         * open the right editor.
+         */
+        default void scriptError(String message, String originalLine, String customCommand) {
+            error(message);
+        }
+
         /** Local info line (e.g. a #set notice from a lazy script). */
         void info(String message);
     }
@@ -368,8 +378,9 @@ public final class ScriptExecutor {
                 try {
                     statement = instance.next();
                 } catch (Script.RuntimeError error) {
-                    sender.error("Script stopped: " + error.getMessage()
-                            + " (line: " + preview(instance.script.originalLine()) + ")");
+                    sender.scriptError("Script stopped: " + error.getMessage()
+                            + " (line: " + preview(instance.script.originalLine()) + ")",
+                            instance.script.originalLine(), error.customCommand());
                     instance.close();
                     iterator.remove();
                     continue;

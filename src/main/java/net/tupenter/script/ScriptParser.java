@@ -165,7 +165,7 @@ public final class ScriptParser {
         try {
             prefixes = stripLinePrefixes(source, options);
         } catch (ParseAbort abort) {
-            return ParseResult.error(abort.getMessage());
+            return ParseResult.error(abort);
         }
 
         String work = prefixes.rest();
@@ -230,7 +230,7 @@ public final class ScriptParser {
         try {
             prefixes = stripLinePrefixes(trimmed, options);
         } catch (ParseAbort abort) {
-            return ParseResult.error(abort.getMessage());
+            return ParseResult.error(abort);
         }
 
         String work = prefixes.rest();
@@ -251,6 +251,75 @@ public final class ScriptParser {
      * chained bare segments are NOT forced to commands, and the result is
      * always a runnable script. {@code originalLine} is what history records.
      */
+    /**
+     * How much of {@code rest} a list argument takes: a name, then, if a
+     * '(' follows, everything up to its matching ')' (quotes respected), so
+     * list(a b | c d) is one argument despite its spaces. A bare name is a
+     * variable holding a list. Unbalanced input takes the rest of the line
+     * and lets the evaluator say what's wrong.
+     */
+    public static int listArgumentLength(String rest) {
+        int i = 0;
+        while (i < rest.length() && (Character.isLetterOrDigit(rest.charAt(i))
+                || rest.charAt(i) == '_' || rest.charAt(i) == '.')) {
+            i++;
+        }
+        if (i == 0 || i >= rest.length() || rest.charAt(i) != '(') {
+            Walker.ArgToken token = Walker.readArgToken(rest);
+            return i > 0 ? i : token.consumed();
+        }
+        int depth = 0;
+        boolean quoted = false;
+        for (; i < rest.length(); i++) {
+            char c = rest.charAt(i);
+            if (quoted) {
+                if (c == '\\') {
+                    i++;
+                } else if (c == '"') {
+                    quoted = false;
+                }
+            } else if (c == '"') {
+                quoted = true;
+            } else if (c == '(') {
+                depth++;
+            } else if (c == ')' && --depth == 0) {
+                return i + 1;
+            }
+        }
+        return rest.length();
+    }
+
+    /**
+     * The line a tick script actually runs: its body inside an endless loop
+     * that makes one pass per tick.
+     *
+     * <p>Leading line modifiers (#silent, #norecord, #record and their
+     * shorthands) are hoisted in front of the loop. They only work at the
+     * start of a line, and inside the loop they no longer are, so a script
+     * written as "#silent /setblock ~ ~-1 ~" failed on its very first tick.
+     * In front, #silent silences every pass. "#silent (...)" is the group
+     * form, a statement of its own, and stays inside.
+     */
+    public static String tickLoopLine(String body) {
+        StringBuilder prefixes = new StringBuilder();
+        String rest = body.trim();
+        while (rest.startsWith("#")) {
+            String word = firstWord(rest);
+            String lower = word.toLowerCase(Locale.ROOT);
+            String canonical = PREFIX_SHORTHANDS.getOrDefault(lower, lower);
+            if (!canonical.equals(SILENT) && !canonical.equals(NORECORD) && !canonical.equals(RECORD)) {
+                break;
+            }
+            String after = rest.substring(word.length()).trim();
+            if ((canonical.equals(SILENT) && after.startsWith("(")) || after.isEmpty()) {
+                break;
+            }
+            prefixes.append(canonical).append(' ');
+            rest = after;
+        }
+        return prefixes + "#while (1 > 0) (" + rest + " && #wait 1t)";
+    }
+
     public static ParseResult parseGeneratedLine(String line, String originalLine, Options options) {
         if (Comments.isOnlyComment(line)) {
             return ParseResult.error(Comments.nothingToRunMessage());
@@ -259,7 +328,7 @@ public final class ScriptParser {
         try {
             prefixes = stripLinePrefixes(Comments.strip(line), options);
         } catch (ParseAbort abort) {
-            return ParseResult.error(abort.getMessage());
+            return ParseResult.error(abort);
         }
 
         String work = prefixes.rest();
@@ -415,7 +484,7 @@ public final class ScriptParser {
         try {
             walker.processStatements(input);
         } catch (ParseAbort abort) {
-            return ParseResult.error(abort.getMessage());
+            return ParseResult.error(abort);
         }
 
         if (silent || walker.history != Script.HistoryMode.NORMAL || alwaysScript) {
@@ -534,7 +603,7 @@ public final class ScriptParser {
         private static final Object TOKEN = new Object();
         private static final Object END = new Object();
 
-        private record ErrorBox(String message) {
+        private record ErrorBox(String message, String customCommand) {
         }
 
         private static final class WalkerInterrupted extends RuntimeException {
@@ -575,7 +644,7 @@ public final class ScriptParser {
                 }
                 if (item instanceof ErrorBox error) {
                     finished = true;
-                    return abortWith(error.message());
+                    return abortWith(error.message(), error.customCommand());
                 }
                 return (Script.SendStatement) item;
             } catch (InterruptedException ex) {
@@ -585,8 +654,8 @@ public final class ScriptParser {
             }
         }
 
-        private Script.SendStatement abortWith(String message) {
-            throw new Script.RuntimeError(message);
+        private Script.SendStatement abortWith(String message, String customCommand) {
+            throw new Script.RuntimeError(message, customCommand);
         }
 
         @Override
@@ -612,11 +681,11 @@ public final class ScriptParser {
                     walker.commitSession();
                     results.put(END);
                 } catch (ParseAbort abort) {
-                    quietPut(new ErrorBox(abort.getMessage()));
+                    quietPut(new ErrorBox(abort.getMessage(), abort.customCommand));
                 } catch (InterruptedException | WalkerInterrupted stopped) {
                     // closed/aborted — just exit
                 } catch (RuntimeException unexpected) {
-                    quietPut(new ErrorBox("script failed: " + unexpected.getMessage()));
+                    quietPut(new ErrorBox("script failed: " + unexpected.getMessage(), null));
                 }
             });
         }
@@ -1193,14 +1262,19 @@ public final class ScriptParser {
                     break;
                 }
             }
-            if (body.isEmpty()) {
-                throw new ParseAbort("Custom command body is empty after its #-prefixes");
-            }
-
             scopes.push(bindings);
             silentDepth += silentPushes;
             try {
+                if (body.isEmpty()) {
+                    throw new ParseAbort("Custom command body is empty after its #-prefixes");
+                }
                 processStatements(body);
+            } catch (ParseAbort abort) {
+                // the innermost command owns it: a nested command's catch runs first
+                if (abort.customCommand == null) {
+                    abort.customCommand = name;
+                }
+                throw abort;
             } finally {
                 silentDepth -= silentPushes;
                 scopes.pop();
@@ -1289,6 +1363,29 @@ public final class ScriptParser {
                     bindings.put(param.name(), angle);
                     bindings.put(String.valueOf(index + 1), angle);
                     return rest.substring(angleToken.consumed());
+                }
+                case LIST -> {
+                    // evaluated as an expression, so it binds a real list rather
+                    // than text: #foreach, nth and rand take it directly
+                    int length = listArgumentLength(rest);
+                    String token = rest.substring(0, length);
+                    String notAList = "<" + param.name() + "> must be a list, like list(a | b) or range(1, 5), got '"
+                            + token + "'. " + usage;
+                    Value value;
+                    try {
+                        value = ExpressionEvaluator.evaluate(token, context);
+                    } catch (IllegalArgumentException ex) {
+                        // a bare word that isn't a variable ("stone") is someone
+                        // passing one item, not a typo'd variable name
+                        throw new ParseAbort(token.indexOf('(') < 0 ? notAList
+                                : "<" + param.name() + ">: " + ex.getMessage() + ". " + usage);
+                    }
+                    if (!(value instanceof Value.ListValue)) {
+                        throw new ParseAbort(notAList);
+                    }
+                    bindings.put(param.name(), value);
+                    bindings.put(String.valueOf(index + 1), value);
+                    return rest.substring(length);
                 }
                 default -> {
                     String token;
@@ -1424,6 +1521,7 @@ public final class ScriptParser {
 
         private record ArgToken(String value, int consumed) {
         }
+
 
         /**
          * Reads one argument token: either "quoted anything" (quotes stripped,
@@ -2462,6 +2560,9 @@ public final class ScriptParser {
     }
 
     private static final class ParseAbort extends RuntimeException {
+        /** The custom command whose body raised this (the innermost one), or null. */
+        private String customCommand;
+
         private ParseAbort(String message) {
             super(message);
         }
@@ -2474,7 +2575,11 @@ public final class ScriptParser {
      * - script != null: cancel the original packet and run the script;
      *   notices (e.g. "$x$ = 5" confirmations) are shown to the user
      */
-    public record ParseResult(Script script, String error, List<String> notices) {
+    public record ParseResult(Script script, String error, List<String> notices, String customCommand) {
+        public ParseResult(Script script, String error, List<String> notices) {
+            this(script, error, notices, null);
+        }
+
         public static ParseResult script(Script script, List<String> notices) {
             return new ParseResult(script, null, List.copyOf(notices));
         }
@@ -2485,6 +2590,11 @@ public final class ScriptParser {
 
         public static ParseResult error(String message) {
             return new ParseResult(null, message, List.of());
+        }
+
+        /** An error that knows which custom command's body raised it, if any. */
+        private static ParseResult error(ParseAbort abort) {
+            return new ParseResult(null, abort.getMessage(), List.of(), abort.customCommand);
         }
 
         public boolean changed() {

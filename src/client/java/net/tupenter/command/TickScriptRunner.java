@@ -56,6 +56,11 @@ public final class TickScriptRunner {
         faulted.clear();
     }
 
+    /** Whether {@code body} is one this runner started a loop for (running or faulted). */
+    public boolean knows(String body) {
+        return active.contains(body) || faulted.contains(body);
+    }
+
     public void tick(ScriptExecutor executor) {
         boolean on = TupenterConfig.INSTANCE.enhancedCommandParsingEnabled
                 && TupenterConfig.INSTANCE.tickScriptsEnabled;
@@ -107,14 +112,14 @@ public final class TickScriptRunner {
     }
 
     private void startLoop(ScriptExecutor executor, String body, ScriptParser.Options options) {
-        String loop = "#while (1 > 0) (" + body + " && #wait 1t)";
+        String loop = ScriptParser.tickLoopLine(body);
         // parse the wrapped loop, but label the script with the raw body so the
         // running list, abort-by-source and error messages all read cleanly
         ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(loop, body, options);
         if (result.error() != null) {
             faulted.add(body);
-            TupenterModClient.sendEnhancedParsingError("Tick script disabled until edited — " + result.error()
-                    + " (script: " + preview(body) + ")");
+            TupenterModClient.sendScriptError("Tick script disabled until edited: " + result.error()
+                    + " (script: " + preview(body) + ")", result.customCommand(), body, true);
             return;
         }
         if (executor.trySubmit(result.script())) {

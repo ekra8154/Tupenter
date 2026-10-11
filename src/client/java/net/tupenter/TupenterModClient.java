@@ -112,6 +112,11 @@ public class TupenterModClient implements ClientModInitializer {
                 }
 
                 @Override
+                public void scriptError(String message, String originalLine, String customCommand) {
+                    sendScriptError(message, customCommand, originalLine, false);
+                }
+
+                @Override
                 public void info(String message) {
                     sendEnhancedParsingInfo(message);
                 }
@@ -1311,7 +1316,7 @@ public class TupenterModClient implements ClientModInitializer {
     private static void runOnPid(int id, boolean replace, String body, String originalPidLine) {
         ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(body, body, parserOptions());
         if (result.error() != null) {
-            sendEnhancedParsingError(result.error());
+            sendScriptError(result.error(), result.customCommand(), null, false);
             return;
         }
         if (!result.changed()) {
@@ -1507,6 +1512,17 @@ public class TupenterModClient implements ClientModInitializer {
                             // scripts is the same for the Scripts tab.
                             .then(literal("customcommands")
                                     .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_ALIASES)))
+                            // Open the editor right on one row. "script" takes the
+                            // script's id, which is what an error's [edit script]
+                            // link carries; "command" takes a custom command name.
+                            .then(literal("edit")
+                                    .then(literal("command")
+                                            .then(argument("name", StringArgumentType.word())
+                                                    .suggests(TupenterModClient::suggestCustomCommandNames)
+                                                    .executes(TupenterModClient::runEditCommandCommand)))
+                                    .then(literal("script")
+                                            .then(argument("id", StringArgumentType.word())
+                                                    .executes(TupenterModClient::runEditScriptCommand))))
                             // Bare shortcuts for the two verbs you reach for most.
                             // Same meaning as under "scripts": a name arms that
                             // script here, no name is the master switch.
@@ -1671,6 +1687,7 @@ public class TupenterModClient implements ClientModInitializer {
 				net.tupenter.compat.ConfigScreenAccess.tickPendingOpen();
 				net.tupenter.compat.TupenterConfigScreen.tickPendingRestore();
 				net.tupenter.compat.TupenterConfigScreen.tickScriptsHelpState();
+				net.tupenter.compat.TupenterConfigScreen.tickPendingFocus();
 			}
             if (client.player == null) return;
 
@@ -3638,7 +3655,7 @@ public class TupenterModClient implements ClientModInitializer {
 
         ScriptParser.ParseResult result = ScriptParser.parseGeneratedLine(content, historyLine, parserOptions());
         if (result.error() != null) {
-            sendEnhancedParsingError(result.error());
+            sendScriptError(result.error(), result.customCommand(), null, false);
             return;
         }
 
@@ -3679,6 +3696,96 @@ public class TupenterModClient implements ClientModInitializer {
 
     public static void sendEnhancedParsingError(String message) {
         sendLocalCalcError(Component.literal(message));
+    }
+
+    /**
+     * A script error with a way straight to the fix: [edit command] when it
+     * came from a custom command's body, [edit script] when it came from a
+     * tick script. A tick script that runs a broken custom command gets both.
+     *
+     * @param customCommand the custom command whose body failed, or null
+     * @param line          what the script was started from; only a tick
+     *                      script's body gets a link (a typed line has
+     *                      nothing to open)
+     * @param tickScript    true when the caller knows {@code line} is a tick
+     *                      script's body; otherwise the tick runner is asked
+     */
+    public static void sendScriptError(String message, String customCommand, String line, boolean tickScript) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null) {
+            return;
+        }
+        MutableComponent out = Component.literal(message).withStyle(ChatFormatting.RED);
+        if (ConfigScreenAccess.isAvailable()) {
+            if (customCommand != null && CommandAliasManager.hasAlias(customCommand)) {
+                out.append(" ").append(editLink("[edit command]", "/tupenter edit command " + customCommand,
+                        "Open /" + customCommand + " in the Custom Commands tab"));
+            }
+            String scriptId = line != null && (tickScript || TICK_SCRIPTS.knows(line)) ? tickScriptIdFor(line) : null;
+            if (scriptId != null) {
+                out.append(" ").append(editLink("[edit script]", "/tupenter edit script " + scriptId,
+                        "Open this script in the Scripts tab"));
+            }
+        }
+        client.player.displayClientMessage(out, false);
+    }
+
+    private static Component editLink(String label, String command, String hover) {
+        return Component.literal(label).withStyle(style -> style
+                .withColor(ChatFormatting.AQUA)
+                .withUnderlined(true)
+                .withClickEvent(new ClickEvent.RunCommand(command))
+                .withHoverEvent(new HoverEvent.ShowText(Component.literal(hover))));
+    }
+
+    /** The id of the armed tick script (here) whose loop runs {@code body}, or null. */
+    private static String tickScriptIdFor(String body) {
+        String worldKey = currentWorldKey();
+        if (worldKey == null) {
+            return null;
+        }
+        for (TupenterConfig.ArmedScript script : TupenterConfig.INSTANCE.armedScripts(worldKey)) {
+            // the same normalising TickScriptRunner applies before it starts a loop
+            if (TupenterConfig.scriptBody(net.tupenter.script.Comments.flatten(script.text())).equals(body)) {
+                return script.id();
+            }
+        }
+        return null;
+    }
+
+    /** /tupenter edit script &lt;id&gt;: the target of a script error's [edit script]. */
+    private static int runEditScriptCommand(CommandContext<FabricClientCommandSource> context) {
+        if (!ConfigScreenAccess.openAtScript(StringArgumentType.getString(context, "id"))) {
+            context.getSource().sendError(Component.literal(CLOTH_MISSING));
+            return 0;
+        }
+        return 1;
+    }
+
+    /** /tupenter edit command &lt;name&gt;: open that custom command's row. */
+    private static int runEditCommandCommand(CommandContext<FabricClientCommandSource> context) {
+        String name = StringArgumentType.getString(context, "name");
+        if (!CommandAliasManager.hasAlias(name)) {
+            context.getSource().sendError(Component.literal("No custom command named '" + name
+                    + "'. /customcommand list shows them."));
+            return 0;
+        }
+        if (!ConfigScreenAccess.openAtCommand(name)) {
+            context.getSource().sendError(Component.literal(CLOTH_MISSING));
+            return 0;
+        }
+        return 1;
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestCustomCommandNames(
+            CommandContext<FabricClientCommandSource> context, com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        String typed = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+        for (String name : CommandAliasManager.getAliasMap().keySet()) {
+            if (name.startsWith(typed)) {
+                builder.suggest(name);
+            }
+        }
+        return builder.buildFuture();
     }
 
     private static String unwrapOptionalMarkers(String input) {

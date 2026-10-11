@@ -87,8 +87,20 @@ public final class Script {
 
     /** A lazy script failed while evaluating — sends made so far stay sent. */
     public static final class RuntimeError extends RuntimeException {
+        private final String customCommand;
+
         public RuntimeError(String message) {
+            this(message, null);
+        }
+
+        public RuntimeError(String message, String customCommand) {
             super(message);
+            this.customCommand = customCommand;
+        }
+
+        /** The custom command whose body failed (the innermost one), or null. */
+        public String customCommand() {
+            return customCommand;
         }
     }
 
