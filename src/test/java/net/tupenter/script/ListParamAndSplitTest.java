@@ -132,6 +132,41 @@ class ListParamAndSplitTest {
         assertTrue(message.contains("not a list"), message);
     }
 
+    // ---- bare words in comma lists ----
+
+    @Test
+    void bareWordsInACommaListAreTheirText() {
+        assertEquals(List.of("short_", "tall_", "dry_", "sea_"), items(eval("list(short_,tall_,dry_,sea_)")));
+        assertEquals(List.of("stone", "minecraft:dirt"), items(eval("list(stone, minecraft:dirt)")));
+    }
+
+    @Test
+    void aVariableStillWinsOverItsName() {
+        assertEquals(List.of("say 5", "say dirt"),
+                stripSlashes(sends("#local stone = 5 && #foreach $b$ in list(stone, dirt) (/say $b$)", Map.of())));
+    }
+
+    @Test
+    void expressionsStillCompute() {
+        assertEquals(List.of("6", "7"), items(eval("list(2*3, 7)")));
+        assertEquals(List.of("6", "7"), items(eval("list(2 * 3, 7)")));
+    }
+
+    @Test
+    void numbersBooleansAndDottedNamesAreNotTakenAsText() {
+        Value value = eval("list(3s, true)");
+        List<Value> values = ((Value.ListValue) value).values();
+        assertTrue(values.get(0) instanceof Value.NumberValue, "3s is three stacks: " + values.get(0));
+        assertTrue(values.get(1) instanceof Value.BoolValue, "true is a boolean: " + values.get(1));
+        // a dotted name can only be a variable read, so a typo stays an error
+        assertThrows(IllegalArgumentException.class, () -> eval("list(client.poss.y, 1)"));
+    }
+
+    @Test
+    void theFallbackIsOnlyInsideList() {
+        assertThrows(IllegalArgumentException.class, () -> eval("max(stone, 1)"));
+    }
+
     private static List<String> items(Value value) {
         assertTrue(value instanceof Value.ListValue, "a list: " + value);
         return ((Value.ListValue) value).values().stream().map(Value::displayString).toList();
