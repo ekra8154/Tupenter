@@ -129,7 +129,7 @@ public class MixinConnection {
     /** @return true when the packet was handled (cancelled) */
     private boolean applyResult(ScriptParser.ParseResult result, String historyLine, CallbackInfo ci) {
         if (result.error() != null) {
-            TupenterModClient.sendEnhancedParsingError(result.error());
+            TupenterModClient.sendScriptError(result.error(), result.customCommand(), null, false);
             ci.cancel();
             return true;
         }

@@ -143,8 +143,8 @@ public final class ClientCommandRegistrar {
             return StringArgumentType.string();
         }
         ArgumentType<?> strict = strictArgumentTypeFor(type, buildContext);
-        if (type == AliasDefinition.ParamType.TEXT) {
-            return strict; // greedy — already accepts $...$ arguments
+        if (type == AliasDefinition.ParamType.TEXT || type == AliasDefinition.ParamType.LIST) {
+            return strict; // greedy, or an expression that is its own syntax: no $...$ wrapping
         }
         int tokens = switch (type) {
             case POS, BLOCKPOS -> 3;
@@ -182,7 +182,50 @@ public final class ClientCommandRegistrar {
             case BLOCKSET -> BlockPredicateArgument.blockPredicate(buildContext);   // block OR #tag
             case ENTITY -> ResourceArgument.resource(buildContext, net.minecraft.core.registries.Registries.ENTITY_TYPE); // /summon-style tab-complete
             case BOOL -> com.mojang.brigadier.arguments.BoolArgumentType.bool(); // true/false tab-complete
+            case LIST -> new ListArgumentType();
         };
+    }
+
+    /**
+     * A {@code <name:list>} argument: a list expression typed as in a script,
+     * list(a | b), range(1, 5), or a variable holding a list. The parentheses
+     * mark where it ends, so it can hold spaces and still sit mid-command.
+     * Only its extent is read here; the script parser evaluates it and
+     * reports anything that isn't a list.
+     */
+    private static final class ListArgumentType implements ArgumentType<String> {
+        private static final java.util.List<String> STARTERS = java.util.List.of("list(", "range(", "split(", "itemset(", "blockset(");
+        private static final com.mojang.brigadier.exceptions.SimpleCommandExceptionType EXPECTED =
+                new com.mojang.brigadier.exceptions.SimpleCommandExceptionType(
+                        new com.mojang.brigadier.LiteralMessage("Expected a list, like list(a | b) or range(1, 5)"));
+
+        @Override
+        public String parse(com.mojang.brigadier.StringReader reader) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+            String rest = reader.getRemaining();
+            if (rest.isEmpty() || rest.charAt(0) == ' ') {
+                throw EXPECTED.createWithContext(reader);
+            }
+            int length = net.tupenter.script.ScriptParser.listArgumentLength(rest);
+            reader.setCursor(reader.getCursor() + length);
+            return rest.substring(0, length);
+        }
+
+        @Override
+        public <S> java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> listSuggestions(
+                CommandContext<S> context, com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+            String typed = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+            for (String starter : STARTERS) {
+                if (starter.startsWith(typed) && !starter.equals(typed)) {
+                    builder.suggest(starter);
+                }
+            }
+            return builder.buildFuture();
+        }
+
+        @Override
+        public java.util.Collection<String> getExamples() {
+            return java.util.List.of("list(a | b)", "range(1, 5)");
+        }
     }
 
     /**
