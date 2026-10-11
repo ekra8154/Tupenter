@@ -40,6 +40,26 @@ public final class ConfigScreenAccess {
 
     /** -1 when nothing is waiting; a tab index when an open is pending. */
     private static int pendingTab = -1;
+    private static String pendingScriptId;
+    private static String pendingCommand;
+
+    /** Open the Scripts tab on the row of the script with this id. */
+    public static boolean openAtScript(String id) {
+        if (!open(TAB_SCRIPTS)) {
+            return false;
+        }
+        pendingScriptId = id;
+        return true;
+    }
+
+    /** Open the Custom Commands tab on the row defining this command. */
+    public static boolean openAtCommand(String name) {
+        if (!open(TAB_ALIASES)) {
+            return false;
+        }
+        pendingCommand = name;
+        return true;
+    }
 
     /**
      * Ask for the settings on {@code tabIndex}; false if Cloth is missing.
@@ -60,6 +80,8 @@ public final class ConfigScreenAccess {
             return false;
         }
         pendingTab = tabIndex;
+        pendingScriptId = null;
+        pendingCommand = null;
         return true;
     }
 
@@ -69,9 +91,16 @@ public final class ConfigScreenAccess {
             return;
         }
         int tab = pendingTab;
+        String scriptId = pendingScriptId;
+        String command = pendingCommand;
         pendingTab = -1;
+        pendingScriptId = null;
+        pendingCommand = null;
         if (isAvailable()) {
             TupenterConfigScreen.openAtTab(tab);
+            if (scriptId != null || command != null) {
+                TupenterConfigScreen.focusRow(scriptId, command);
+            }
         }
     }
 }

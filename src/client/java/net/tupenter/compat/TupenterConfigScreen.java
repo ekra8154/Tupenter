@@ -867,6 +867,13 @@ public class TupenterConfigScreen {
          * what starts and stops SDL text input, so the box stayed caretless
          * AND deaf to typing until focus went somewhere else and came back.
          */
+        /** Put the caret in this row's editor, through the row so the row knows. */
+        void focusEditor() {
+            net.minecraft.client.gui.components.AbstractWidget box =
+                    expanded && multiBox != null ? multiBox : singleBox;
+            setFocused(box);
+        }
+
         void blurBoxes() {
             if (getFocused() != null) {
                 setFocused(null);
@@ -1182,6 +1189,94 @@ public class TupenterConfigScreen {
             cloth.selectedCategoryIndex = tabIndex;
         }
         client.setScreen(screen);
+    }
+
+    /** The row a just-opened screen should scroll to and put the caret in; see focusRow. */
+    private static WrapRowEntry pendingFocusRow;
+    private static int pendingFocusTicks;
+
+    /**
+     * Scroll to the row for this script id (Scripts tab) or custom command
+     * name (Custom Commands tab) and put the caret in its editor. Called right
+     * after openAtTab, for an error's [edit script] / [edit command] link.
+     *
+     * <p>The scroll is applied again for a few ticks, for the same reason as
+     * tickPendingRestore: expanded editors above the row measure short until
+     * their first render, so the first attempt can land above it.
+     */
+    static void focusRow(String scriptId, String commandName) {
+        WrapRowEntry target = null;
+        if (scriptId != null) {
+            for (ScriptRowEntry row : scriptRows) {
+                if (scriptId.equals(row.id)) {
+                    target = row;
+                    break;
+                }
+            }
+        } else if (commandName != null) {
+            for (CommandRowEntry row : commandRows) {
+                if (commandName.equalsIgnoreCase(commandName(row.text()))) {
+                    target = row;
+                    break;
+                }
+            }
+        }
+        if (target == null
+                || !(Minecraft.getInstance().screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth)
+                || cloth.listWidget == null) {
+            return;
+        }
+        pendingFocusRow = target;
+        pendingFocusTicks = 4;
+        scrollToRow(cloth, target);
+        // screen -> list -> row -> editor; each container hands focus down
+        cloth.setFocused(cloth.listWidget);
+        cloth.listWidget.setFocused(target);
+        target.focusEditor();
+    }
+
+    /** "blink <maxdistance:int=100> ... = body" -> "blink". */
+    private static String commandName(String definition) {
+        String text = definition.trim();
+        if (text.startsWith("/")) {
+            text = text.substring(1);
+        }
+        int end = 0;
+        while (end < text.length() && !Character.isWhitespace(text.charAt(end))
+                && "<=\"".indexOf(text.charAt(end)) < 0) {
+            end++;
+        }
+        return text.substring(0, end);
+    }
+
+    /** Put {@code row} a little below the top of the list. */
+    private static void scrollToRow(me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth, WrapRowEntry row) {
+        cloth.listWidget.tickList(); // see restoreScroll: the clamp needs measured children
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        int index = ((List) cloth.listWidget.children()).indexOf(row);
+        if (index < 0) {
+            return;
+        }
+        double target = cloth.listWidget.getScroll() + cloth.listWidget.getRowTop(index) - cloth.listWidget.top - 24;
+        cloth.listWidget.capYPosition(Math.max(0, target));
+    }
+
+    public static void tickPendingFocus() {
+        if (pendingFocusTicks <= 0) {
+            return;
+        }
+        pendingFocusTicks--;
+        if (Minecraft.getInstance().screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth
+                && cloth.listWidget != null && pendingFocusRow != null) {
+            scrollToRow(cloth, pendingFocusRow);
+            // an expanded row builds its editor on first render; aim at that one
+            pendingFocusRow.focusEditor();
+        } else {
+            pendingFocusTicks = 0;
+        }
+        if (pendingFocusTicks == 0) {
+            pendingFocusRow = null;
+        }
     }
 
     /** Rebuild the config screen WITHOUT losing the tab or the scroll position. */
