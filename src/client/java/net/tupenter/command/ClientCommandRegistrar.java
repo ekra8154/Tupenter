@@ -190,7 +190,7 @@ public final class ClientCommandRegistrar {
      * Only its extent is read here; the script parser evaluates it and
      * reports anything that isn't a list.
      */
-    private static final class ListArgumentType implements ArgumentType<String> {
+    static final class ListArgumentType implements ArgumentType<String> {
         private static final java.util.List<String> STARTERS = java.util.List.of("list(", "range(", "split(", "itemset(", "blockset(");
         private static final com.mojang.brigadier.exceptions.SimpleCommandExceptionType EXPECTED =
                 new com.mojang.brigadier.exceptions.SimpleCommandExceptionType(

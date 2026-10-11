@@ -133,7 +133,10 @@ public final class ChatInputStyler {
                 return true; // /customfunction add|update — the tail is an expression
             }
             boolean chained = TupenterConfig.INSTANCE.commandChainingEnabled && segments(full).size() > 1;
-            return chained || containsMarker(full) || hasComment(full);
+            // a list(...) argument (a custom command's <name:list>) gets its
+            // text items painted gray, which vanilla's colouring knows nothing of
+            return chained || containsMarker(full) || hasComment(full)
+                    || full.toLowerCase(java.util.Locale.ROOT).contains("list(");
         }
         return ScriptParser.isDirectiveLine(full) || isModifierLine(full) || hasComment(full);
     }
@@ -771,9 +774,169 @@ public final class ChatInputStyler {
                 break;
             }
             fill(styles, i, end + 1, MARKER);
-            flagUnbalancedParens(text, styles, i + 1, end); // validate the expression
+            styleExpression(text, styles, i + 1, end); // validate the expression
             i = end + 1;
         }
+    }
+
+    /** Text items inside list(...): gray, against the aqua of computed ones. */
+    private static final Style LIST_TEXT = Style.EMPTY.withColor(ChatFormatting.GRAY);
+
+    /**
+     * Whether a bare name is a variable, for colouring list items. The client
+     * sets it at startup; the default knows none, which errs toward gray.
+     */
+    public static java.util.function.Predicate<String> knownVariable = name -> false;
+
+    /** Names a line declares for itself, which exist by the time it runs even if not yet. */
+    private static final java.util.regex.Pattern DECLARED_NAME = java.util.regex.Pattern.compile(
+            "(?i)#(?:local|set|setdefault|foreach|for)\\s+\\$?([A-Za-z_][A-Za-z0-9_]*)"
+                    + "|<\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*[:>=]");
+
+    /** Everything an expression span gets: paren checking, then list item colours. */
+    private static void styleExpression(String text, Style[] styles, int from, int to) {
+        flagUnbalancedParens(text, styles, from, to);
+        paintListItems(text, styles, from, to);
+    }
+
+    /**
+     * Inside every list(...) in an expression span, TEXT items go gray and
+     * computed items keep the span's aqua: pipe items, quoted items, and a
+     * lone bare word that isn't a variable (the evaluator's fallback, by the
+     * same rule: ListLiteral.isBareWord). So list(stone, x) shows at a glance
+     * whether x is your variable or the word "x", and a misspelled variable
+     * turns gray the moment you type it instead of failing later.
+     *
+     * <p>"A variable" includes names the line itself declares (#local, #set,
+     * #foreach, a custom command's &lt;params&gt;), since those exist by the
+     * time the list is evaluated even though they don't while you type.
+     */
+    private static void paintListItems(String text, Style[] styles, int from, int to) {
+        to = Math.min(to, text.length());
+        java.util.Set<String> declared = null;
+        boolean quoted = false;
+        for (int i = Math.max(0, from); i + 4 < to; i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+                continue;
+            }
+            if (c == '"') {
+                quoted = !quoted;
+                continue;
+            }
+            if (quoted || !text.regionMatches(true, i, "list", 0, 4)
+                    || (i > 0 && (ListLiteral.isBareWordChar(text.charAt(i - 1)) || text.charAt(i - 1) == '.'))) {
+                continue; // not the start of a list( call: inside a string, or part of a longer name
+            }
+            int open = i + 4;
+            while (open < to && text.charAt(open) == ' ') {
+                open++;
+            }
+            if (open >= to || text.charAt(open) != '(') {
+                continue;
+            }
+            int close = ListLiteral.groupEnd(text, open);
+            if (close < 0 || close >= to + 1) {
+                continue; // unclosed: the paren check already flags it
+            }
+            if (ListLiteral.hasSeparatorPipe(text, open + 1, close)) {
+                paintPipeItems(text, styles, open + 1, close);
+            } else {
+                if (declared == null) {
+                    declared = declaredNames(text);
+                }
+                paintCommaItems(text, styles, open + 1, close, declared);
+            }
+        }
+    }
+
+    /** Pipe items are all text; the separators and any $...$ inside keep their colour. */
+    private static void paintPipeItems(String text, Style[] styles, int from, int to) {
+        boolean marker = false;
+        boolean quoted = false;
+        for (int i = from; i < to; i++) {
+            char c = text.charAt(i);
+            if (c == '$' && !quoted) {
+                marker = !marker;
+                continue;
+            }
+            if (marker) {
+                continue;
+            }
+            if (c == '\\') {
+                styles[i] = LIST_TEXT;
+                if (i + 1 < to) {
+                    styles[++i] = LIST_TEXT;
+                }
+                continue;
+            }
+            if (c == '"') {
+                quoted = !quoted;
+            }
+            if (c != '|' || quoted) {
+                styles[i] = LIST_TEXT;
+            }
+        }
+    }
+
+    /** Comma items: gray when the item is a quoted string or a bare word that isn't a variable. */
+    private static void paintCommaItems(String text, Style[] styles, int from, int to, java.util.Set<String> declared) {
+        int depth = 0;
+        boolean quoted = false;
+        boolean marker = false;
+        int itemStart = from;
+        for (int i = from; i <= to; i++) {
+            char c = i < to ? text.charAt(i) : ',';
+            if (i < to && c == '\\') {
+                i++;
+                continue;
+            }
+            if (c == '$' && !quoted) {
+                marker = !marker;
+            } else if (!marker && c == '"') {
+                quoted = !quoted;
+            } else if (!marker && !quoted) {
+                if (c == '(' || c == '[' || c == '{') {
+                    depth++;
+                } else if (c == ')' || c == ']' || c == '}') {
+                    depth--;
+                } else if (c == ',' && depth == 0) {
+                    paintCommaItem(text, styles, itemStart, i, declared);
+                    itemStart = i + 1;
+                }
+            }
+        }
+    }
+
+    private static void paintCommaItem(String text, Style[] styles, int from, int to, java.util.Set<String> declared) {
+        while (from < to && Character.isWhitespace(text.charAt(from))) {
+            from++;
+        }
+        while (to > from && Character.isWhitespace(text.charAt(to - 1))) {
+            to--;
+        }
+        if (from >= to) {
+            return;
+        }
+        String item = text.substring(from, to);
+        boolean quotedString = item.length() >= 2 && item.charAt(0) == '"' && closingQuoteIndex(text, from) == to - 1;
+        boolean textWord = ListLiteral.isBareWord(item)
+                && !declared.contains(item.toLowerCase(java.util.Locale.ROOT))
+                && !knownVariable.test(item);
+        if (quotedString || textWord) {
+            fill(styles, from, to, LIST_TEXT);
+        }
+    }
+
+    private static java.util.Set<String> declaredNames(String text) {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        java.util.regex.Matcher matcher = DECLARED_NAME.matcher(text);
+        while (matcher.find()) {
+            String name = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+            names.add(name.toLowerCase(java.util.Locale.ROOT));
+        }
+        return names;
     }
 
     /**
@@ -903,7 +1066,7 @@ public final class ChatInputStyler {
         // used to be bare parentheses styled as a list of their own, and that
         // moved into list(...).
         fill(styles, exprFrom, headerEnd, MARKER);
-        flagUnbalancedParens(full, styles, exprFrom, headerEnd);
+        styleExpression(full, styles, exprFrom, headerEnd);
         if (bodyOpen >= 0) {
             int close = matchingClose(full, bodyOpen, end);
             if (close < 0) {
@@ -1152,7 +1315,7 @@ public final class ChatInputStyler {
                 int bodyEnd = trimmedEnd(full, segment);
                 if (bodyStart < bodyEnd) {
                     fill(styles, bodyStart, bodyEnd, MARKER);
-                    flagUnbalancedParens(full, styles, bodyStart, bodyEnd);
+                    styleExpression(full, styles, bodyStart, bodyEnd);
                 }
                 return;
             }
@@ -1202,10 +1365,17 @@ public final class ChatInputStyler {
 
         int argIndex = 0;
         for (ParsedCommandNode<net.minecraft.commands.SharedSuggestionProvider> node : parse.getContext().getLastChild().getNodes()) {
-            if (node.getNode() instanceof ArgumentCommandNode<?, ?>) {
+            if (node.getNode() instanceof ArgumentCommandNode<?, ?> argument) {
                 StringRange range = node.getRange();
-                fill(styles, range.getStart(), Math.min(range.getEnd(), segment.end()),
-                        ARG_STYLES.get(argIndex % ARG_STYLES.size()));
+                int argEnd = Math.min(range.getEnd(), segment.end());
+                if (argument.getType() instanceof ClientCommandRegistrar.ListArgumentType) {
+                    // a custom command's <name:list> is an EXPRESSION: coloured like
+                    // one, so its text items go gray exactly as inside $...$
+                    fill(styles, range.getStart(), argEnd, MARKER);
+                    styleExpression(full, styles, range.getStart(), argEnd);
+                } else {
+                    fill(styles, range.getStart(), argEnd, ARG_STYLES.get(argIndex % ARG_STYLES.size()));
+                }
                 argIndex++;
             }
         }
