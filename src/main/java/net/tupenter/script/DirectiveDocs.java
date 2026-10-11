@@ -131,7 +131,7 @@ public final class DirectiveDocs {
                         "#foreach $m$ in list(zombie | skeleton) (/summon $m$)",
                         "#foreach $b$ in blockset(#minecraft:wool) (/give @s $b$)",
                         "§7Any list will do:§r list(a | b | c) written in place, list(1, 2, 3), range(1, 10), registry sets, entities(radius), client.effects.",
-                        "§7The header is just an expression§r — nothing is special about it, so #local kinds = list(short | tall) then #foreach $k$ in kinds is the same loop. list(a | b) items are literal TEXT (bare words, no quotes); list(a, b) items are COMPUTED.",
+                        "§7The header is just an expression§r: nothing is special about it, so #local kinds = list(short | tall) then #foreach $k$ in kinds is the same loop. list(a | b) items are literal TEXT (bare words, no quotes); list(a, b) items are COMPUTED, except that a lone word that isn't a variable is its text, so list(short, tall) works too.",
                         "§7The set pairing§r is the classic: every member of a #tag, one command each."),
                 doc("while", Group.LOOPS, "#while (condition) (body)",
                         "repeat while the condition holds — re-checked each pass, runs across ticks", null, true,

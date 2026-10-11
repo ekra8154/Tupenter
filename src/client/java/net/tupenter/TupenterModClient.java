@@ -253,6 +253,15 @@ public class TupenterModClient implements ClientModInitializer {
         VARIABLE_REGISTRY.register(new EntityNbtVariableProvider());
         VARIABLE_REGISTRY.register(new net.tupenter.command.EntitySubjectProvider());
         VARIABLE_REGISTRY.register(new net.tupenter.command.SlotVariableProvider());
+        // the chat colouring's view of "is this bare word a variable?", asked the
+        // same way the evaluator asks it, so gray in the chat bar means text at run time
+        net.tupenter.command.ChatInputStyler.knownVariable = name -> {
+            try {
+                return VARIABLE_REGISTRY.resolve(name).isPresent();
+            } catch (RuntimeException unreadable) {
+                return true;
+            }
+        };
     }
 
     private static final TickScriptRunner TICK_SCRIPTS = new TickScriptRunner();
@@ -305,7 +314,7 @@ public class TupenterModClient implements ClientModInitializer {
                 "rand", "randf", "pick", "range", "list", "len", "nth", "indexof", "int", "float",
                 "abs", "floor", "ceil", "round", "min", "max", "sqrt", "sin", "cos", "tan",
                 "blockset", "itemset", "effectset", "entityset", "block", "contains", "true", "false",
-                "trim", "upper", "lower", "substr", "replace", "vec", "blockpos", "component", "raycast", "raycast_block",
+                "trim", "upper", "lower", "substr", "replace", "split", "vec", "blockpos", "component", "raycast", "raycast_block",
                 "entity", "raycast_entity", "entities", "nearest_entity",
                 "slot"));
         names.addAll(CustomFunctionManager.getFunctionMap().keySet()); // user functions tab-complete too
@@ -2817,7 +2826,8 @@ public class TupenterModClient implements ClientModInitializer {
                     "§bExpressions · lists:",
                     "§7list(a, b, c)§r — the values you name. Arguments are EXPRESSIONS, so list(2 * 3, client.pos.y) computes them and numbers stay numbers.",
                     "§7list(a | b | c)§r — the same function, pipe-separated: items are literal TEXT taken exactly as typed, so bare words need no quotes — list(short | tall | dry).",
-                    "§7Which one:§r commas COMPUTE, pipes DON'T. list(1, 2) holds numbers; list(1 | 2) holds the strings, where $x + 1$ concatenates to \"11\" instead of adding. /calc shows you which — it prints a list as list(...) with quotes on the text.",
+                    "§7Which one:§r commas COMPUTE, pipes DON'T. list(1, 2) holds numbers; list(1 | 2) holds the strings, where $x + 1$ concatenates to \"11\" instead of adding. /calc shows you which: it prints a list as list(...) with quotes on the text.",
+                    "§7Bare words and commas:§r a lone word that isn't a variable is its own text, so list(short, tall, dry) works too. In the chat bar, text items show gray and computed ones aqua. Pipes are still the way to write items with spaces: list(stone ^dirt | sand ^gravel).",
                     "§7Pipe items are permissive:§r parens, commas, spaces and NBT braces are all ordinary content — list({Count:1b} | {id:5}) works raw. Use \\| for a literal pipe, and quote a ONE-item list: list(\"one two\").",
                     "§7Parentheses do NOT make a list§r — they only ever group. (a | b) was the old #foreach spelling and now errors, naming list(a | b).",
                     "§7range(start, stop[, step])§r — inclusive whole numbers: range(1, 10), range(10, 0, -2)",
