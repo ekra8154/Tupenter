@@ -540,7 +540,7 @@ public class TupenterModClient implements ClientModInitializer {
         return null;
     }
 
-    /** /tupenter scripts — what would run right here, right now. */
+    /** /tupenter scripts list: what would run right here, right now. */
     /**
      * /tupenter abort — stop what YOU set off, and leave the armed tick scripts
      * running.
@@ -902,7 +902,7 @@ public class TupenterModClient implements ClientModInitializer {
         java.util.List<TupenterConfig.ScriptRef> matches = TupenterConfig.INSTANCE.scriptsByName(worldKey, name);
         if (matches.isEmpty()) {
             context.getSource().sendFeedback(Component.literal(
-                    "No tick script named '" + name + "' here. /tupenter scripts lists names, /tupenter running lists ids (only named scripts toggle by name).")
+                    "No tick script named '" + name + "' here. /tupenter scripts list shows names, /tupenter running lists ids (only named scripts toggle by name).")
                     .withStyle(ChatFormatting.GRAY));
             return 0;
         }
@@ -1478,8 +1478,13 @@ public class TupenterModClient implements ClientModInitializer {
                             .then(literal("running")
                                     .executes(TupenterModClient::runRunningCommand)
                                     .then(literal("hud").executes(TupenterModClient::runRunningHudToggle)))
+                            // Bare /tupenter scripts opens the Scripts tab, like
+                            // /tupenter customcommands; the text status that used
+                            // to live here is /tupenter scripts list.
                             .then(literal("scripts")
-                                    .executes(TupenterModClient::runScriptsStatusCommand)
+                                    .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_SCRIPTS))
+                                    .then(literal("list")
+                                            .executes(TupenterModClient::runScriptsStatusCommand))
                                     .then(literal("enable")
                                             .executes(context -> runScriptsMasterCommand(context, true)) // no name = master ON (all)
                                             .then(argument("name", StringArgumentType.word())
@@ -1502,9 +1507,8 @@ public class TupenterModClient implements ClientModInitializer {
                                             .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_ALIASES)))
                                     .then(literal("scripts")
                                             .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_SCRIPTS))))
-                            // Shortcut for the tab people open most: /tupenter
-                            // scripts is already taken by the armed-script
-                            // status, so only this one gets a bare spelling.
+                            // Shortcut for the custom commands tab; /tupenter
+                            // scripts is the same for the Scripts tab.
                             .then(literal("customcommands")
                                     .executes(context -> runMenuCommand(context, ConfigScreenAccess.TAB_ALIASES)))
                             // Bare shortcuts for the two verbs you reach for most.
@@ -1654,7 +1658,7 @@ public class TupenterModClient implements ClientModInitializer {
                 TupenterConfig.save();
                 sendEnhancedParsingInfo("Tupenter: tick scripts are now armed per world — your scripts moved to the "
                         + "Global section (all off everywhere, the safe default). Flip them on for this world in "
-                        + "Mod Menu → Tupenter → Scripts, or check /tupenter scripts.");
+                        + "Mod Menu → Tupenter → Scripts, or check /tupenter scripts list.");
             }
         });
 
@@ -1670,6 +1674,7 @@ public class TupenterModClient implements ClientModInitializer {
 			if (net.tupenter.compat.ConfigScreenAccess.isAvailable()) {
 				net.tupenter.compat.ConfigScreenAccess.tickPendingOpen();
 				net.tupenter.compat.TupenterConfigScreen.tickPendingRestore();
+				net.tupenter.compat.TupenterConfigScreen.tickScriptsHelpState();
 			}
             if (client.player == null) return;
 
@@ -3090,7 +3095,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7Name them:§r start a script with §fname =§r (like a custom command, no params): restock = /clear && #wait 1s. Then toggle from chat: /tupenter scripts enable|disable restock.",
                     "§7Live tuning:§r reference $maxy$ in a script, change it anytime with #set $maxy$ = 80",
                     "§7Arming is PER WORLD:§r Global scripts are shared definitions you arm world-by-world; This World's scripts exist only in the world you're in. A world you never configured runs NOTHING — nukeOnDeath stays off on your survival server.",
-                    "§7Status:§r /tupenter scripts — what's armed here · /tupenter running — armed loops + their ids · /tupenter abort <id|name> switches one OFF · /tupenter scripts enable|disable (no name) — master on/off, or with a §fname§r toggle just that one",
+                    "§7Status:§r /tupenter scripts list: what's armed here · /tupenter scripts opens the tab · /tupenter running: armed loops + their ids · /tupenter abort <id|name> switches one OFF · /tupenter scripts enable|disable (no name): master on/off, or with a §fname§r toggle just that one",
                     "§7Errors report once and pause that script until edited (or re-enabled) · tick scripts never touch resend history and never print #set notices.",
                     "§7Panic:§r /tupenter abort — also flips the master toggle off",
             };

@@ -184,8 +184,25 @@ public class ScriptEditBox extends MultiLineEditBox {
     }
 
     private void applyEdit(AutoBracket.Edit edit) {
-        this.textField.setValue(edit.text());
-        this.textField.seekCursor(Whence.ABSOLUTE, edit.cursor());
+        replaceAndPlaceCaret(edit.text(), edit.cursor());
+    }
+
+    /**
+     * Swap in new text and put a bare caret (no selection) at {@code cursor}.
+     *
+     * <p>The text field sets its "selecting" flag from Shift on every key press,
+     * and seekCursor only collapses the selection when that flag is off. The
+     * keys that reach here mostly hold Shift: ( { " $ for auto-brackets, and
+     * Ctrl+Shift+Z for redo. So the caret moved but the selection end stayed
+     * where setValue left it, at the end of the text, and the next character
+     * you typed replaced everything after the caret. Clearing the flag first
+     * makes the move a plain caret placement. Vanilla sets it again on the
+     * next key press, so nothing is lost.
+     */
+    private void replaceAndPlaceCaret(String text, int cursor) {
+        this.textField.setValue(text);
+        this.textField.setSelecting(false);
+        this.textField.seekCursor(Whence.ABSOLUTE, cursor);
     }
 
     /** Seed the undo history from the box's value the first time it's touched. */
@@ -208,8 +225,7 @@ public class ScriptEditBox extends MultiLineEditBox {
         }
         restoring = true;
         try {
-            this.textField.setValue(state.text());
-            this.textField.seekCursor(Whence.ABSOLUTE, state.cursor());
+            replaceAndPlaceCaret(state.text(), state.cursor());
         } finally {
             restoring = false;
         }
