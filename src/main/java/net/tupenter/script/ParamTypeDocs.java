@@ -224,6 +224,14 @@ public final class ParamTypeDocs {
                         "/customcommand add team <c:color> = /echo joining the $c$ team",
                         "§7Binds the color NAME§r (red, aqua, ...) — vanilla's /team modify color vocabulary."),
 
+                // ---- Lists ----
+                doc(ParamType.LIST, "list", List.of(), "Lists",
+                        "a list, written as in a script; binds a real list for #foreach",
+                        "/customcommand add kit <items:list> = #foreach $i$ in items (/give @s $i$)",
+                        "§7Written like in a script:§r list(a | b) takes items exactly as typed, list(a, b) computes each one. range(1, 5), blockset(#minecraft:wool), split(...) and a variable holding a list work too.",
+                        "§7Parentheses end it,§r so it can hold spaces and still sit anywhere, not just last: /kit list(oak_log | iron_ingot) works.",
+                        "§7A real list:§r #foreach, nth, contains and rand take it directly. A command gets one item at a time; the whole list can't be inserted into one."),
+
                 // ---- Fixed choices ----
                 doc(ParamType.CHOICE, "choice", List.of(), "Fixed choices",
                         "your own fixed list — written as the options themselves",

@@ -56,7 +56,7 @@ public final class VariableTypes {
     public static String validate(AliasDefinition.ParamType type, Value value, String name) {
         if (value instanceof Value.ListValue) {
             return switch (type) {
-                case STRING, TEXT -> null; // free-form content; a list is legitimate there
+                case STRING, TEXT, LIST -> null; // free-form content, or the list itself
                 default -> "$" + name + "$ is declared " + keywordFor(type)
                         + ", but a list was assigned to it — a list fits #foreach, nth(...) or rand(...).";
             };
@@ -97,6 +97,11 @@ public final class VariableTypes {
                 if (!(value instanceof Value.NumberValue)) {
                     return shapeError(name, type, "\"" + value.displayString() + "\" is not a number");
                 }
+            }
+            case LIST -> {
+                // a list value returned above, so anything reaching here isn't one
+                return shapeError(name, type, "\"" + value.displayString()
+                        + "\" is not a list; list(a | b), range(1, 5) or split(text) makes one");
             }
             case BOOL -> {
                 if (!(value instanceof Value.BoolValue)) {
