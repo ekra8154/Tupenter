@@ -165,7 +165,7 @@ There are custom *functions* too, for values you want to reuse inside `$...$`. A
 
 Mod Menu → Tupenter → **Scripts** holds one-line scripts that run every tick while the master toggle is on. Each armed line is wrapped in a loop, so it's one long-running script rather than a fresh parse each tick: `#set` values persist across ticks and `#wait` works naturally.
 
-Scripts are armed per world, so a script you wrote for creative never fires on your survival server, and a world you never configured runs nothing. `/tupenter scripts` shows what's armed where you stand, and `/tupenter abort all` is the panic switch: it stops every script and flips the master toggle off.
+Scripts are armed per world, so a script you wrote for creative never fires on your survival server, and a world you never configured runs nothing. `/tupenter scripts` opens the Scripts tab, `/tupenter scripts list` shows what's armed where you stand, and `/tupenter abort all` is the panic switch: it stops every script and flips the master toggle off.
 
 Since a script is a loop, events are one-tick flags you test:
 
