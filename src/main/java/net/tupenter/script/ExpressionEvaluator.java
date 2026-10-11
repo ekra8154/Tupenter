@@ -504,7 +504,7 @@ final class ExpressionEvaluator {
                 return literalList;
             }
 
-            List<Value> args = parseFunctionArgs();
+            List<Value> args = parseFunctionArgs(identifier.equalsIgnoreCase("list"));
             if (skipping) {
                 // dead call: skip the builtin math AND the user-function call —
                 // the latter is what stops a recursive call in an untaken branch
@@ -829,6 +829,15 @@ final class ExpressionEvaluator {
 
         /** Args already past '('; consumes through the closing ')'. */
         private List<Value> parseFunctionArgs() {
+            return parseFunctionArgs(false);
+        }
+
+        /**
+         * @param bareWordsAreText true for list(...): an item that is just a
+         *                         bare name and not a variable is its own text
+         *                         (see {@link #parseListItem})
+         */
+        private List<Value> parseFunctionArgs(boolean bareWordsAreText) {
             List<Value> args = new ArrayList<>();
             // Check for a separator pipe BEFORE parsing anything. Otherwise
             // list(short | tall) — the whole reason someone reaches for pipes —
@@ -846,7 +855,7 @@ final class ExpressionEvaluator {
             }
 
             while (true) {
-                args.add(parseTernary());
+                args.add(bareWordsAreText ? parseListItem() : parseTernary());
                 skipWhitespace();
                 if (atEnd()) {
                     throw new ExpressionException("Missing closing parenthesis");
@@ -864,6 +873,46 @@ final class ExpressionEvaluator {
                     return args;
                 }
                 throw new ExpressionException("Expected ',' or ')' in function arguments");
+            }
+        }
+
+        /**
+         * One comma item of list(...). A bare name that isn't a variable is
+         * taken as its own text, so list(short_, tall_) is the two words rather
+         * than "Unknown variable 'short_'"; commas are what everyone types, and
+         * that failed constantly. A variable still wins (list(x, y) is their
+         * values), and anything more than a single name is an expression as
+         * in every other call. The chat colouring shows which way each item
+         * went: gray for text, aqua for computed.
+         */
+        private Value parseListItem() {
+            skipWhitespace();
+            int start = index;
+            int end = start;
+            while (end < input.length() && ListLiteral.isBareWordChar(input.charAt(end))) {
+                end++;
+            }
+            int after = end;
+            while (after < input.length() && Character.isWhitespace(input.charAt(after))) {
+                after++;
+            }
+            boolean wholeItem = after < input.length() && (input.charAt(after) == ',' || input.charAt(after) == ')');
+            if (wholeItem) {
+                String word = input.substring(start, end);
+                if (ListLiteral.isBareWord(word) && !isVariable(word)) {
+                    index = end;
+                    return skipping ? SKIP : Value.of(word);
+                }
+            }
+            return parseTernary();
+        }
+
+        /** Whether {@code name} names a variable, even one that can't be read right now. */
+        private boolean isVariable(String name) {
+            try {
+                return context.variables().resolve(name).isPresent();
+            } catch (RuntimeException unreadable) {
+                return true; // it exists, it just has no value at the moment: still a variable
             }
         }
 

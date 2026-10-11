@@ -450,7 +450,7 @@ walk options you wrote, or any LIST value
 ```
 
 - Any list will do: list(a | b | c) written in place, list(1, 2, 3), range(1, 10), registry sets, entities(radius), client.effects.
-- The header is just an expression — nothing is special about it, so #local kinds = list(short | tall) then #foreach $k$ in kinds is the same loop. list(a | b) items are literal TEXT (bare words, no quotes); list(a, b) items are COMPUTED.
+- The header is just an expression: nothing is special about it, so #local kinds = list(short | tall) then #foreach $k$ in kinds is the same loop. list(a | b) items are literal TEXT (bare words, no quotes); list(a, b) items are COMPUTED, except that a lone word that isn't a variable is its text, so list(short, tall) works too.
 - The set pairing is the classic: every member of a #tag, one command each.
 
 ```
@@ -920,9 +920,10 @@ one of the options you wrote, chosen at random
 exactly the values you name, as one list
 
 - The literal counterpart to range: range makes a RUN of numbers — list makes the exact values you name, of any type.
-- Two separators, two meanings: COMMAS compute — list(2 * 3, 7) is 6 and 7. PIPES take items as typed, so bare words need no quotes — list(short | tall) is the two words, and list(1 | 2) is the STRINGS, where x + 1 concatenates to "11".
+- Two separators, two meanings: COMMAS compute: list(2 * 3, 7) is 6 and 7. PIPES take items exactly as typed, spaces included: list(stone ^dirt | sand ^gravel) is two items, and list(1 | 2) is the STRINGS, where x + 1 concatenates to "11".
+- Bare words work with commas too: a lone name that isn't a variable is taken as its text, so list(short, tall, dry) is the three words. A variable still wins (list(x, y) is their values), and in chat the text items show gray while computed ones stay aqua.
 - Lists flatten: list(range(1, 3), 9) is 1 2 3 9, which makes list(a, b) double as "join these two lists".
-- One item, or a comma inside one? Quote it — list("one two"). With no pipe there is nothing to switch on, and once there IS a pipe a comma is content: list(1, 2 | 3) is the two items "1, 2" and "3".
+- Spaces in a single item, or a comma inside one? Quote it: list("one two"). With no pipe there is nothing to switch on, and once there IS a pipe a comma is content: list(1, 2 | 3) is the two items "1, 2" and "3".
 - Printed as source: /calc shows a list as list(...) with quotes on the text, so you can see which elements are numbers and paste the whole thing back.
 
 ```
