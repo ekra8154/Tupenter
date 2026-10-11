@@ -22,6 +22,8 @@ import org.lwjgl.glfw.GLFW;
  *   no antialiasing, so the overdraw is pixel-perfect)
  * - Enter auto-indents to the current line's leading whitespace
  * - Tab inserts two spaces instead of moving focus
+ * - the chat bar's $variable / function / #directive suggestions, in a popup
+ *   at the caret (Tab takes one, Up/Down pick)
  * Newlines are Mod Menu formatting only — styling maps them 1:1 to spaces,
  * so unmatched parens and unclosed markers glow red exactly like the chat bar.
  */
@@ -37,6 +39,35 @@ public class ScriptEditBox extends MultiLineEditBox {
     private Style[] styleCache;
     private UndoHistory undoHistory;   // lazily seeded from the box's initial value
     private boolean restoring;         // true while applying an undo/redo (don't re-record it)
+    private final EditorCompletionPopup completion = new EditorCompletionPopup(new EditorCompletionPopup.Target() {
+        @Override
+        public String value() {
+            return getValue();
+        }
+
+        @Override
+        public int cursor() {
+            return textField.cursor();
+        }
+
+        @Override
+        public void replaceToCursor(int start, String text) {
+            String value = getValue();
+            int cursor = Math.min(textField.cursor(), value.length());
+            replaceAndPlaceCaret(value.substring(0, start) + text + value.substring(cursor), start + text.length());
+            recordUndo();
+        }
+
+        @Override
+        public boolean definition() {
+            return definition;
+        }
+
+        @Override
+        public boolean perLine() {
+            return perLine;
+        }
+    });
 
     public ScriptEditBox(Font font, int width, int height, boolean definition) {
         this(font, width, height, definition, false);
@@ -76,6 +107,24 @@ public class ScriptEditBox extends MultiLineEditBox {
         }
     }
 
+    /** The suggestion popup goes on top, anchored to the caret in screen space. */
+    @Override
+    public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.renderWidget(graphics, mouseX, mouseY, partialTick);
+        if (!isFocused()) {
+            return;
+        }
+        String value = getValue();
+        int line = this.textField.getLineAtCursor();
+        int lineStart = this.textField.getLineView(line).beginIndex();
+        int cursor = Math.max(lineStart, Math.min(this.textField.cursor(), value.length()));
+        int caretX = getInnerLeft() + editorFont.width(value.substring(lineStart, cursor));
+        // contents are drawn shifted up by the scroll; the popup is not
+        int caretY = getInnerTop() + line * editorFont.lineHeight - (int) scrollAmount();
+        caretY = Math.max(getY(), Math.min(getY() + getHeight() - editorFont.lineHeight, caretY));
+        completion.render(graphics, editorFont, caretX, caretY);
+    }
+
     // the editor is always a script/expression context, so auto-bracket needs
     // no per-line gate here — just the opt-in setting. Same chars as the chat bar.
     private static final String AUTO_BRACKET_CHARS = "([{)]}\"$";
@@ -98,12 +147,14 @@ public class ScriptEditBox extends MultiLineEditBox {
             if (edit != null) {
                 applyEdit(edit);
                 recordUndo();
+                completion.onEdited();
                 return true;
             }
         }
         boolean handled = super.charTyped(codepoint, modifiers);
         if (handled) {
             recordUndo();
+            completion.onEdited();
         }
         return handled;
     }
@@ -111,6 +162,9 @@ public class ScriptEditBox extends MultiLineEditBox {
     @Override
     public boolean keyPressed(int key, int scancode, int modifiers) {
         ensureHistory();
+        if (completion.keyPressed(key)) {
+            return true; // Tab took a suggestion, or Up/Down moved through them
+        }
         boolean ctrl = Screen.hasControlDown();
         boolean shift = Screen.hasShiftDown();
         if (ctrl && !shift && key == GLFW.GLFW_KEY_Z) {
@@ -136,12 +190,16 @@ public class ScriptEditBox extends MultiLineEditBox {
             if (edit != null) {
                 applyEdit(edit);
                 recordUndo();
+                completion.onEdited();
                 return true;
             }
         }
         boolean handled = super.keyPressed(key, scancode, modifiers);
         if (handled) {
             recordUndo(); // typing, delete, paste, cut, select-all-then-type, …
+            if (key == InputConstants.KEY_BACKSPACE || key == InputConstants.KEY_DELETE) {
+                completion.onEdited(); // shortening the word re-filters, as in chat
+            }
         }
         return handled;
     }
@@ -150,6 +208,7 @@ public class ScriptEditBox extends MultiLineEditBox {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         boolean handled = super.mouseClicked(mouseX, mouseY, button);
         recordUndo(); // a click that moves the caret ends the current undo group
+        completion.dismiss();
         return handled;
     }
 

@@ -309,16 +309,18 @@ public class TupenterConfigScreen {
                 .build());
 
         // =====================================================================
-        // SCRIPTS TAB — tick scripts, armed PER WORLD. Two sections:
-        // Global (shared definitions, per-world On/Off) and This world
-        // (definitions that exist only here). Unconfigured world = nothing runs.
+        // SCRIPTS TAB: tick scripts, armed PER WORLD, in one list. Each row is
+        // either Global (a shared definition with a per-world On/Off) or World
+        // (exists only here); its scope button moves it between the two.
+        // Unconfigured world = nothing runs.
         // =====================================================================
 
-        scripts.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.tick_scripts_enabled"), TupenterConfig.INSTANCE.tickScriptsEnabled)
+        tickMasterEntry = entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.tick_scripts_enabled"), TupenterConfig.INSTANCE.tickScriptsEnabled)
                 .setDefaultValue(false)
                 .setTooltip(Component.translatable("tooltip.tupenter.tick_scripts_enabled"))
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.tickScriptsEnabled = newValue)
-                .build());
+                .build();
+        scripts.addEntry(tickMasterEntry);
 
         if (!TupenterConfig.INSTANCE.tickScriptsEnabled) {
             // clears up "I aborted but scripts still show ✔" — arming is preserved, the master just gates it
@@ -334,16 +336,23 @@ public class TupenterConfigScreen {
 
         TupenterConfig.WorldScriptState worldState = TupenterConfig.INSTANCE.worldState(scriptsWorldKey);
 
-        // --- Global scripts: [On/Off for THIS world] [wrap] [text] [✕] ---
-        globalScriptRows.clear();
-        List<AbstractConfigListEntry> globalEntries = new ArrayList<>();
+        // --- [On/Off for THIS world] [Global/World] [wrap] [text] [✕] ---
+        // Global rows first, then this world's own (none outside a world).
+        scriptRows.clear();
         for (TupenterConfig.GlobalScript definition : TupenterConfig.INSTANCE.globalScripts) {
             boolean enabledHere = worldState != null && worldState.enabledGlobalIds.contains(definition.id);
-            GlobalScriptEntry row = new GlobalScriptEntry(definition.id, definition.text, enabledHere, scriptsWorldKey == null);
-            globalScriptRows.add(row);
-            globalEntries.add(row);
+            ScriptRowEntry row = new ScriptRowEntry(definition.id, definition.text, true, enabledHere, scriptsWorldKey == null);
+            scriptRows.add(row);
+            scripts.addEntry(row);
         }
-        globalEntries.add(new ImportButtonEntry(
+        if (worldState != null) {
+            for (TupenterConfig.WorldScript script : worldState.scripts) {
+                ScriptRowEntry row = new ScriptRowEntry(script.id, script.text, false, script.enabled, false);
+                scriptRows.add(row);
+                scripts.addEntry(row);
+            }
+        }
+        scripts.addEntry(new ImportButtonEntry(
                 Component.translatable("text.tupenter.add_script"),
                 Component.translatable("tooltip.tupenter.add_script"),
                 () -> {
@@ -353,44 +362,10 @@ public class TupenterConfigScreen {
                     reopenScreen(TAB_SCRIPTS);
                 }
         ));
-        scripts.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.global_scripts"), globalEntries)
-                .setExpanded(true)
-                .setTooltip(Component.translatable("tooltip.tupenter.global_scripts"))
-                .build());
-
-        // --- This world's scripts: visible set swaps with the world ---
-        worldScriptRows.clear();
-        List<AbstractConfigListEntry> worldEntries = new ArrayList<>();
-        if (scriptsWorldKey == null) {
-            worldEntries.add(entryBuilder.startTextDescription(Component.translatable("text.tupenter.world_scripts_no_world")).build());
-        } else {
-            if (worldState != null) {
-                for (TupenterConfig.WorldScript script : worldState.scripts) {
-                    WorldScriptEntry row = new WorldScriptEntry(script.id, script.text, script.enabled);
-                    worldScriptRows.add(row);
-                    worldEntries.add(row);
-                }
-            }
-            worldEntries.add(new ImportButtonEntry(
-                    Component.translatable("text.tupenter.add_world_script"),
-                    Component.translatable("tooltip.tupenter.add_world_script"),
-                    () -> {
-                        commitScriptEdits();
-                        TupenterConfig.INSTANCE.worldStateOrCreate(scriptsWorldKey).scripts
-                                .add(new TupenterConfig.WorldScript(TupenterConfig.WorldScript.newId(), "/echo new script", false));
-                        reopenScreen(TAB_SCRIPTS);
-                    }
-            ));
-        }
-        scripts.addEntry(entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.world_scripts"), worldEntries)
-                .setExpanded(true)
-                .setTooltip(Component.translatable("tooltip.tupenter.world_scripts"))
-                .build());
 
         java.util.Set<String> namesBeforeEdit = new java.util.HashSet<>(CommandAliasManager.getAliasMap().keySet());
         builder.setSavingRunnable(() -> {
             commitScriptEdits();
-            TupenterConfig.INSTANCE.pruneWorldScriptStates();
             TupenterConfig.INSTANCE.aliases = collectCommandRows();
             if (presetBox != null) {
                 TupenterConfig.INSTANCE.permanentMessages = splitPresets(presetBox.text());
@@ -439,7 +414,7 @@ public class TupenterConfigScreen {
     /** Snapshot every open row's state, for the rebuild that is about to happen. */
     private static void carryExpansion() {
         carriedExpansion.clear();
-        for (List<? extends WrapRowEntry> rows : List.of(commandRows, globalScriptRows, worldScriptRows)) {
+        for (List<? extends WrapRowEntry> rows : List.of(commandRows, scriptRows)) {
             for (WrapRowEntry row : rows) {
                 if (!row.deleted) {
                     carriedExpansion.computeIfAbsent(row.text(), key -> new java.util.ArrayDeque<>())
@@ -455,8 +430,9 @@ public class TupenterConfigScreen {
         return queued == null ? null : queued.poll();
     }
 
-    private static final List<GlobalScriptEntry> globalScriptRows = new ArrayList<>();
-    private static final List<WorldScriptEntry> worldScriptRows = new ArrayList<>();
+    private static final List<ScriptRowEntry> scriptRows = new ArrayList<>();
+    /** The Scripts tab's master switch, read live so flipping it dims the rows at once. */
+    private static me.shedaniel.clothconfig2.gui.entries.BooleanListEntry tickMasterEntry;
     private static final List<CommandRowEntry> commandRows = new ArrayList<>();
     private static PresetBoxEntry presetBox; // the resend preset/macro editor
     private static me.shedaniel.clothconfig2.gui.entries.IntegerSliderEntry importCountEntry; // live value for Import
@@ -495,40 +471,44 @@ public class TupenterConfigScreen {
     private static String scriptsWorldKey;
 
     /**
-     * Pushes the current script rows into the live config: global definitions,
-     * plus — when the screen was opened in a world — that world's enable set
-     * and its own script list. Called on save and before any row-list rebuild.
+     * Pushes the current script rows into the live config, each into the store
+     * its scope button says: global definitions, plus (when the screen was
+     * opened in a world) that world's enable set and its own script list.
+     * Called on save and before any row-list rebuild.
+     *
+     * <p>A script keeps its id when it changes scope, so a running loop and
+     * its pid carry straight over. The prune at the end is what finishes a
+     * Global to World move: the id is no longer a global, so every other
+     * world's enable pointer to it goes, and moving it back later can't
+     * silently re-arm it over there.
      */
     private static void commitScriptEdits() {
         List<TupenterConfig.GlobalScript> globals = new ArrayList<>();
-        for (GlobalScriptEntry row : globalScriptRows) {
+        List<String> enabledIds = new ArrayList<>();
+        List<TupenterConfig.WorldScript> worldScripts = new ArrayList<>();
+        for (ScriptRowEntry row : scriptRows) {
             if (row.deleted || row.text().isEmpty()) {
                 continue;
             }
-            globals.add(new TupenterConfig.GlobalScript(row.id, row.text()));
-        }
-        TupenterConfig.INSTANCE.globalScripts = globals;
-
-        if (scriptsWorldKey == null) {
-            return; // arming is locked without a world; nothing per-world to write
-        }
-        TupenterConfig.WorldScriptState state = TupenterConfig.INSTANCE.worldStateOrCreate(scriptsWorldKey);
-        List<String> enabledIds = new ArrayList<>();
-        for (GlobalScriptEntry row : globalScriptRows) {
-            if (!row.deleted && !row.text().isEmpty() && row.enabled) {
-                enabledIds.add(row.id);
-            }
-        }
-        state.enabledGlobalIds = enabledIds;
-
-        List<TupenterConfig.WorldScript> worldScripts = new ArrayList<>();
-        for (WorldScriptEntry row : worldScriptRows) {
-            if (!row.deleted && !row.text().isEmpty()) {
-                String id = row.id == null || row.id.isEmpty() ? TupenterConfig.WorldScript.newId() : row.id;
+            String id = row.id == null || row.id.isEmpty() ? TupenterConfig.GlobalScript.newId() : row.id;
+            if (row.global || scriptsWorldKey == null) {
+                globals.add(new TupenterConfig.GlobalScript(id, row.text()));
+                if (row.enabled) {
+                    enabledIds.add(id);
+                }
+            } else {
                 worldScripts.add(new TupenterConfig.WorldScript(id, row.text(), row.enabled));
             }
         }
-        state.scripts = worldScripts;
+        TupenterConfig.INSTANCE.globalScripts = globals;
+
+        // without a world, arming is locked and there is nothing per-world to write
+        if (scriptsWorldKey != null) {
+            TupenterConfig.WorldScriptState state = TupenterConfig.INSTANCE.worldStateOrCreate(scriptsWorldKey);
+            state.enabledGlobalIds = enabledIds;
+            state.scripts = worldScripts;
+        }
+        TupenterConfig.INSTANCE.pruneWorldScriptStates();
     }
 
     private static List<String> collectCommandRows() {
@@ -586,8 +566,42 @@ public class TupenterConfigScreen {
 
             this.singleBox = new net.minecraft.client.gui.components.EditBox(
                     Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty()) {
+                // the same suggestions as the expanded editor and the chat bar
+                private final EditorCompletionPopup completion = new EditorCompletionPopup(new EditorCompletionPopup.Target() {
+                    @Override
+                    public String value() {
+                        return getValue();
+                    }
+
+                    @Override
+                    public int cursor() {
+                        return getCursorPosition();
+                    }
+
+                    @Override
+                    public void replaceToCursor(int start, String text) {
+                        String value = getValue();
+                        int cursor = Math.min(getCursorPosition(), value.length());
+                        setValue(value.substring(0, start) + text + value.substring(cursor));
+                        moveCursorTo(start + text.length(), false);
+                    }
+
+                    @Override
+                    public boolean definition() {
+                        return definitionRow();
+                    }
+
+                    @Override
+                    public boolean perLine() {
+                        return false;
+                    }
+                });
+
                 @Override
                 public boolean keyPressed(int key, int scancode, int modifiers) {
+                    if (completion.keyPressed(key)) {
+                        return true;
+                    }
                     // a multi-line paste into the collapsed box would lose its
                     // newlines — expand and paste into the real editor instead
                     if (net.minecraft.client.gui.screens.Screen.isPaste(key)) {
@@ -597,7 +611,36 @@ public class TupenterConfigScreen {
                             return true;
                         }
                     }
-                    return super.keyPressed(key, scancode, modifiers);
+                    boolean handled = super.keyPressed(key, scancode, modifiers);
+                    if (handled && (key == com.mojang.blaze3d.platform.InputConstants.KEY_BACKSPACE
+                            || key == com.mojang.blaze3d.platform.InputConstants.KEY_DELETE)) {
+                        completion.onEdited();
+                    }
+                    return handled;
+                }
+
+                @Override
+                public boolean charTyped(char codepoint, int modifiers) {
+                    boolean handled = super.charTyped(codepoint, modifiers);
+                    if (handled) {
+                        completion.onEdited();
+                    }
+                    return handled;
+                }
+
+                @Override
+                public void onClick(double mouseX, double mouseY) {
+                    super.onClick(mouseX, mouseY);
+                    completion.dismiss();
+                }
+
+                @Override
+                public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+                    super.renderWidget(graphics, mouseX, mouseY, partialTick);
+                    if (isFocused()) {
+                        completion.render(graphics, Minecraft.getInstance().font,
+                                getScreenX(getCursorPosition()), getY() + (getHeight() - 8) / 2);
+                    }
                 }
             };
             this.singleBox.setMaxLength(4000);
@@ -787,9 +830,9 @@ public class TupenterConfigScreen {
         private net.minecraft.client.gui.components.events.GuiEventListener focusBeforeBlur;
 
         /**
-         * Survive Cloth's subcategory re-focusing us. The script rows live inside
-         * a Cloth subcategory, and its setFocused(child) has no "already
-         * focused" check: clicking a row it already has focused calls
+         * Survive Cloth's subcategory re-focusing us. The script rows used to
+         * live inside a Cloth subcategory, and its setFocused(child) has no
+         * "already focused" check: clicking a row it already has focused calls
          * row.setFocused(false) then row.setFocused(true). For a container,
          * false means "drop your focused child" and true does nothing at all,
          * so the second click on a script box left the row with NO focused
@@ -1113,12 +1156,7 @@ public class TupenterConfigScreen {
                 row.blurBoxes();
             }
         }
-        for (WrapRowEntry row : globalScriptRows) {
-            if (row != clickedRow) {
-                row.blurBoxes();
-            }
-        }
-        for (WrapRowEntry row : worldScriptRows) {
+        for (WrapRowEntry row : scriptRows) {
             if (row != clickedRow) {
                 row.blurBoxes();
             }
@@ -1289,48 +1327,140 @@ public class TupenterConfigScreen {
     }
 
     /**
-     * A tick-script row: [On/Off] [wrap] [edit box] [✕]. The On/Off arms the
-     * script for the world the screen was opened in; outside a world the
-     * toggle locks ("—") — text edits still work, arming doesn't.
+     * A tick-script row: [On/Off] [Global/World] [wrap] [edit box] [✕]. The
+     * On/Off arms the script for the world the screen was opened in; outside a
+     * world both buttons lock (text edits still work, arming and moving don't).
+     *
+     * <p>The scope button only flips {@link #global}; commitScriptEdits does the
+     * actual move between the two stores, so nothing changes until save or the
+     * next rebuild, and the row stays where it is until then.
      */
-    private abstract static class ScriptRowEntry extends WrapRowEntry {
+    private static class ScriptRowEntry extends WrapRowEntry {
+        /** Darkens the editor of a script that won't run (about 55% toward black). */
+        private static final int DIM_OVERLAY = 0x8C000000;
+
+        /** How long a "Sure?" waits for its second click. */
+        private static final long SCOPE_CONFIRM_MS = 3000;
+
+        final String id;
         private final Button toggleButton;
+        private final Button scopeButton;
         private final boolean initialEnabled;
+        private final boolean initialGlobal;
         private final boolean toggleLocked;
         boolean enabled;
+        boolean global;
+        /** While a Global to World move waits for its confirming click: when it gives up. 0 = not asking. */
+        private long confirmUntil;
 
-        ScriptRowEntry(String text, boolean enabled, boolean toggleLocked) {
+        ScriptRowEntry(String id, String text, boolean global, boolean enabled, boolean toggleLocked) {
             super(text, Component.translatable("tooltip.tupenter.delete_script"), () -> {
                 commitScriptEdits();
                 reopenScreen(TAB_SCRIPTS);
             });
+            this.id = id;
             this.initialEnabled = enabled;
             this.enabled = enabled;
+            this.initialGlobal = global;
+            this.global = global;
             this.toggleLocked = toggleLocked;
 
             this.toggleButton = Button.builder(toggleLabel(), button -> {
                         this.enabled = !this.enabled;
                         button.setMessage(toggleLabel());
                     })
-                    .bounds(0, 0, 40, 20)
+                    .bounds(0, 0, 24, 20) // just fits "Off"
                     .tooltip(Tooltip.create(Component.translatable(
                             toggleLocked ? "tooltip.tupenter.tick_script_toggle_locked" : "tooltip.tupenter.tick_script_toggle")))
                     .build();
             this.toggleButton.active = !toggleLocked;
+
+            this.scopeButton = Button.builder(Component.empty(), button -> clickScope())
+                    .bounds(0, 0, 35, 20) // just fits "Global"
+                    .build();
+            this.scopeButton.active = !toggleLocked; // no world: everything is Global
+            refreshScope();
+        }
+
+        /**
+         * World to Global just happens: other worlds gain a disarmed row, which
+         * costs nothing. Global to World deletes the script from every other
+         * world, so when it is armed in any of them the first click only asks
+         * ("Sure?") and a second click within a few seconds does it.
+         */
+        private void clickScope() {
+            if (global && confirmUntil == 0 && armedInOtherWorlds() > 0) {
+                confirmUntil = System.currentTimeMillis() + SCOPE_CONFIRM_MS;
+            } else {
+                confirmUntil = 0;
+                global = !global;
+            }
+            refreshScope();
+        }
+
+        /** Worlds other than this one that have this script switched on. */
+        private int armedInOtherWorlds() {
+            int count = 0;
+            for (java.util.Map.Entry<String, TupenterConfig.WorldScriptState> entry
+                    : TupenterConfig.INSTANCE.worldScripts.entrySet()) {
+                if (!entry.getKey().equals(scriptsWorldKey) && entry.getValue().enabledGlobalIds.contains(id)) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        private void refreshScope() {
+            if (confirmUntil != 0) {
+                scopeButton.setMessage(Component.translatable("text.tupenter.script_scope_confirm")
+                        .withStyle(net.minecraft.ChatFormatting.RED));
+                scopeButton.setTooltip(Tooltip.create(Component.translatable(
+                        "tooltip.tupenter.script_scope_confirm", armedInOtherWorlds())));
+                return;
+            }
+            scopeButton.setMessage(global
+                    ? Component.translatable("text.tupenter.script_scope_global").withStyle(net.minecraft.ChatFormatting.AQUA)
+                    : Component.translatable("text.tupenter.script_scope_world").withStyle(net.minecraft.ChatFormatting.LIGHT_PURPLE));
+            scopeButton.setTooltip(Tooltip.create(Component.translatable(toggleLocked
+                    ? "tooltip.tupenter.script_scope_locked"
+                    : global ? "tooltip.tupenter.script_scope_global" : "tooltip.tupenter.script_scope_world")));
+        }
+
+        @Override
+        public void render(GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
+            if (confirmUntil != 0 && System.currentTimeMillis() > confirmUntil) {
+                confirmUntil = 0; // the "Sure?" went unanswered: back to plain Global
+                refreshScope();
+            }
+            toggleButton.setMessage(toggleLabel()); // follows the master switch live
+            super.render(graphics, index, y, x, entryWidth, entryHeight, mouseX, mouseY, isHovered, partialTick);
         }
 
         private Component toggleLabel() {
             if (toggleLocked) {
                 return Component.literal("—").withStyle(net.minecraft.ChatFormatting.DARK_GRAY);
             }
-            return enabled
-                    ? Component.literal("On").withStyle(net.minecraft.ChatFormatting.GREEN)
-                    : Component.literal("Off").withStyle(net.minecraft.ChatFormatting.RED);
+            if (!enabled) {
+                return Component.literal("Off").withStyle(net.minecraft.ChatFormatting.RED);
+            }
+            // armed but held back by the master switch: still "On", just not lit
+            return Component.literal("On").withStyle(masterOn()
+                    ? net.minecraft.ChatFormatting.GREEN : net.minecraft.ChatFormatting.DARK_GREEN);
+        }
+
+        /** The master switch as currently shown on screen, saved or not. */
+        private static boolean masterOn() {
+            return tickMasterEntry != null ? tickMasterEntry.getValue() : TupenterConfig.INSTANCE.tickScriptsEnabled;
+        }
+
+        /** Would this script actually run in this world, going by what the screen shows now? */
+        private boolean runs() {
+            return enabled && !toggleLocked && masterOn();
         }
 
         @Override
         List<net.minecraft.client.gui.components.AbstractWidget> leadingWidgets() {
-            return List.of(toggleButton);
+            return List.of(toggleButton, scopeButton);
         }
 
         /**
@@ -1349,6 +1479,17 @@ public class TupenterConfigScreen {
         @Override
         void decorateEditor(GuiGraphics graphics, net.minecraft.client.gui.components.AbstractWidget box,
                             int mouseX, int mouseY) {
+            drawSendsBadge(graphics, box, mouseX, mouseY);
+            // A script that won't run here (switched Off, or the master switch
+            // is off) gets its editor dimmed, so what is live stands out at a
+            // glance. Not while you're typing in it: editing reads normally.
+            if (!runs() && !box.isFocused()) {
+                graphics.fill(box.getX(), box.getY(), box.getX() + box.getWidth(), box.getY() + box.getHeight(), DIM_OVERLAY);
+            }
+        }
+
+        private void drawSendsBadge(GuiGraphics graphics, net.minecraft.client.gui.components.AbstractWidget box,
+                                    int mouseX, int mouseY) {
             if (!net.tupenter.command.ServerTrafficScan.sendsToServer(text())) {
                 return;
             }
@@ -1365,27 +1506,7 @@ public class TupenterConfigScreen {
 
         @Override
         public boolean isEdited() {
-            return super.isEdited() || enabled != initialEnabled;
-        }
-    }
-
-    /** Shared definition; the toggle is this world's arming state for it. */
-    private static class GlobalScriptEntry extends ScriptRowEntry {
-        final String id;
-
-        GlobalScriptEntry(String id, String text, boolean enabledHere, boolean toggleLocked) {
-            super(text, enabledHere, toggleLocked);
-            this.id = id;
-        }
-    }
-
-    /** A script that exists only in the world the screen was opened in. */
-    private static class WorldScriptEntry extends ScriptRowEntry {
-        final String id; // stable identity; "" for a not-yet-saved new row
-
-        WorldScriptEntry(String id, String text, boolean enabled) {
-            super(text, enabled, false);
-            this.id = id;
+            return super.isEdited() || enabled != initialEnabled || global != initialGlobal;
         }
     }
 

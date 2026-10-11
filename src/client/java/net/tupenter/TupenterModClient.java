@@ -3094,7 +3094,7 @@ public class TupenterModClient implements ClientModInitializer {
                     "§7#wait works inside:§r the loop resumes after it, so #wait paces a script (/effect … && #wait 3s) and $markers$ after a wait re-read live state. #while is allowed too.",
                     "§7Name them:§r start a script with §fname =§r (like a custom command, no params): restock = /clear && #wait 1s. Then toggle from chat: /tupenter scripts enable|disable restock.",
                     "§7Live tuning:§r reference $maxy$ in a script, change it anytime with #set $maxy$ = 80",
-                    "§7Arming is PER WORLD:§r Global scripts are shared definitions you arm world-by-world; This World's scripts exist only in the world you're in. A world you never configured runs NOTHING — nukeOnDeath stays off on your survival server.",
+                    "§7Arming is PER WORLD:§r Global scripts are shared definitions you arm world-by-world; World scripts exist only in the world you're in. The Global/World button beside a script's On/Off switches it. A world you never configured runs NOTHING, so nukeOnDeath stays off on your survival server.",
                     "§7Status:§r /tupenter scripts list: what's armed here · /tupenter scripts opens the tab · /tupenter running: armed loops + their ids · /tupenter abort <id|name> switches one OFF · /tupenter scripts enable|disable (no name): master on/off, or with a §fname§r toggle just that one",
                     "§7Errors report once and pause that script until edited (or re-enabled) · tick scripts never touch resend history and never print #set notices.",
                     "§7Panic:§r /tupenter abort — also flips the master toggle off",
