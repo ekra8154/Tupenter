@@ -45,6 +45,37 @@ public final class ListLiteral {
     }
 
     /**
+     * Whether a comma-list item is a single bare name: a letter or _ first,
+     * then letters, digits, _ or : (so minecraft:dirt counts), and not
+     * true/false. Inside list(...), such an item that isn't a variable is
+     * taken as its own text, so list(short, tall) is the two words; the
+     * evaluator and the chat colouring both go by this one rule.
+     *
+     * <p>Dots are left out on purpose: client.pos.yy can only be a variable
+     * read, so a typo there still errors instead of quietly becoming text.
+     * Digits can't come first, which keeps 3s (three stacks) a number.
+     */
+    public static boolean isBareWord(String item) {
+        if (item.isEmpty() || item.equalsIgnoreCase("true") || item.equalsIgnoreCase("false")) {
+            return false;
+        }
+        char first = item.charAt(0);
+        if (!Character.isLetter(first) && first != '_') {
+            return false;
+        }
+        for (int i = 1; i < item.length(); i++) {
+            if (!isBareWordChar(item.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static boolean isBareWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_' || c == ':';
+    }
+
+    /**
      * The index of the {@code )} closing the group that opens at
      * {@code openParen}, or -1 if it never closes.
      *

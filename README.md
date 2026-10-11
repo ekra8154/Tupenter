@@ -58,7 +58,7 @@ Expressions allow both simple and complex math to exist directly inside normal v
 
 Math is exact, `1/3` stays a third, with no floating-point drift.
 
-Lists come in two flavours: commas compute each item, while pipes take items exactly as typed, so block and item names need no quotes.
+Lists come in two flavours: commas compute each item, while pipes take items exactly as typed, spaces and all. A lone word that isn't a variable counts as text either way, so block and item names need no quotes.
 
 ```
 list(1, 2 + 3)
