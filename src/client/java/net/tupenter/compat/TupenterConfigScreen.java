@@ -283,6 +283,12 @@ public class TupenterConfigScreen {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.ctrlScrollHistory = newValue)
                 .build());
 
+        general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.save_directive_history"), TupenterConfig.INSTANCE.saveDirectiveHistory)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.save_directive_history"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.saveDirectiveHistory = newValue)
+                .build());
+
         general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.ctrl_space_send"), TupenterConfig.INSTANCE.ctrlSpaceSend)
                 .setDefaultValue(true)
                 .setTooltip(Component.translatable("tooltip.tupenter.ctrl_space_send"))
@@ -324,7 +330,7 @@ public class TupenterConfigScreen {
         scripts.addEntry(entryBuilder.startTextDescription(scriptsWorldKey != null
                 ? Component.translatable("text.tupenter.scripts_world", scriptsWorldKey)
                 : Component.translatable("text.tupenter.scripts_no_world")).build());
-        scripts.addEntry(entryBuilder.startTextDescription(Component.translatable("tooltip.tupenter.tick_scripts")).build());
+        scripts.addEntry(buildScriptsHelp(entryBuilder));
 
         TupenterConfig.WorldScriptState worldState = TupenterConfig.INSTANCE.worldState(scriptsWorldKey);
 
@@ -423,7 +429,11 @@ public class TupenterConfigScreen {
      * reads it straight back. A deque per key so two rows with identical text
      * still get their own answers, in order.
      */
-    private static final java.util.Map<String, java.util.ArrayDeque<Boolean>> carriedExpansion =
+    /** A row's view state, carried across a rebuild: wrapped or not, and the editor height. */
+    private record CarriedRow(boolean expanded, int height) {
+    }
+
+    private static final java.util.Map<String, java.util.ArrayDeque<CarriedRow>> carriedExpansion =
             new java.util.HashMap<>();
 
     /** Snapshot every open row's state, for the rebuild that is about to happen. */
@@ -433,15 +443,15 @@ public class TupenterConfigScreen {
             for (WrapRowEntry row : rows) {
                 if (!row.deleted) {
                     carriedExpansion.computeIfAbsent(row.text(), key -> new java.util.ArrayDeque<>())
-                            .add(row.expanded);
+                            .add(new CarriedRow(row.expanded, row.expandedHeight));
                 }
             }
         }
     }
 
     /** The carried state for a row about to be built from {@code text}, or null. */
-    private static Boolean takeCarriedExpansion(String text) {
-        java.util.ArrayDeque<Boolean> queued = carriedExpansion.get(text);
+    private static CarriedRow takeCarriedExpansion(String text) {
+        java.util.ArrayDeque<CarriedRow> queued = carriedExpansion.get(text);
         return queued == null ? null : queued.poll();
     }
 
@@ -543,6 +553,17 @@ public class TupenterConfigScreen {
      */
     private abstract static class WrapRowEntry extends AbstractConfigListEntry<String> {
         private static final int BOX_HEIGHT_EXPANDED = 62;
+        private static final int BOX_HEIGHT_MIN = 30;
+        private static final int BOX_HEIGHT_MAX = 400;
+        /** The grip's hit area reaches this far up/left of the corner, and a bit below it. */
+        private static final int GRIP_SIZE = 8;
+        private static final int GRIP_BELOW = 5;
+
+        /** The expanded editor's height; the bottom-right grip drags it. */
+        int expandedHeight;
+        private boolean resizing;
+        private double resizeStartY;
+        private int resizeStartHeight;
         private final Button wrapButton;
         private final Button deleteButton;
         private final net.minecraft.client.gui.components.EditBox singleBox;
@@ -559,8 +580,9 @@ public class TupenterConfigScreen {
             this.multiValue = text;
             // Carried across a rebuild when there is one; the newline default is
             // only for a row being seen for the first time.
-            Boolean carried = takeCarriedExpansion(text);
-            this.expanded = carried != null ? carried : text.contains("\n");
+            CarriedRow carried = takeCarriedExpansion(text);
+            this.expanded = carried != null ? carried.expanded() : text.contains("\n");
+            this.expandedHeight = carried != null ? carried.height() : BOX_HEIGHT_EXPANDED;
 
             this.singleBox = new net.minecraft.client.gui.components.EditBox(
                     Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty()) {
@@ -665,10 +687,13 @@ public class TupenterConfigScreen {
         private net.minecraft.client.gui.components.MultiLineEditBox ensureMultiBox(int width) {
             if (multiBox == null || multiBox.getWidth() != width) {
                 String value = currentMultiValue();
-                multiBox = new ScriptEditBox(Minecraft.getInstance().font, width, BOX_HEIGHT_EXPANDED, definitionRow());
+                multiBox = new ScriptEditBox(Minecraft.getInstance().font, width, expandedHeight, definitionRow());
                 multiBox.setCharacterLimit(4000);
                 multiBox.setValue(value);
                 multiValue = value;
+            } else if (multiBox.getHeight() != expandedHeight) {
+                // height changes in place: a rebuild would drop the caret and scroll
+                multiBox.setHeight(expandedHeight);
             }
             return multiBox;
         }
@@ -680,6 +705,11 @@ public class TupenterConfigScreen {
             }
             String current = singleBox.getValue();
             return (current.equals(collapsedMirror) ? multiValue : current).trim();
+        }
+
+        /** Drawn over the editor after it renders, in either view. Nothing by default. */
+        void decorateEditor(GuiGraphics graphics, net.minecraft.client.gui.components.AbstractWidget box,
+                            int mouseX, int mouseY) {
         }
 
         /** Widgets rendered before the wrap button (e.g. the scripts On/Off toggle). */
@@ -705,9 +735,52 @@ public class TupenterConfigScreen {
          */
         @Override
         public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+            // The grip claims the click before the editor sees it, so grabbing
+            // the corner never moves the caret or starts a selection.
+            if (event.button() == 0
+                    && overGrip(event.x(), event.y())) {
+                resizing = true;
+                resizeStartY = event.y();
+                resizeStartHeight = expandedHeight;
+                blurEditorBoxesExcept(this);
+                return true;
+            }
             boolean handled = super.mouseClicked(event, doubleClick);
             blurEditorBoxesExcept(this);
             return handled;
+        }
+
+        @Override
+        public boolean mouseDragged(net.minecraft.client.input.MouseButtonEvent event, double dragX, double dragY) {
+            if (resizing) {
+                int height = resizeStartHeight + (int) Math.round(event.y() - resizeStartY);
+                expandedHeight = Math.max(BOX_HEIGHT_MIN, Math.min(BOX_HEIGHT_MAX, height));
+                if (multiBox != null) {
+                    multiBox.setHeight(expandedHeight);
+                }
+                return true;
+            }
+            return super.mouseDragged(event, dragX, dragY);
+        }
+
+        @Override
+        public boolean mouseReleased(net.minecraft.client.input.MouseButtonEvent event) {
+            if (resizing) {
+                resizing = false;
+                return true;
+            }
+            return super.mouseReleased(event);
+        }
+
+        /** Over the expanded editor's bottom-right grip (with a little slack below it). */
+        private boolean overGrip(double mouseX, double mouseY) {
+            if (!expanded || multiBox == null) {
+                return false;
+            }
+            int right = multiBox.getX() + multiBox.getWidth();
+            int bottom = multiBox.getY() + multiBox.getHeight();
+            return mouseX >= right - GRIP_SIZE && mouseX < right + 1
+                    && mouseY >= bottom - GRIP_SIZE && mouseY < bottom + GRIP_BELOW;
         }
 
         /** The box this row had when it was last told to unfocus; see setFocused(boolean). */
@@ -765,7 +838,7 @@ public class TupenterConfigScreen {
 
         @Override
         public int getItemHeight() {
-            return expanded ? BOX_HEIGHT_EXPANDED + 6 : 24;
+            return expanded ? expandedHeight + EDITOR_COUNTER_ROOM : 24;
         }
 
         @Override
@@ -789,11 +862,14 @@ public class TupenterConfigScreen {
                 box.setX(cursor);
                 box.setY(y);
                 box.render(graphics, mouseX, mouseY, partialTick);
+                drawResizeGrip(graphics, box, resizing || overGrip(mouseX, mouseY));
+                decorateEditor(graphics, box, mouseX, mouseY);
             } else {
                 singleBox.setX(cursor);
                 singleBox.setY(y + 1);
                 singleBox.setWidth(boxWidth);
                 singleBox.render(graphics, mouseX, mouseY, partialTick);
+                decorateEditor(graphics, singleBox, mouseX, mouseY);
             }
 
             deleteButton.setX(x + entryWidth - 20);
@@ -892,7 +968,7 @@ public class TupenterConfigScreen {
 
         @Override
         public int getItemHeight() {
-            return BOX_HEIGHT + 6;
+            return BOX_HEIGHT + EDITOR_COUNTER_ROOM;
         }
 
         @Override
@@ -978,6 +1054,23 @@ public class TupenterConfigScreen {
      * second box left the first one still looking selected, as if two places were
      * live at once.
      */
+    /**
+     * The textarea-style resize grip: two short diagonal strokes tucked into the
+     * editor's bottom-right corner, brighter while hovered or being dragged.
+     */
+    private static void drawResizeGrip(GuiGraphics graphics,
+                                       net.minecraft.client.gui.components.AbstractWidget box, boolean active) {
+        int right = box.getX() + box.getWidth() - 2;
+        int bottom = box.getY() + box.getHeight() - 2;
+        int color = active ? 0xFFFFFFFF : 0xFF8B8B8B;
+        for (int i = 0; i < 6; i++) {          // long stroke
+            graphics.fill(right - i, bottom - 5 + i, right - i + 1, bottom - 4 + i, color);
+        }
+        for (int i = 0; i < 3; i++) {          // short stroke, nearer the corner
+            graphics.fill(right - i, bottom - 2 + i, right - i + 1, bottom - 1 + i, color);
+        }
+    }
+
     private static void dropSelection(net.minecraft.client.gui.components.EditBox box) {
         box.setHighlightPos(box.getCursorPosition());
     }
@@ -1001,6 +1094,13 @@ public class TupenterConfigScreen {
      * unfocusing the child). Only touches a box that really is focused, so an
      * idle box never sends a stray "stop text input".
      */
+    /**
+     * Space a multi-line editor's row leaves below the box. Vanilla draws the
+     * character counter ("624/4000") 4px under the box in a 9px font, so the
+     * old 6px gap let the next row cover most of it.
+     */
+    private static final int EDITOR_COUNTER_ROOM = 16;
+
     private static void blurStray(net.minecraft.client.gui.components.AbstractWidget box) {
         if (box.isFocused()) {
             box.setFocused(false);
@@ -1054,7 +1154,13 @@ public class TupenterConfigScreen {
             scroll = old.listWidget.getScroll();
         }
         carryExpansion(); // before createScreen clears the row lists
-        Screen screen = createScreen(cachedParent);
+        Screen screen;
+        rebuilding = true;
+        try {
+            screen = createScreen(cachedParent);
+        } finally {
+            rebuilding = false;
+        }
         if (screen instanceof me.shedaniel.clothconfig2.gui.AbstractConfigScreen cloth) {
             cloth.selectedCategoryIndex = tabIndex;
         }
@@ -1109,6 +1215,63 @@ public class TupenterConfigScreen {
      * <p>Stops the moment the value sticks, so it is a frame or two of
      * correction and never a fight with someone who is scrolling.
      */
+    // ---- "About tick scripts": collapsible, shown expanded only the first time ----
+
+    private static me.shedaniel.clothconfig2.gui.entries.SubCategoryListEntry scriptsHelp;
+    /** Expanded state as last built or last seen, to notice the user toggling it. */
+    private static boolean scriptsHelpShown;
+    /** This session's state, carried across in-screen rebuilds; null on a fresh open. */
+    private static Boolean scriptsHelpSession;
+    /** True while reopenScreen rebuilds an already-open screen. */
+    private static boolean rebuilding;
+
+    /**
+     * The long tick-script explainer, folded into its own subcategory so it
+     * stops being a wall of text above every script.
+     *
+     * <p>It opens expanded the very first time anyone opens the tab, and from
+     * then on starts collapsed unless the user expanded it last time. The
+     * first view writes "collapsed" straight away, so simply reading it once
+     * is enough; toggling is picked up by {@link #tickScriptsHelpState()}.
+     */
+    private static AbstractConfigListEntry<?> buildScriptsHelp(ConfigEntryBuilder entryBuilder) {
+        if (!rebuilding) {
+            scriptsHelpSession = null; // a fresh open goes by the saved state
+        }
+        TupenterConfig config = TupenterConfig.INSTANCE;
+        boolean expanded = scriptsHelpSession != null ? scriptsHelpSession : config.scriptsHelpState != 2;
+        if (config.scriptsHelpState == 0) {
+            config.scriptsHelpState = 2;
+            TupenterConfig.save();
+        }
+        List<AbstractConfigListEntry> body = new ArrayList<>();
+        body.add(entryBuilder.startTextDescription(Component.translatable("tooltip.tupenter.tick_scripts")).build());
+        scriptsHelp = entryBuilder.startSubCategory(Component.translatable("subcategory.tupenter.about_scripts"), body)
+                .setExpanded(expanded)
+                .build();
+        scriptsHelpShown = expanded;
+        return scriptsHelp;
+    }
+
+    /**
+     * Save the help section's state the moment it is toggled, so it sticks
+     * whether the screen is closed with Done or Escape. Called every client
+     * tick; does nothing unless that screen is open and the state changed.
+     */
+    public static void tickScriptsHelpState() {
+        if (scriptsHelp == null
+                || !(Minecraft.getInstance().screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen)) {
+            return;
+        }
+        boolean expanded = scriptsHelp.isExpanded();
+        if (expanded != scriptsHelpShown) {
+            scriptsHelpShown = expanded;
+            scriptsHelpSession = expanded;
+            TupenterConfig.INSTANCE.scriptsHelpState = expanded ? 1 : 2;
+            TupenterConfig.save();
+        }
+    }
+
     public static void tickPendingRestore() {
         if (pendingRestoreTicks <= 0) {
             return;
@@ -1132,7 +1295,6 @@ public class TupenterConfigScreen {
      */
     private abstract static class ScriptRowEntry extends WrapRowEntry {
         private final Button toggleButton;
-        private final Button sendsWarning;
         private final boolean initialEnabled;
         private final boolean toggleLocked;
         boolean enabled;
@@ -1155,17 +1317,6 @@ public class TupenterConfigScreen {
                             toggleLocked ? "tooltip.tupenter.tick_script_toggle_locked" : "tooltip.tupenter.tick_script_toggle")))
                     .build();
             this.toggleButton.active = !toggleLocked;
-
-            // Shown only when the body contains a command that leaves the client.
-            // Deliberately no "safe" counterpart: the scan can prove a script
-            // sends, but never that it doesn't — a $...$ expression can produce a
-            // command name at run time. A reassuring badge would be a promise we
-            // can't keep, so the absence of this one means nothing was found.
-            this.sendsWarning = Button.builder(
-                            Component.literal("!").withStyle(net.minecraft.ChatFormatting.GOLD), button -> { })
-                    .bounds(0, 0, 20, 20)
-                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.script_sends_to_server")))
-                    .build();
         }
 
         private Component toggleLabel() {
@@ -1177,13 +1328,39 @@ public class TupenterConfigScreen {
                     : Component.literal("Off").withStyle(net.minecraft.ChatFormatting.RED);
         }
 
-        // Recomputed from the live text rather than the initial value, so the
-        // warning appears and disappears as you type rather than after a reopen.
         @Override
         List<net.minecraft.client.gui.components.AbstractWidget> leadingWidgets() {
-            return net.tupenter.command.ServerTrafficScan.sendsToServer(text())
-                    ? List.of(toggleButton, sendsWarning)
-                    : List.of(toggleButton);
+            return List.of(toggleButton);
+        }
+
+        /**
+         * A small gold "!" in the editor's top-right corner when the script sends
+         * a command to the server, with the explanation as a hover tooltip.
+         *
+         * <p>It used to be a read-only button beside the toggle, which cost a
+         * button's width and shoved the editor sideways every time the warning
+         * appeared or vanished as you typed. Drawn inside the box, nothing moves.
+         *
+         * <p>Recomputed from the live text, so it tracks what you type. And
+         * deliberately no "safe" counterpart: the scan can prove a script sends,
+         * but never that it doesn't (a $...$ expression can produce a command
+         * name at run time), so the absence of the mark means nothing was found.
+         */
+        @Override
+        void decorateEditor(GuiGraphics graphics, net.minecraft.client.gui.components.AbstractWidget box,
+                            int mouseX, int mouseY) {
+            if (!net.tupenter.command.ServerTrafficScan.sendsToServer(text())) {
+                return;
+            }
+            net.minecraft.client.gui.Font font = Minecraft.getInstance().font;
+            int glyphX = box.getX() + box.getWidth() - 5 - font.width("!");
+            int glyphY = box.getHeight() > 20 ? box.getY() + 4 : box.getY() + (box.getHeight() - 8) / 2;
+            graphics.drawString(font, "!", glyphX, glyphY, 0xFFFFAA00, true);
+            if (mouseX >= glyphX - 2 && mouseX <= glyphX + font.width("!") + 2
+                    && mouseY >= glyphY - 2 && mouseY <= glyphY + 10) {
+                graphics.setTooltipForNextFrame(font.split(
+                        Component.translatable("tooltip.tupenter.script_sends_to_server"), 220), mouseX, mouseY);
+            }
         }
 
         @Override
