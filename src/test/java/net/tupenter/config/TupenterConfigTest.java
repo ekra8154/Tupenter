@@ -70,17 +70,18 @@ class TupenterConfigTest {
      * comment on each is the range load() enforces; add a clamp and this test
      * fails until its field is listed here.
      */
-    private static final Map<String, Integer> CLAMPED_INTS = Map.of(
-            "chatInputLength", 1024,      // 256..32766
-            "importHistoryCount", 25,     // 1..50
-            "historyDepth", 4,            // >= 1
-            "maxLoopIterations", 250,     // 1..100000
-            "maxCommandsPerTick", 32,     // 1..512
-            "maxCommandsPerScript", 500,  // 1..100000
-            "maxConcurrentScripts", 16,   // 1..64
-            "resendAmount", 3,            // >= 1
-            "resendDelay", 4,             // >= 0
-            "messageDelay", 2);           // >= 0
+    private static final Map<String, Integer> CLAMPED_INTS = Map.ofEntries(
+            Map.entry("chatInputLength", 1024),         // 256..32766
+            Map.entry("importHistoryCount", 25),        // 1..50
+            Map.entry("historyDepth", 4),               // >= 1
+            Map.entry("maxLoopIterations", 250),        // 1..100000
+            Map.entry("maxCommandsPerTick", 32),        // 1..512
+            Map.entry("maxCommandsPerScript", 500),     // 1..100000
+            Map.entry("maxConcurrentScripts", 16),      // 1..64
+            Map.entry("resendAmount", 3),               // >= 1
+            Map.entry("resendDelay", 4),                // >= 0
+            Map.entry("messageDelay", 2),               // >= 0
+            Map.entry("scriptsHelpState", 1));          // 0..2           // >= 0
 
     /**
      * A value distinctly different from the default, so "it came back" can't be
