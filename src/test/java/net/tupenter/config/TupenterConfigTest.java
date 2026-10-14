@@ -112,6 +112,9 @@ class TupenterConfigTest {
             }
             return new ArrayList<>(List.of("round-trip-" + field.getName()));
         }
+        if (field.getName().equals("editorHeights")) {
+            return new LinkedHashMap<>(Map.of("script:gid1", 140, "command:blink", 90));
+        }
         if (Map.class.isAssignableFrom(type)) {
             TupenterConfig.WorldScriptState state = new TupenterConfig.WorldScriptState();
             state.enabledGlobalIds.add("gid1");

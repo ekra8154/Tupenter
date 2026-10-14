@@ -31,6 +31,16 @@ public final class ScriptName {
         return s.substring(s.indexOf('=') + 1).strip();
     }
 
+    /**
+     * Where the body starts in {@code text} as written: just past the
+     * {@code =} of a leading name, or 0 for an unnamed script. Lets an editor
+     * colour and complete the body with the name set aside, by the same rule
+     * the runtime uses to split them.
+     */
+    public static int bodyStart(String text) {
+        return name(text).isEmpty() ? 0 : text.indexOf('=') + 1;
+    }
+
     private static boolean isIdentifier(String head) {
         if (head.isEmpty() || !(Character.isLetter(head.charAt(0)) || head.charAt(0) == '_')) {
             return false;
