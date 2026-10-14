@@ -95,6 +95,14 @@ public final class ExpressionCompletion {
             return offset(forLine(line, cursor - lineStart), lineStart);
         }
         String flat = raw.replace('\r', ' ').replace('\n', ' ');
+        if (!definition) {
+            // a tick script's optional "name =" is set aside, as the runtime does
+            int bodyStart = net.tupenter.script.ScriptName.bodyStart(flat);
+            if (bodyStart > 0) {
+                return cursor < bodyStart ? null
+                        : offset(forLine(flat.substring(bodyStart), cursor - bodyStart), bodyStart);
+            }
+        }
         if (definition) {
             int separator = net.tupenter.script.AliasDefinition.signatureSeparator(flat);
             if (separator >= 0) {
