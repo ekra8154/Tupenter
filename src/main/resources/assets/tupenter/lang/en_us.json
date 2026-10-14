@@ -13,6 +13,8 @@
   "tooltip.tupenter.tick_scripts_enabled": "Master switch. While ON, every script below runs ONCE PER TICK (20x/second) — like being a walking mcfunction file. WARNING: any script that sends a command or chat will absolutely flood the chat on a multiplayer server unless you guard it (#if) or the server has sendCommandFeedback off. Best used with conditional scripts that normally do nothing. /tupenter abort turns this off in an emergency.",
   "tooltip.tupenter.tick_script_toggle": "Arm or disarm this script FOR THE WORLD YOU ARE IN. Every world/server keeps its own on/off states — a script armed here stays off everywhere else.",
   "tooltip.tupenter.tick_script_toggle_locked": "Join a world to arm scripts — every world/server has its own on/off states, so there is nothing to toggle from the menu. Text edits still save.",
+  "tooltip.tupenter.move_up": "Move up. Shift-click to move to the top. Saved when you press Save.",
+  "tooltip.tupenter.move_down": "Move down. Shift-click to move to the bottom. Saved when you press Save.",
   "tooltip.tupenter.delete_script": "Delete this script (takes effect immediately). Deleting a Global script removes it from every world.",
   "tooltip.tupenter.script_sends_to_server": "§eThis script contains server-side commands that might spam a server.§r Use with caution.",
   "text.tupenter.add_script": "+ Add Script",
