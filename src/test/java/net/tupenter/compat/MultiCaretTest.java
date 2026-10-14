@@ -9,6 +9,7 @@ import java.util.TreeSet;
 import java.util.function.IntConsumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * Multiple carets stay on the right characters while the text changes under
@@ -356,5 +357,97 @@ class MultiCaretTest {
             assertEquals(expected.toString(), editor.text, "delete in " + original + " at " + sorted);
             assertEquals(new ArrayList<>(expectedCarets), positions(result), "delete in " + original + " at " + sorted);
         }
+    }
+
+    // ---- Alt+Up/Down line moves ----
+
+    private static MultiCaret.Moved move(String text, boolean up, MultiCaret.Caret... carets) {
+        return MultiCaret.moveLines(text, List.of(carets), 0, up);
+    }
+
+    @Test
+    void aLineMovesUpAndDownWithItsCaret() {
+        MultiCaret.Moved up = move("one\ntwo\nthree", true, MultiCaret.Caret.at(5)); // "t|wo" col 1
+        assertEquals("two\none\nthree", up.text());
+        assertEquals(MultiCaret.Caret.at(1), up.carets().get(0));
+        MultiCaret.Moved down = move("one\ntwo\nthree", false, MultiCaret.Caret.at(5));
+        assertEquals("one\nthree\ntwo", down.text());
+        assertEquals(MultiCaret.Caret.at(11), down.carets().get(0));
+    }
+
+    @Test
+    void aSelectionMovesEveryLineItTouches() {
+        // selects from "ne" on line 0 into "tw" on line 1
+        MultiCaret.Moved down = move("one\ntwo\nthree", false, new MultiCaret.Caret(6, 1));
+        assertEquals("three\none\ntwo", down.text());
+        assertEquals(new MultiCaret.Caret(12, 7), down.carets().get(0), "the selection rides along");
+    }
+
+    @Test
+    void aSelectionEndingAtALineStartLeavesThatLine() {
+        // "one\n" fully selected, ending at the start of "two"
+        MultiCaret.Moved down = move("one\ntwo\nthree", false, new MultiCaret.Caret(4, 0));
+        assertEquals("two\none\nthree", down.text());
+        assertEquals(new MultiCaret.Caret(8, 4), down.carets().get(0),
+                "still exactly one line selected, ending just after the moved line");
+    }
+
+    @Test
+    void nothingMovesPastTheTopOrBottom() {
+        assertNull(move("one\ntwo", true, MultiCaret.Caret.at(1)));
+        assertNull(move("one\ntwo", false, MultiCaret.Caret.at(5)));
+        assertNull(move("one\ntwo\nthree", true, MultiCaret.Caret.at(1), MultiCaret.Caret.at(9)),
+                "one block at the top holds every block back");
+    }
+
+    @Test
+    void severalCaretsMoveTheirOwnLinesAndTouchingBlocksMoveTogether() {
+        MultiCaret.Moved apart = move("a\nb\nc\nd\ne", true, MultiCaret.Caret.at(2), MultiCaret.Caret.at(6));
+        assertEquals("b\na\nd\nc\ne", apart.text());
+        assertEquals(List.of(MultiCaret.Caret.at(0), MultiCaret.Caret.at(4)), apart.carets());
+        MultiCaret.Moved touching = move("a\nb\nc\nd", false, MultiCaret.Caret.at(0), MultiCaret.Caret.at(2));
+        assertEquals("c\na\nb\nd", touching.text());
+        assertEquals(List.of(MultiCaret.Caret.at(2), MultiCaret.Caret.at(4)), touching.carets());
+    }
+
+    @Test
+    void movingUpThenDownPutsEverythingBack() {
+        Random random = new Random(17);
+        int checked = 0;
+        for (int round = 0; round < 3000; round++) {
+            int lineCount = 1 + random.nextInt(6);
+            StringBuilder text = new StringBuilder();
+            for (int l = 0; l < lineCount; l++) {
+                if (l > 0) {
+                    text.append('\n');
+                }
+                int len = random.nextInt(4);
+                for (int c = 0; c < len; c++) {
+                    text.append((char) ('a' + random.nextInt(3)));
+                }
+            }
+            String original = text.toString();
+            List<MultiCaret.Caret> carets = new ArrayList<>();
+            int count = 1 + random.nextInt(3);
+            for (int k = 0; k < count; k++) {
+                int a = random.nextInt(original.length() + 1);
+                int b = random.nextBoolean() ? a : random.nextInt(original.length() + 1);
+                carets.add(new MultiCaret.Caret(a, b));
+            }
+            MultiCaret.Moved up = MultiCaret.moveLines(original, carets, 0, true);
+            if (up == null) {
+                continue;
+            }
+            MultiCaret.Moved back = MultiCaret.moveLines(up.text(), up.carets(), 0, false);
+            if (back == null) {
+                continue; // the moved blocks can merge differently on the way back; nothing to compare
+            }
+            if (!back.text().equals(original)) {
+                continue; // merged into one block on the way up, so down moves a different set
+            }
+            assertEquals(carets, back.carets(), "up then down in " + original.replace("\n", "|") + " " + carets);
+            checked++;
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(checked > 1000, "enough rounds compared: " + checked);
     }
 }

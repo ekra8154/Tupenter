@@ -214,4 +214,107 @@ final class MultiCaret {
     private static int clamp(int index, int length) {
         return Math.max(0, Math.min(index, length));
     }
+
+    /** Text and carets after moving lines. */
+    record Moved(String text, List<Caret> carets, int primary) {
+    }
+
+    /**
+     * Alt+Up/Down: move every line a caret is on (all the lines a selection
+     * touches) up or down one line, carets riding along at the same column.
+     * A selection ending at the very start of a line doesn't take that line
+     * (you selected up to it, not into it). Blocks from several carets that
+     * touch move as one. Null when a block is already at the top or bottom,
+     * so nothing moves at all rather than some blocks and not others.
+     *
+     * <p>Lines are the text's own (split at '\n'), not the editor's wrapped
+     * display lines.
+     */
+    static Moved moveLines(String text, List<Caret> carets, int primary, boolean up) {
+        List<String> lines = new ArrayList<>(List.of(text.split("\n", -1)));
+        int[] lineStarts = lineStarts(lines);
+        // the blocks of lines to move, merged where they touch
+        List<int[]> blocks = new ArrayList<>();
+        for (Caret caret : carets) {
+            int first = lineOf(lineStarts, caret.start());
+            int last = lineOf(lineStarts, caret.end());
+            if (caret.hasSelection() && last > first && caret.end() == lineStarts[last]) {
+                last--; // ends at the start of a line: that line isn't part of it
+            }
+            blocks.add(new int[]{first, last});
+        }
+        blocks.sort(Comparator.comparingInt(b -> b[0]));
+        List<int[]> merged = new ArrayList<>();
+        for (int[] block : blocks) {
+            int[] previous = merged.isEmpty() ? null : merged.get(merged.size() - 1);
+            if (previous != null && block[0] <= previous[1] + 1) {
+                previous[1] = Math.max(previous[1], block[1]);
+            } else {
+                merged.add(new int[]{block[0], block[1]});
+            }
+        }
+        if (up ? merged.get(0)[0] == 0 : merged.get(merged.size() - 1)[1] == lines.size() - 1) {
+            return null;
+        }
+        // where each old line ends up: a block shifts by one, the line it
+        // passes jumps to the block's other side
+        int[] newIndex = new int[lines.size()];
+        for (int i = 0; i < newIndex.length; i++) {
+            newIndex[i] = i;
+        }
+        for (int[] block : merged) {
+            int size = block[1] - block[0] + 1;
+            for (int i = block[0]; i <= block[1]; i++) {
+                newIndex[i] = i + (up ? -1 : 1);
+            }
+            int passed = up ? block[0] - 1 : block[1] + 1;
+            newIndex[passed] = passed + (up ? size : -size);
+        }
+        String[] moved = new String[lines.size()];
+        for (int i = 0; i < lines.size(); i++) {
+            moved[newIndex[i]] = lines.get(i);
+        }
+        List<String> movedLines = List.of(moved);
+        int[] newStarts = lineStarts(movedLines);
+        List<Caret> out = new ArrayList<>();
+        for (Caret caret : carets) {
+            int newStart = movePosition(caret.start(), lineStarts, newIndex, newStarts);
+            int newEnd = movePosition(caret.end(), lineStarts, newIndex, newStarts);
+            int endLine = lineOf(lineStarts, caret.end());
+            if (caret.hasSelection() && endLine > lineOf(lineStarts, caret.start()) && caret.end() == lineStarts[endLine]) {
+                // ends at the start of a line it didn't take: that end means "just
+                // after my last line", so it stays right after it, wherever it went
+                int last = endLine - 1;
+                newEnd = newStarts[newIndex[last]] + lines.get(last).length() + 1;
+            }
+            boolean forward = caret.pos() >= caret.anchor();
+            out.add(forward ? new Caret(newEnd, newStart) : new Caret(newStart, newEnd));
+        }
+        return new Moved(String.join("\n", movedLines), out, primary);
+    }
+
+    /** The same column on the line's new place. */
+    private static int movePosition(int pos, int[] oldStarts, int[] newIndex, int[] newStarts) {
+        int line = lineOf(oldStarts, pos);
+        return newStarts[newIndex[line]] + (pos - oldStarts[line]);
+    }
+
+    private static int[] lineStarts(List<String> lines) {
+        int[] starts = new int[lines.size()];
+        int at = 0;
+        for (int i = 0; i < lines.size(); i++) {
+            starts[i] = at;
+            at += lines.get(i).length() + 1;
+        }
+        return starts;
+    }
+
+    /** The line holding {@code pos} (a position at a line's end belongs to that line). */
+    private static int lineOf(int[] starts, int pos) {
+        int line = 0;
+        while (line + 1 < starts.length && starts[line + 1] <= pos) {
+            line++;
+        }
+        return line;
+    }
 }

@@ -85,6 +85,13 @@ public final class ConfigScreenAccess {
         return true;
     }
 
+    /** Client start-up: hooks that only make sense with Cloth present. */
+    public static void install() {
+        if (isAvailable()) {
+            TupenterConfigScreen.installEscapeHandler();
+        }
+    }
+
     /** Called once per client tick; opens a screen that {@link #open} asked for. */
     public static void tickPendingOpen() {
         if (pendingTab < 0) {

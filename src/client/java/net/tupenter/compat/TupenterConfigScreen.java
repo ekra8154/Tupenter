@@ -876,7 +876,13 @@ public class TupenterConfigScreen {
                 return true;
             }
             boolean handled = super.mouseClicked(event, doubleClick);
-            blurEditorBoxesExcept(this);
+            // Only the row the click landed in clears the others. Cloth hands a
+            // click to EVERY row, so rows it missed ran this too, and one above
+            // the clicked editor wiped that editor's selection just before the
+            // click arrived: Alt+drag couldn't keep a first selection.
+            if (handled) {
+                blurEditorBoxesExcept(this);
+            }
             return handled;
         }
 
@@ -1181,7 +1187,9 @@ public class TupenterConfigScreen {
         @Override
         public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
             boolean handled = super.mouseClicked(event, doubleClick);
-            blurEditorBoxesExcept(this);
+            if (handled) {
+                blurEditorBoxesExcept(this); // only when the click is ours (see WrapRowEntry)
+            }
             return handled;
         }
 
@@ -1555,6 +1563,40 @@ public class TupenterConfigScreen {
         if (pendingFocusTicks == 0) {
             pendingFocusRow = null;
         }
+    }
+
+    /**
+     * Let Escape in an editor drop the suggestion popup, the extra carets or the selection
+     * instead of closing the screen. The screen handles Escape itself, before
+     * any widget sees it (Cloth asks whether to discard changes), so this hooks
+     * in ahead of it through Fabric's per-screen key event. Only a focused
+     * editor with something to drop takes the key; otherwise Escape is
+     * untouched.
+     */
+    static void installEscapeHandler() {
+        net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
+            if (screen instanceof me.shedaniel.clothconfig2.gui.AbstractConfigScreen) {
+                net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents.allowKeyPress(screen).register((s, event) -> {
+                    if (event.key() != com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
+                        return true;
+                    }
+                    ScriptEditBox editor = focusedEditor(s);
+                    return editor == null || !editor.consumeEscape();
+                });
+            }
+        });
+    }
+
+    /** The editor box with keyboard focus, down through the screen's focus chain, or null. */
+    private static ScriptEditBox focusedEditor(Screen screen) {
+        net.minecraft.client.gui.components.events.GuiEventListener focused = screen.getFocused();
+        for (int depth = 0; depth < 16 && focused != null && !(focused instanceof ScriptEditBox); depth++) {
+            if (!(focused instanceof net.minecraft.client.gui.components.events.ContainerEventHandler container)) {
+                return null;
+            }
+            focused = container.getFocused();
+        }
+        return focused instanceof ScriptEditBox editor ? editor : null;
     }
 
     /** Rebuild the config screen WITHOUT losing the tab or the scroll position. */
