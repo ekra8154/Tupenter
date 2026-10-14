@@ -60,6 +60,8 @@ public class TupenterConfig {
     public boolean autoCloseBrackets = false;
     /** Ctrl+scroll in the chat bar steps through sent-message history instead of scrolling chat. */
     public boolean ctrlScrollHistory = true;
+    /** Down arrow in the chat bar never throws away typed text; with nothing newer to show it jumps to the line end. */
+    public boolean downArrowKeepsText = true;
     /**
      * Keep # directive lines in the up-arrow history across restarts. Vanilla
      * only saves lines that start with "/" to command_history.txt.
@@ -80,7 +82,7 @@ public class TupenterConfig {
     public boolean ctrlSpaceSend = true;
     public boolean lazyExecutionEnabled = true;
     /** Chat-bar typing limit. What's SENT still obeys the protocol: chat 256, commands 32766. */
-    public int chatInputLength = 256;
+    public int chatInputLength = 1000;
     public boolean silentDirectiveEnabled = true;
     public boolean variablesEnabled = true;
     public boolean loopsEnabled = true;
@@ -404,6 +406,7 @@ public class TupenterConfig {
                     INSTANCE.chatSelectionEnabled = loaded.chatSelectionEnabled;
                     INSTANCE.autoCloseBrackets = loaded.autoCloseBrackets;
                     INSTANCE.ctrlScrollHistory = loaded.ctrlScrollHistory;
+                    INSTANCE.downArrowKeepsText = loaded.downArrowKeepsText;
                     INSTANCE.scriptsHelpState = clamp(loaded.scriptsHelpState, 0, 2, 0);
                     INSTANCE.editorHeights = new java.util.LinkedHashMap<>();
                     if (loaded.editorHeights != null) {
@@ -416,7 +419,7 @@ public class TupenterConfig {
                     INSTANCE.saveDirectiveHistory = loaded.saveDirectiveHistory;
                     INSTANCE.ctrlSpaceSend = loaded.ctrlSpaceSend;
                     INSTANCE.lazyExecutionEnabled = loaded.lazyExecutionEnabled;
-                    INSTANCE.chatInputLength = clamp(loaded.chatInputLength, 256, 32766, 256);
+                    INSTANCE.chatInputLength = clamp(loaded.chatInputLength, 256, 32766, 1000);
                     INSTANCE.silentDirectiveEnabled = loaded.silentDirectiveEnabled;
                     INSTANCE.variablesEnabled = loaded.variablesEnabled;
                     INSTANCE.loopsEnabled = loaded.loopsEnabled;
