@@ -33,6 +33,8 @@
   "tooltip.tupenter.chat_input_length": "How many characters the chat bar accepts (vanilla: 256). What actually gets SENT still obeys the protocol — plain chat and /say-style commands cap at 256, other commands at 32766 — but Tupenter blocks over-limit sends with a local error instead of crashing your connection. Raise this to type long /customcommand definitions in chat, long client-side commands (no wire limit at all), or lines whose $...$ expressions evaluate to something short enough to send.",
   "option.tupenter.chat_selection": "Selectable Chat Text",
   "tooltip.tupenter.chat_selection": "Click and drag over chat messages (with chat open) to select text, then Ctrl+C to copy it. Selections span multiple messages — soft-wrapped lines join with a space, message boundaries become newlines. Plain clicks still trigger chat links and click-events; only an actual drag selects.",
+  "option.tupenter.down_arrow_keeps_text": "Down Arrow Keeps Typed Text",
+  "tooltip.tupenter.down_arrow_keeps_text": "In vanilla, pressing Down in the chat bar after recalling a line with Up replaces whatever you typed with the next line in your history. With this on, Down only moves through history while the recalled line is untouched; otherwise it jumps to the end of the line and keeps your text. Up works as usual. On by default.",
   "option.tupenter.ctrl_scroll_history": "Ctrl+Scroll History",
   "option.tupenter.save_directive_history": "Remember # Lines After Restart",
   "tooltip.tupenter.save_directive_history": "Keeps lines that start with # (like #stage, #repeat or #if) in your up-arrow chat history after you restart the game. Vanilla only remembers lines that start with /, so without this they're gone on the next launch. On by default.",
