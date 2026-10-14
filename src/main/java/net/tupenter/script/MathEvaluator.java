@@ -34,6 +34,9 @@ public final class MathEvaluator {
         if (mode == NumberMathMode.DISABLED) {
             return command;
         }
+        if (mode == NumberMathMode.AUTO_DETECT && sendsAMessage(command)) {
+            mode = NumberMathMode.EXPLICIT_ONLY; // prose, not math: see sendsAMessage
+        }
 
         StringBuilder result = new StringBuilder(command.length());
         int index = 0;
@@ -220,9 +223,39 @@ public final class MathEvaluator {
                 continue;
             }
 
-            if (braceDepth == 0 && isAutoDetectSpanStart(input, index)) {
+            // Quoted text is a name or a message, never math the user meant to
+            // have rewritten: "Wave 1-2" stays "Wave 1-2" ($...$ still works
+            // there). An unclosed quote protects the rest of the line.
+            if (braceDepth == 0 && (current == '"' || current == '\'')) {
+                int close = closingQuote(input, index);
+                int stop = close < 0 ? input.length() : close + 1;
+                result.append(input, index, stop);
+                index = stop;
+                continue;
+            }
+
+            // A UUID is an id, even when every group happens to be digits:
+            // 00000000-0000-0000-0000-000000000001 is not a subtraction.
+            if (braceDepth == 0 && (index == 0 || !isWordChar(input.charAt(index - 1)))) {
+                java.util.regex.Matcher uuid = UUID_SHAPE.matcher(input).region(index, input.length());
+                if (uuid.lookingAt()) {
+                    result.append(input, index, uuid.end());
+                    index = uuid.end();
+                    continue;
+                }
+            }
+
+            // A span has to stand on its own: not glued to a word on either
+            // side. Inside a UUID like 1e4b5647-bd25-4ff4-b164-82916aa0bb33,
+            // "25-4" and "164-82916" look like subtraction, and rewriting them
+            // sent a different, nonexistent entity id ("Invalid name or UUID").
+            if (braceDepth == 0 && (index == 0 || !isWordChar(input.charAt(index - 1)))
+                    && isAutoDetectSpanStart(input, index)) {
                 int end = findAutoDetectSpanEnd(input, index);
-                result.append(evaluateAutoDetectedSpan(input.substring(index, end)));
+                boolean gluedAfter = end < input.length() && isWordChar(input.charAt(end))
+                        && !Character.isWhitespace(input.charAt(end - 1));
+                String span = input.substring(index, end);
+                result.append(gluedAfter ? span : evaluateAutoDetectedSpan(span));
                 index = end;
                 continue;
             }
@@ -232,6 +265,101 @@ public final class MathEvaluator {
         }
 
         return result.toString();
+    }
+
+    private static final java.util.regex.Pattern UUID_SHAPE = java.util.regex.Pattern.compile(
+            "\\p{XDigit}{8}-\\p{XDigit}{4}-\\p{XDigit}{4}-\\p{XDigit}{4}-\\p{XDigit}{12}(?!\\w)");
+
+    /** Commands whose tail is a chat message. */
+    private static final java.util.Set<String> MESSAGE_COMMANDS =
+            java.util.Set.of("say", "me", "msg", "tell", "w", "teammsg", "tm");
+
+    /**
+     * Whether this command sends a chat message: /say, /me, /msg and friends,
+     * directly or as what an /execute ... run hands off to. Auto-detect math
+     * is for numeric arguments; a message is prose, where "the score is 10-2",
+     * a date, "3s" or "1.21.5" all mean exactly what was typed. $...$ still
+     * evaluates in a message, because that one is asked for.
+     */
+    static boolean sendsAMessage(String command) {
+        String text = command.stripLeading();
+        int at = 0;
+        while (true) {
+            if (isMessageCommandAt(text, at)) {
+                return true;
+            }
+            int run = text.indexOf(" run ", at);
+            if (run < 0) {
+                return false;
+            }
+            at = run + " run ".length();
+        }
+    }
+
+    private static boolean isMessageCommandAt(String text, int at) {
+        int start = at;
+        while (start < text.length() && (text.charAt(start) == '/' || text.charAt(start) == ' ')) {
+            start++;
+        }
+        int end = start;
+        while (end < text.length() && !Character.isWhitespace(text.charAt(end))) {
+            end++;
+        }
+        String word = text.substring(start, end).toLowerCase(java.util.Locale.ROOT);
+        if (word.startsWith("minecraft:")) {
+            word = word.substring("minecraft:".length());
+        }
+        return MESSAGE_COMMANDS.contains(word);
+    }
+
+    /** The index of the quote closing the one at {@code open} (backslash escapes honoured), or -1. */
+    private static int closingQuote(String text, int open) {
+        char quote = text.charAt(open);
+        for (int i = open + 1; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == quote) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Whether a span actually asks for arithmetic: an operator between two
+     * operands (2+2, 64*5, 82-2), the s stacks suffix (3s), or int()/float().
+     * A bare number, (1), 3.0 or 1.21.5 has nothing to compute, and rewriting
+     * one only ever changed what was typed: 1.50 became 1.5, and a version
+     * string read as implicit multiplication became 0.605.
+     */
+    private static boolean hasRealMath(String token) {
+        String lower = token.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("int(") || lower.contains("float(")) {
+            return true;
+        }
+        char previous = 0; // the last non-space character
+        for (int i = 0; i < token.length(); i++) {
+            char c = token.charAt(i);
+            if (Character.isWhitespace(c)) {
+                continue;
+            }
+            boolean afterOperand = Character.isDigit(previous) || previous == ')' || previous == '.'
+                    || previous == 's' || previous == 'S';
+            if ((c == '+' || c == '-' || c == '*' || c == '/') && afterOperand) {
+                return true;
+            }
+            if ((c == 's' || c == 'S') && (Character.isDigit(previous) || previous == ')' || previous == '.')) {
+                return true;
+            }
+            previous = c;
+        }
+        return false;
+    }
+
+    /** Part of a word or id: a span touching one of these on either side is not math. */
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
     }
 
     private static boolean isAutoDetectSpanStart(String input, int index) {
@@ -389,7 +517,7 @@ public final class MathEvaluator {
             return false;
         }
 
-        return hasDigit && hasOperator;
+        return hasDigit && hasOperator && hasRealMath(token);
     }
 
     private static Rational parseNumericExpression(String expression) {

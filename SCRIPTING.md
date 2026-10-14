@@ -147,8 +147,11 @@ sign. Adjacent markers concatenate, which is how you build text:
 ```
 
 In **auto-detect** math mode, bare arithmetic outside NBT braces is
-also solved (`/give @s stick 32+4` gives 36). Explicit `$...$`
-always works regardless of mode.
+also solved (`/give @s stick 32+4` gives 36). It only touches real
+math that stands on its own, so it leaves alone quoted text, UUIDs,
+numbers glued to a word, plain numbers like `1.50` or `1.21.5`, and
+the message of `/say`, `/me`, `/msg`, `/tell`, `/w` and `/teammsg`.
+Explicit `$...$` always works regardless of mode, messages included.
 
 ## Variables you make
 
