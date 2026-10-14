@@ -232,4 +232,26 @@ class ChatInputStylerTest {
         assertEquals(RED, colorAt(line, line.lastIndexOf("#set")),
                 "the second #set has no && before it");
     }
+
+    /** Where a condition's completion token starts, for a cursor at the end of {@code line}. */
+    private static int conditionToken(String line) {
+        return ChatInputStyler.headerExprTokenStart(line, line.length());
+    }
+
+    @Test
+    void anIfConditionCompletesWhileItIsTheOnlyGroup() {
+        // still typing the condition: there is no body yet, so the one group is it
+        assertEquals("#if (".length(), conditionToken("#if (cli"));
+        // auto-bracket already closed it: the cursor is still inside
+        assertEquals("#if (".length(), ChatInputStyler.headerExprTokenStart("#if (cli)", "#if (cli".length()));
+        // after an earlier statement, as in a script body
+        String chained = "#setdefault on = false && #if (cli";
+        assertEquals(chained.length() - "cli".length(), conditionToken(chained));
+    }
+
+    @Test
+    void aBodyGroupIsStillNotACondition() {
+        assertEquals(-1, conditionToken("#if (x) (/sa"), "inside the body: statements, not an expression");
+        assertEquals(-1, conditionToken("#if (/sa"), "a lone group starting like a statement is a body");
+    }
 }

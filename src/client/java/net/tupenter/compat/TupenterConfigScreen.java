@@ -604,6 +604,11 @@ public class TupenterConfigScreen {
                     if (completion.keyPressed(key)) {
                         return true;
                     }
+                    if (key == com.mojang.blaze3d.platform.InputConstants.KEY_RETURN
+                            || key == com.mojang.blaze3d.platform.InputConstants.KEY_NUMPADENTER) {
+                        expandWithInsert("\n", true); // a line break needs the real editor
+                        return true;
+                    }
                     // a multi-line paste into the collapsed box would lose its
                     // newlines — expand and paste into the real editor instead
                     if (net.minecraft.client.gui.screens.Screen.isPaste(key)) {
@@ -618,6 +623,9 @@ public class TupenterConfigScreen {
                             || key == com.mojang.blaze3d.platform.InputConstants.KEY_DELETE)) {
                         completion.onEdited();
                     }
+                    if (handled && net.minecraft.client.gui.screens.Screen.isPaste(key)) {
+                        expandIfOverflowing();
+                    }
                     return handled;
                 }
 
@@ -626,8 +634,20 @@ public class TupenterConfigScreen {
                     boolean handled = super.charTyped(codepoint, modifiers);
                     if (handled) {
                         completion.onEdited();
+                        expandIfOverflowing();
                     }
                     return handled;
+                }
+
+                /**
+                 * Typing into a line too long for the box only scrolls it
+                 * sideways, hiding most of what you're changing, so it opens
+                 * up into the full editor and you carry on there.
+                 */
+                private void expandIfOverflowing() {
+                    if (Minecraft.getInstance().font.width(getValue()) > getInnerWidth()) {
+                        expandWithInsert("", false);
+                    }
                 }
 
                 @Override
@@ -683,10 +703,7 @@ public class TupenterConfigScreen {
                 singleBox.moveCursorToStart(false);
                 collapsedMirror = joined;
             } else {
-                String current = singleBox.getValue();
-                if (!current.equals(collapsedMirror)) {
-                    multiValue = current; // edited while collapsed — content wins, formatting resets
-                }
+                multiValue = collapsedEditOnFormatting();
                 if (multiBox != null) {
                     multiBox.setValue(multiValue);
                 }
@@ -719,14 +736,57 @@ public class TupenterConfigScreen {
 
         /** A newline-bearing paste: splice at the cursor and jump to the expanded editor. */
         private void pasteMultiline(String clip) {
+            expandWithInsert(clip.replace("\r\n", "\n").replace('\r', '\n'), false);
+        }
+
+        /**
+         * The text with any edit made in the collapsed box carried onto the
+         * row's formatting (line breaks and indents kept), or the collapsed
+         * text itself when the two can't be lined up.
+         */
+        private String collapsedEditOnFormatting() {
             String current = singleBox.getValue();
-            int cursor = Math.max(0, Math.min(singleBox.getCursorPosition(), current.length()));
-            multiValue = current.substring(0, cursor) + clip + current.substring(cursor);
+            if (current.equals(collapsedMirror)) {
+                return multiValue;
+            }
+            String merged = CollapsedText.applyEdit(multiValue, collapsedMirror, current);
+            return merged != null ? merged : current;
+        }
+
+        /** Caret for the expanded editor to take over at; -1 when none is waiting. */
+        private int pendingCaret = -1;
+
+        /**
+         * Switch from the collapsed box to the expanded editor in the middle of
+         * an edit, inserting {@code insert} at the caret (a line break, a paste,
+         * or nothing), and carry on typing there: the editor takes focus with
+         * the caret in the matching spot, so no keystroke is lost or misplaced.
+         *
+         * @param indent continue the caret line's indentation after a line break
+         */
+        private void expandWithInsert(String insert, boolean indent) {
+            String raw = collapsedEditOnFormatting();
+            String flat = singleBox.getValue();
+            int caret = CollapsedText.rawIndex(raw, flat, singleBox.getCursorPosition());
+            if (caret < 0) {
+                raw = flat; // the formatting couldn't be kept: work on what's shown
+                caret = Math.min(singleBox.getCursorPosition(), raw.length());
+            }
+            if (indent) {
+                int lineStart = raw.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
+                int end = lineStart;
+                while (end < caret && raw.charAt(end) == ' ') {
+                    end++;
+                }
+                insert = insert + raw.substring(lineStart, end);
+            }
+            multiValue = raw.substring(0, caret) + insert + raw.substring(caret);
             expanded = true;
             wrapButton.setMessage(wrapLabel());
             if (multiBox != null) {
                 multiBox.setValue(multiValue);
             }
+            pendingCaret = caret + insert.length();
         }
 
         /** The multi-line editor wraps at build width, so rebuild when the row width changes. */
@@ -954,6 +1014,13 @@ public class TupenterConfigScreen {
             int boxWidth = entryWidth - (cursor - x) - 24;
             if (expanded) {
                 net.minecraft.client.gui.components.MultiLineEditBox box = ensureMultiBox(boxWidth);
+                if (pendingCaret >= 0) {
+                    setFocused(box); // through the row, so it knows its focused child
+                    if (box instanceof ScriptEditBox editor) {
+                        editor.placeCaret(pendingCaret);
+                    }
+                    pendingCaret = -1;
+                }
                 box.setX(cursor);
                 box.setY(y);
                 box.render(graphics, mouseX, mouseY, partialTick);
