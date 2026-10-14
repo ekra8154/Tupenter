@@ -1438,6 +1438,7 @@ public class TupenterModClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		net.tupenter.compat.ConfigScreenAccess.install(); // Escape in a multi-caret editor
 		KeyMapping.Category tupenterCategory = new KeyMapping.Category(ResourceLocation.fromNamespaceAndPath("tupenter", "general"));
 
 		resendKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
