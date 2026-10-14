@@ -1438,6 +1438,7 @@ public class TupenterModClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		net.tupenter.compat.ConfigScreenAccess.install(); // Escape in a multi-caret editor
 		// KeyMapping.Category arrived at 1.21.9. Below it a category is just the
 		// translation key of the controls-screen heading — and it's the same key
 		// the Category(namespace, path) form resolves to, so the lang file needs
