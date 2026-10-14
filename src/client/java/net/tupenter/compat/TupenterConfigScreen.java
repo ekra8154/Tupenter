@@ -280,6 +280,12 @@ public class TupenterConfigScreen {
                 .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.chatSelectionEnabled = newValue)
                 .build());
 
+        general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.down_arrow_keeps_text"), TupenterConfig.INSTANCE.downArrowKeepsText)
+                .setDefaultValue(true)
+                .setTooltip(Component.translatable("tooltip.tupenter.down_arrow_keeps_text"))
+                .setSaveConsumer(newValue -> TupenterConfig.INSTANCE.downArrowKeepsText = newValue)
+                .build());
+
         general.addEntry(entryBuilder.startBooleanToggle(Component.translatable("option.tupenter.ctrl_scroll_history"), TupenterConfig.INSTANCE.ctrlScrollHistory)
                 .setDefaultValue(true)
                 .setTooltip(Component.translatable("tooltip.tupenter.ctrl_scroll_history"))
@@ -299,7 +305,7 @@ public class TupenterConfigScreen {
                 .build());
 
         general.addEntry(entryBuilder.startIntField(Component.translatable("option.tupenter.chat_input_length"), TupenterConfig.INSTANCE.chatInputLength)
-                .setDefaultValue(256)
+                .setDefaultValue(1000)
                 .setMin(256)
                 .setMax(32766)
                 .setTooltip(Component.translatable("tooltip.tupenter.chat_input_length"))
