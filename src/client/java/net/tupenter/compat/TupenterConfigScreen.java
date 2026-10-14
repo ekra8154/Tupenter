@@ -367,6 +367,7 @@ public class TupenterConfigScreen {
         builder.setSavingRunnable(() -> {
             commitScriptEdits();
             TupenterConfig.INSTANCE.aliases = collectCommandRows();
+            pruneEditorHeights();
             if (presetBox != null) {
                 TupenterConfig.INSTANCE.permanentMessages = splitPresets(presetBox.text());
             }
@@ -563,6 +564,7 @@ public class TupenterConfigScreen {
             CarriedRow carried = takeCarriedExpansion(text);
             this.expanded = carried != null ? carried.expanded() : text.contains("\n");
             this.expandedHeight = carried != null ? carried.height() : BOX_HEIGHT_EXPANDED;
+            this.heightCarried = carried != null;
 
             this.singleBox = new net.minecraft.client.gui.components.EditBox(
                     Minecraft.getInstance().font, 0, 0, 200, 18, Component.empty()) {
@@ -810,9 +812,52 @@ public class TupenterConfigScreen {
         public boolean mouseReleased(double mouseX, double mouseY, int button) {
             if (resizing) {
                 resizing = false;
+                rememberHeight();
                 return true;
             }
             return super.mouseReleased(mouseX, mouseY, button);
+        }
+
+        /** True when this row's height came across a rebuild, which beats the saved one. */
+        private boolean heightCarried;
+
+        /**
+         * This row's key in the saved editor heights, or null for a row that
+         * doesn't keep one. Stable across opens: a script's id, a command's name.
+         */
+        String heightKey() {
+            return null;
+        }
+
+        /**
+         * Take the saved height, unless a rebuild already carried one over.
+         * Subclasses call this once heightKey() can answer (a script row only
+         * knows its id after the base constructor has run).
+         */
+        void restoreSavedHeight() {
+            String key = heightKey();
+            Integer saved = key == null ? null : TupenterConfig.INSTANCE.editorHeights.get(key);
+            if (!heightCarried && saved != null) {
+                expandedHeight = Math.max(BOX_HEIGHT_MIN, Math.min(BOX_HEIGHT_MAX, saved));
+            }
+        }
+
+        /**
+         * Save the height the grip was let go at, straight away, so it survives
+         * the screen closing with Escape as well as Done. Back at the default it
+         * is dropped rather than stored.
+         */
+        private void rememberHeight() {
+            String key = heightKey();
+            if (key == null) {
+                return;
+            }
+            if (expandedHeight == BOX_HEIGHT_EXPANDED) {
+                TupenterConfig.INSTANCE.editorHeights.remove(key);
+            } else {
+                TupenterConfig.INSTANCE.editorHeights.put(key, expandedHeight);
+            }
+            TupenterConfig.save();
         }
 
         /** Over the expanded editor's bottom-right grip (with a little slack below it). */
@@ -1081,6 +1126,12 @@ public class TupenterConfigScreen {
                 TupenterConfig.INSTANCE.aliases = collectCommandRows();
                 reopenScreen(TAB_ALIASES);
             });
+            restoreSavedHeight();
+        }
+
+        @Override
+        String heightKey() {
+            return commandHeightKey(text());
         }
 
         @Override
@@ -1233,6 +1284,37 @@ public class TupenterConfigScreen {
         cloth.setFocused(cloth.listWidget);
         cloth.listWidget.setFocused(target);
         target.focusEditor();
+    }
+
+    private static String scriptHeightKey(String id) {
+        return id == null || id.isEmpty() ? null : "script:" + id;
+    }
+
+    private static String commandHeightKey(String definition) {
+        String name = commandName(definition).toLowerCase(java.util.Locale.ROOT);
+        return name.isEmpty() ? null : "command:" + name;
+    }
+
+    /**
+     * Drop saved heights whose script or command no longer exists anywhere.
+     * Goes by the whole config, not the rows on screen, so a World script from
+     * another world keeps its height while you edit this one.
+     */
+    private static void pruneEditorHeights() {
+        TupenterConfig config = TupenterConfig.INSTANCE;
+        java.util.Set<String> live = new java.util.HashSet<>();
+        for (TupenterConfig.GlobalScript script : config.globalScripts) {
+            live.add(scriptHeightKey(script.id));
+        }
+        for (TupenterConfig.WorldScriptState state : config.worldScripts.values()) {
+            for (TupenterConfig.WorldScript script : state.scripts) {
+                live.add(scriptHeightKey(script.id));
+            }
+        }
+        for (String definition : config.aliases) {
+            live.add(commandHeightKey(definition));
+        }
+        config.editorHeights.keySet().retainAll(live);
     }
 
     /** "blink <maxdistance:int=100> ... = body" -> "blink". */
@@ -1475,6 +1557,12 @@ public class TupenterConfigScreen {
                     .build();
             this.scopeButton.active = !toggleLocked; // no world: everything is Global
             refreshScope();
+            restoreSavedHeight();
+        }
+
+        @Override
+        String heightKey() {
+            return scriptHeightKey(id);
         }
 
         /**

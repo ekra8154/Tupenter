@@ -667,6 +667,15 @@ public final class ChatInputStyler {
                 styleSignature(flat, styles, separator);
                 bodyStart = separator + 1;
             }
+        } else {
+            // a tick script's optional "name =": without setting it aside, the
+            // first statement read as "name = #setdefault ..." and, not starting
+            // with / or #, was painted as plain chat
+            int scriptBody = net.tupenter.script.ScriptName.bodyStart(flat);
+            if (scriptBody > 0) {
+                styleSignature(flat, styles, scriptBody - 1);
+                bodyStart = scriptBody;
+            }
         }
         styleStatements(flat, bodyStart, styles);
         overlayMarkers(flat, styles);
@@ -1015,6 +1024,13 @@ public final class ChatInputStyler {
         char first = full.charAt(rest);
         if (first == '/') {
             styleCommand(full, styles, new Segment(segment.start(), segment.end(), rest, Kind.COMMAND), depth);
+            return;
+        }
+        if (first == '(') {
+            // #silent (...): the GROUP form, whose content is statements. Read
+            // as "prefix + text" it was painted as plain chat, so a command
+            // inside got no argument colours at all
+            styleDirectiveCore(full, styles, segment.textStart(), segment.end(), depth);
             return;
         }
         if (first != '#') {
