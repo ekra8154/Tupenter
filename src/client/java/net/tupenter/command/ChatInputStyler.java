@@ -1611,6 +1611,22 @@ public final class ChatInputStyler {
         // An assignment has no body group: a (...) on its right-hand side is part
         // of the expression, so the whole rest of the segment is the zone.
         int bodyOpen = assign ? -1 : lastTopLevelGroupOpen(text, wordEnd, seg.end());
+        int firstGroup = skipWhitespace(text, wordEnd);
+        if (!assign && firstGroup < seg.end() && text.charAt(firstGroup) == '(' && cursor > firstGroup) {
+            // The cursor is in the first group right after the word. While a
+            // statement is still being typed that group may be the only one, so
+            // "the last group is the body" can't decide it: #if (cli| picked the
+            // condition as the body and nothing completed. What it holds decides:
+            // statements make it a body (#if (/sa|), anything else the condition.
+            int close = matchingClose(text, firstGroup, seg.end());
+            if (close < 0 || cursor <= close) {
+                int content = skipWhitespace(text, firstGroup + 1);
+                if (content < seg.end() && (text.charAt(content) == '/' || text.charAt(content) == '#')) {
+                    return -1;
+                }
+                bodyOpen = -1;
+            }
+        }
         int headerEnd = bodyOpen >= 0 ? bodyOpen : seg.end();
         int exprFrom = skipWhitespace(text, wordEnd);
         if (dir.equals("#foreach") || dir.equals("#for")) {

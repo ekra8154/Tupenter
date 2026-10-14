@@ -267,6 +267,11 @@ public class ScriptEditBox extends MultiLineEditBox {
         this.textField.seekCursor(Whence.ABSOLUTE, cursor);
     }
 
+    /** Put a bare caret at {@code index}: for this editor taking over mid-edit from the collapsed box. */
+    public void placeCaret(int index) {
+        replaceAndPlaceCaret(getValue(), Math.max(0, Math.min(index, getValue().length())));
+    }
+
     /** Seed the undo history from the box's value the first time it's touched. */
     private void ensureHistory() {
         if (undoHistory == null) {
