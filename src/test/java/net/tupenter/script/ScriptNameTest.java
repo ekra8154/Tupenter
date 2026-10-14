@@ -51,4 +51,13 @@ class ScriptNameTest {
         assertEquals("night_2", ScriptName.name("night_2 = /time set night"));
         assertEquals("", ScriptName.name("2fast = /effect give @s speed"), "a leading digit isn't a valid name");
     }
+
+    @Test
+    void bodyStartSetsTheNameAsideByTheSameRule() {
+        String named = "jackenstein = #setdefault jackenstein = false && /say hi";
+        assertEquals(named.indexOf('=') + 1, ScriptName.bodyStart(named));
+        assertEquals(ScriptName.body(named), named.substring(ScriptName.bodyStart(named)).strip());
+        assertEquals(0, ScriptName.bodyStart("#setdefault x = 5 && /say hi"), "unnamed: the = belongs to the body");
+        assertEquals(0, ScriptName.bodyStart("/say a=b"));
+    }
 }
