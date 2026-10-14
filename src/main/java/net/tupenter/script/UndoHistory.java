@@ -2,6 +2,7 @@ package net.tupenter.script;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.List;
 
 /**
  * Undo/redo for a text field — pure string bookkeeping, no Minecraft, so it
@@ -13,10 +14,36 @@ import java.util.Deque;
  * a whitespace/newline (so words undo one at a time), a switch between
  * inserting and deleting, or a caret move. That's roughly what VS Code and
  * IntelliJ do.
+ *
+ * <p>Each state keeps every caret and its selection, not just one position,
+ * so undoing an edit made with several carets brings all of them back to
+ * where they were before it (and redo to where they were after).
  */
 public final class UndoHistory {
-    /** A text snapshot and where the caret sat. */
-    public record State(String text, int cursor) {
+    /** One caret: where it is, and where its selection began (equal when nothing is selected). */
+    public record Caret(int pos, int anchor) {
+        public static Caret at(int pos) {
+            return new Caret(pos, pos);
+        }
+    }
+
+    /** A text snapshot and every caret in it, the primary first. */
+    public record State(String text, List<Caret> carets) {
+        public State {
+            if (carets.isEmpty()) {
+                throw new IllegalArgumentException("a state needs at least one caret");
+            }
+            carets = List.copyOf(carets);
+        }
+
+        public State(String text, int cursor) {
+            this(text, List.of(Caret.at(cursor)));
+        }
+
+        /** Where the primary caret sat. */
+        public int cursor() {
+            return carets.get(0).pos();
+        }
     }
 
     private static final long PAUSE_MS = 500;
@@ -32,7 +59,16 @@ public final class UndoHistory {
     private boolean breakNext;   // force a boundary on the next edit
 
     public UndoHistory(String text, int cursor) {
-        this.current = new State(text, cursor);
+        this(text, List.of(Caret.at(cursor)));
+    }
+
+    public UndoHistory(String text, List<Caret> carets) {
+        this.current = new State(text, carets);
+    }
+
+    /** {@link #record(String, List, long)} for a single bare caret. */
+    public void record(String newText, int newCursor, long now) {
+        record(newText, List.of(Caret.at(newCursor)), now);
     }
 
     /**
@@ -40,12 +76,12 @@ public final class UndoHistory {
      * no undo entry but ends the current group; a text change opens a new undo
      * unit when a boundary is crossed, otherwise folds into the current one.
      */
-    public void record(String newText, int newCursor, long now) {
+    public void record(String newText, List<Caret> newCarets, long now) {
         if (newText.equals(current.text())) {
-            if (newCursor != current.cursor()) {
-                breakNext = true; // moved the caret → next edit starts fresh
+            if (!newCarets.equals(current.carets())) {
+                breakNext = true; // moved, added or reselected carets: the next edit starts fresh
             }
-            current = new State(newText, newCursor);
+            current = new State(newText, newCarets);
             return;
         }
         int kind = classify(current.text(), newText);
@@ -58,10 +94,10 @@ public final class UndoHistory {
             redo.clear();
             groupOpen = true;
         }
-        current = new State(newText, newCursor);
+        current = new State(newText, newCarets);
         lastEditTime = now;
         lastKind = kind;
-        breakNext = endsWithWhitespace(newText, newCursor); // typed a space → break after
+        breakNext = endsWithWhitespace(newText, current.cursor()); // typed a space → break after
     }
 
     /** Step back one undo unit, or null if there's nothing to undo. */
