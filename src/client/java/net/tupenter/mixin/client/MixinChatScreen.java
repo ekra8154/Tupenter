@@ -32,10 +32,40 @@ public abstract class MixinChatScreen extends Screen {
     public abstract void moveInHistory(int offset);
 
     @org.spongepowered.asm.mixin.Shadow
+    private int historyPos;
+
+    @org.spongepowered.asm.mixin.Shadow
     public abstract void handleChatInput(String message, boolean addToRecentChat);
 
     protected MixinChatScreen(Component title) {
         super(title);
+    }
+
+    /**
+     * Down arrow, without losing what you typed. Vanilla's Down steps to the
+     * next newer history line, and past the newest it puts back the draft from
+     * before you pressed Up. So after recalling a line with Up and then
+     * editing it, or clearing it and typing something new, Down replaced your
+     * text with another line. And with no history being browsed it did nothing.
+     *
+     * <p>Now Down only steps through history while the line on screen is the
+     * recalled one, untouched. Otherwise it jumps the cursor to the end of
+     * the line and keeps your text. Up is vanilla: it saves your draft first.
+     * The suggestion list still gets Down before this ever runs.
+     */
+    @Redirect(method = "keyPressed", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/gui/screens/ChatScreen;moveInHistory(I)V"))
+    private void tupenter$downKeepsText(ChatScreen screen, int offset) {
+        if (offset > 0 && net.tupenter.config.TupenterConfig.INSTANCE.downArrowKeepsText) {
+            net.minecraft.util.ArrayListDeque<String> recent =
+                    net.minecraft.client.Minecraft.getInstance().gui.hud.getChat().getRecentChat();
+            boolean browsing = historyPos >= 0 && historyPos < recent.size();
+            if (!browsing || !input.getValue().equals(recent.get(historyPos))) {
+                input.moveCursorToEnd(false);
+                return;
+            }
+        }
+        screen.moveInHistory(offset);
     }
 
     /**
