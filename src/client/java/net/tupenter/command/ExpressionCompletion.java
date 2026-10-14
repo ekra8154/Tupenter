@@ -82,37 +82,53 @@ public final class ExpressionCompletion {
      * body, and the resend-preset editor is one independent command per line.
      */
     public static Result forEditor(String raw, int cursor, boolean definition, boolean perLine) {
+        int[] region = editorRegion(raw, cursor, definition, perLine);
+        if (region == null) {
+            return null;
+        }
+        String flat = raw.replace('\r', ' ').replace('\n', ' ');
+        cursor = Math.max(0, Math.min(cursor, raw.length()));
+        return offset(forLine(flat.substring(region[0], region[1]), cursor - region[0]), region[0]);
+    }
+
+    /**
+     * The part of an editor's text the cursor's completions come from, as
+     * {from, to} in the text's own indices, or null when there is none:
+     * <ul>
+     *   <li>preset editor: the cursor's line, and only a / or # line (chat
+     *       lines never evaluate anything);</li>
+     *   <li>a tick script: everything after its optional "name =";</li>
+     *   <li>a custom command: everything after "name &lt;params&gt; =";</li>
+     *   <li>otherwise the whole text.</li>
+     * </ul>
+     * Newlines are formatting only, so the text is read flattened 1:1.
+     */
+    public static int[] editorRegion(String raw, int cursor, boolean definition, boolean perLine) {
         cursor = Math.max(0, Math.min(cursor, raw.length()));
         if (perLine) {
             int lineStart = raw.lastIndexOf('\n', cursor - 1) + 1;
             int lineEnd = raw.indexOf('\n', cursor);
             String line = raw.substring(lineStart, lineEnd < 0 ? raw.length() : lineEnd);
-            // like the chat bar: markers only mean something on / and # lines
             String lead = line.stripLeading();
             if (!lead.startsWith("/") && !lead.startsWith("#")) {
                 return null;
             }
-            return offset(forLine(line, cursor - lineStart), lineStart);
+            return new int[]{lineStart, lineEnd < 0 ? raw.length() : lineEnd};
         }
         String flat = raw.replace('\r', ' ').replace('\n', ' ');
-        if (!definition) {
-            // a tick script's optional "name =" is set aside, as the runtime does
-            int bodyStart = net.tupenter.script.ScriptName.bodyStart(flat);
-            if (bodyStart > 0) {
-                return cursor < bodyStart ? null
-                        : offset(forLine(flat.substring(bodyStart), cursor - bodyStart), bodyStart);
-            }
-        }
+        int bodyStart = 0;
         if (definition) {
             int separator = net.tupenter.script.AliasDefinition.signatureSeparator(flat);
             if (separator >= 0) {
-                if (cursor <= separator) {
-                    return null; // still in the name and parameters
-                }
-                return offset(forLine(flat.substring(separator + 1), cursor - separator - 1), separator + 1);
+                bodyStart = separator + 1;
             }
+        } else {
+            bodyStart = net.tupenter.script.ScriptName.bodyStart(flat); // the runtime's own split
         }
-        return forLine(flat, cursor);
+        if (bodyStart > 0 && cursor < bodyStart) {
+            return null; // still in the name (and parameters)
+        }
+        return new int[]{bodyStart, flat.length()};
     }
 
     private static Result offset(Result result, int by) {
