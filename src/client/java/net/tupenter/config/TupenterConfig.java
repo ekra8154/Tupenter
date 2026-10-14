@@ -70,6 +70,12 @@ public class TupenterConfig {
      * expanded once), 1 = keep expanded, 2 = keep collapsed.
      */
     public int scriptsHelpState = 0;
+    /**
+     * Editor heights set with the resize grip, by row: "script:<id>" for a tick
+     * script, "command:<name>" for a custom command. A row with no entry uses
+     * the default height.
+     */
+    public java.util.Map<String, Integer> editorHeights = new java.util.LinkedHashMap<>();
     /** Ctrl+Space in the chat bar submits the line (a mouse-hand-friendly manual send). */
     public boolean ctrlSpaceSend = true;
     public boolean lazyExecutionEnabled = true;
@@ -399,6 +405,14 @@ public class TupenterConfig {
                     INSTANCE.autoCloseBrackets = loaded.autoCloseBrackets;
                     INSTANCE.ctrlScrollHistory = loaded.ctrlScrollHistory;
                     INSTANCE.scriptsHelpState = clamp(loaded.scriptsHelpState, 0, 2, 0);
+                    INSTANCE.editorHeights = new java.util.LinkedHashMap<>();
+                    if (loaded.editorHeights != null) {
+                        loaded.editorHeights.forEach((key, height) -> {
+                            if (key != null && height != null) {
+                                INSTANCE.editorHeights.put(key, height);
+                            }
+                        });
+                    }
                     INSTANCE.saveDirectiveHistory = loaded.saveDirectiveHistory;
                     INSTANCE.ctrlSpaceSend = loaded.ctrlSpaceSend;
                     INSTANCE.lazyExecutionEnabled = loaded.lazyExecutionEnabled;
