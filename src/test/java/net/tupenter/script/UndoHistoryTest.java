@@ -169,4 +169,49 @@ class UndoHistoryTest {
         }
         assertEquals(200, undone, "capped at MAX_DEPTH, oldest dropped");
     }
+
+    // ---- several carets ----
+
+    private static java.util.List<UndoHistory.Caret> carets(int... posAnchorPairs) {
+        java.util.List<UndoHistory.Caret> out = new java.util.ArrayList<>();
+        for (int k = 0; k < posAnchorPairs.length; k += 2) {
+            out.add(new UndoHistory.Caret(posAnchorPairs[k], posAnchorPairs[k + 1]));
+        }
+        return out;
+    }
+
+    @Test
+    void undoBringsBackEveryCaretFromBeforeTheEdit() {
+        UndoHistory h = new UndoHistory("ab", 0);
+        h.record("ab", carets(1, 1, 2, 2), 0);          // a second caret is added
+        h.record("aXbX", carets(2, 2, 4, 4), 100);      // typed at both
+        UndoHistory.State before = h.undo();
+        assertEquals("ab", before.text());
+        assertEquals(carets(1, 1, 2, 2), before.carets());
+        UndoHistory.State after = h.redo();
+        assertEquals("aXbX", after.text());
+        assertEquals(carets(2, 2, 4, 4), after.carets());
+    }
+
+    @Test
+    void selectionsComeBackToo() {
+        UndoHistory h = new UndoHistory("foo foo", 0);
+        h.record("foo foo", carets(3, 0, 7, 4), 0);     // both "foo" selected (Ctrl+D)
+        h.record("x x", carets(1, 1, 3, 3), 100);       // typed over them
+        UndoHistory.State before = h.undo();
+        assertEquals("foo foo", before.text());
+        assertEquals(carets(3, 0, 7, 4), before.carets());
+        assertEquals(3, before.cursor(), "cursor() is the primary's position");
+    }
+
+    @Test
+    void changingTheCaretsEndsTheTypingGroup() {
+        UndoHistory h = new UndoHistory("", 0);
+        h.record("a", 1, 0);
+        h.record("ab", 2, 50);
+        h.record("ab", carets(2, 2, 0, 0), 60);         // a caret added mid-typing
+        h.record("cacbc", carets(5, 5, 1, 1), 70);      // typed at both
+        assertEquals("ab", h.undo().text(), "the multi-caret edit is its own step");
+        assertEquals("", h.undo().text());
+    }
 }

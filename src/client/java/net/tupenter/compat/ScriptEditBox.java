@@ -349,12 +349,14 @@ public class ScriptEditBox extends MultiLineEditBox {
         }
         all.add(0, MultiCaret.Caret.at(added)); // the new caret leads
         setCarets(all, 0);
+        recordUndo();
     }
 
     private void addNextOccurrence() {
         MultiCaret.Caret primary = readCaret();
         if (!primary.hasSelection()) {
             this.textField.selectWordAtCursor(); // first press: just the word
+            recordUndo();
             return;
         }
         String value = getValue();
@@ -378,6 +380,7 @@ public class ScriptEditBox extends MultiLineEditBox {
         }
         all.add(0, new MultiCaret.Caret(found + needle.length(), found));
         setCarets(all, 0);
+        recordUndo();
     }
 
     /** Alt+click adds a caret where you click, or removes the one that's there. */
@@ -395,11 +398,13 @@ public class ScriptEditBox extends MultiLineEditBox {
                 } else {
                     placeSelection(all.get(0));
                 }
+                recordUndo();
                 return true;
             }
         }
         all.add(0, MultiCaret.Caret.at(clicked));
         setCarets(all, 0);
+        recordUndo();
         return true;
     }
 
@@ -583,14 +588,23 @@ public class ScriptEditBox extends MultiLineEditBox {
     /** Seed the undo history from the box's value the first time it's touched. */
     private void ensureHistory() {
         if (undoHistory == null) {
-            undoHistory = new UndoHistory(getValue(), this.textField.cursor());
+            undoHistory = new UndoHistory(getValue(), caretsForHistory());
         }
+    }
+
+    /** Every caret and selection, the primary first, as the undo history keeps them. */
+    private java.util.List<UndoHistory.Caret> caretsForHistory() {
+        java.util.List<UndoHistory.Caret> out = new java.util.ArrayList<>();
+        for (MultiCaret.Caret caret : allCarets()) {
+            out.add(new UndoHistory.Caret(caret.pos(), caret.anchor()));
+        }
+        return out;
     }
 
     /** Feed the current state to the history — skipped while we're applying an undo. */
     private void recordUndo() {
         if (!restoring && !batching && undoHistory != null) {
-            undoHistory.record(getValue(), this.textField.cursor(), System.currentTimeMillis());
+            undoHistory.record(getValue(), caretsForHistory(), System.currentTimeMillis());
         }
     }
 
@@ -598,10 +612,16 @@ public class ScriptEditBox extends MultiLineEditBox {
         if (state == null) {
             return; // nothing to undo/redo
         }
-        clearExtraCarets(); // undo restores one caret
+        clearExtraCarets();
         restoring = true;
         try {
             replaceAndPlaceCaret(state.text(), state.cursor());
+            // then every caret and selection the state had, the primary first
+            java.util.List<MultiCaret.Caret> carets = new java.util.ArrayList<>();
+            for (UndoHistory.Caret caret : state.carets()) {
+                carets.add(new MultiCaret.Caret(caret.pos(), caret.anchor()));
+            }
+            setCarets(carets, 0);
         } finally {
             restoring = false;
         }
