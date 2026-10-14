@@ -36,6 +36,9 @@ public class TupenterConfigScreen {
 
     public static Screen createScreen(Screen parent) {
         cachedParent = parent;
+        if (!rebuilding) {
+            orderEdited = false; // a fresh open is in the saved order; a rebuild mid-edit isn't
+        }
         ConfigBuilder builder = ConfigBuilder.create()
                 .setParentScreen(parent)
                 .setTitle(Component.translatable("title.tupenter.config"));
@@ -684,7 +687,23 @@ public class TupenterConfigScreen {
                     .bounds(0, 0, 20, 20)
                     .tooltip(Tooltip.create(deleteTooltip))
                     .build();
+
+            // stacked, half height each: one button's width for both directions
+            this.moveUpButton = Button.builder(Component.literal("▲"),
+                            button -> moveRow(this, true, Minecraft.getInstance().hasShiftDown()))
+                    .bounds(0, 0, MOVE_WIDTH, 10)
+                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.move_up")))
+                    .build();
+            this.moveDownButton = Button.builder(Component.literal("▼"),
+                            button -> moveRow(this, false, Minecraft.getInstance().hasShiftDown()))
+                    .bounds(0, 0, MOVE_WIDTH, 10)
+                    .tooltip(Tooltip.create(Component.translatable("tooltip.tupenter.move_down")))
+                    .build();
         }
+
+        private static final int MOVE_WIDTH = 12;
+        private final Button moveUpButton;
+        private final Button moveDownButton;
 
         static String singleLine(String text) {
             return net.tupenter.script.Comments.flatten(text);
@@ -999,6 +1018,15 @@ public class TupenterConfigScreen {
         @Override
         public void extractRenderState(GuiGraphicsExtractor graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean isHovered, float partialTick) {
             int cursor = x;
+            moveUpButton.active = canMove(this, true);
+            moveDownButton.active = canMove(this, false);
+            moveUpButton.setX(cursor);
+            moveUpButton.setY(y);
+            moveUpButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+            moveDownButton.setX(cursor);
+            moveDownButton.setY(y + 10);
+            moveDownButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+            cursor += MOVE_WIDTH + 3;
             for (net.minecraft.client.gui.components.AbstractWidget widget : leadingWidgets()) {
                 widget.setX(cursor);
                 widget.setY(y);
@@ -1041,11 +1069,14 @@ public class TupenterConfigScreen {
 
         @Override
         public boolean isEdited() {
-            return deleted || !text().equals(initialText);
+            return deleted || !text().equals(initialText) || orderEdited;
         }
 
         private List<net.minecraft.client.gui.components.AbstractWidget> allWidgets() {
-            List<net.minecraft.client.gui.components.AbstractWidget> widgets = new ArrayList<>(leadingWidgets());
+            List<net.minecraft.client.gui.components.AbstractWidget> widgets = new ArrayList<>();
+            widgets.add(moveUpButton);
+            widgets.add(moveDownButton);
+            widgets.addAll(leadingWidgets());
             widgets.add(wrapButton);
             widgets.add(expanded && multiBox != null ? multiBox : singleBox);
             widgets.add(deleteButton);
@@ -1351,6 +1382,98 @@ public class TupenterConfigScreen {
         cloth.setFocused(cloth.listWidget);
         cloth.listWidget.setFocused(target);
         target.focusEditor();
+    }
+
+    /** True once a row has been moved this screen: the order then counts as an unsaved edit. */
+    private static boolean orderEdited;
+
+    /**
+     * Move a custom command or script row up or down, in place: no rebuild,
+     * so the scroll, caret and unsaved edits elsewhere all stay put, and you
+     * can click repeatedly. With Shift it goes to the top or bottom.
+     *
+     * <p>The new order is only an edit like any other: Save writes it (the row
+     * lists are what collectCommandRows and commitScriptEdits walk), Escape
+     * throws it away.
+     *
+     * <p>Three lists hold the rows and all three must agree: ours (what gets
+     * saved), the list widget's (what is drawn and clicked), and Cloth's
+     * per-tab list (what the widget is refilled from when you switch tabs).
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void moveRow(WrapRowEntry row, boolean up, boolean toEnd) {
+        List rows = row instanceof ScriptRowEntry ? scriptRows : commandRows;
+        int index = rows.indexOf(row);
+        if (index < 0) {
+            return;
+        }
+        int[] group = moveGroup(rows, index);
+        int target = toEnd ? (up ? group[0] : group[1]) : index + (up ? -1 : 1);
+        target = Math.max(group[0], Math.min(group[1], target));
+        if (target == index) {
+            return;
+        }
+        Object anchor = rows.get(target);
+        reorder(rows, row, anchor, !up);
+        if (Minecraft.getInstance().screen instanceof me.shedaniel.clothconfig2.gui.ClothConfigScreen cloth
+                && cloth.listWidget != null) {
+            reorder(cloth.listWidget.children(), row, anchor, !up);
+            List stored = cloth.getCategorizedEntries().get(cloth.getSelectedCategory());
+            if (stored != null && stored != cloth.listWidget.children()) {
+                reorder(stored, row, anchor, !up);
+            }
+            cloth.listWidget.tickList(); // refresh the drawn order now, not next tick
+        }
+        orderEdited = true;
+    }
+
+    /** Can this row move one step that way? (Not past either end of its group.) */
+    @SuppressWarnings({"rawtypes"})
+    private static boolean canMove(WrapRowEntry row, boolean up) {
+        List rows = row instanceof ScriptRowEntry ? scriptRows : commandRows;
+        int index = rows.indexOf(row);
+        if (index < 0) {
+            return false;
+        }
+        int[] group = moveGroup(rows, index);
+        return up ? index > group[0] : index < group[1];
+    }
+
+    /**
+     * {first, last} index a row can move between. Custom commands are one
+     * list. Scripts are two, Global and this world's, kept in separate stores
+     * and listed Global first, so a script moves within its own run of rows
+     * and stops at the boundary (the scope it was listed under, even if its
+     * scope button has been flipped since).
+     */
+    @SuppressWarnings({"rawtypes"})
+    private static int[] moveGroup(List rows, int index) {
+        if (!(rows.get(index) instanceof ScriptRowEntry script)) {
+            return new int[]{0, rows.size() - 1};
+        }
+        int first = index;
+        while (first > 0 && ((ScriptRowEntry) rows.get(first - 1)).initialGlobal == script.initialGlobal) {
+            first--;
+        }
+        int last = index;
+        while (last < rows.size() - 1 && ((ScriptRowEntry) rows.get(last + 1)).initialGlobal == script.initialGlobal) {
+            last++;
+        }
+        return new int[]{first, last};
+    }
+
+    /** Take {@code row} out and put it back just before (or after) {@code anchor}. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void reorder(List list, Object row, Object anchor, boolean after) {
+        if (!list.remove(row)) {
+            return;
+        }
+        int at = list.indexOf(anchor);
+        if (at < 0) {
+            list.add(row); // shouldn't happen; keep the row rather than lose it
+            return;
+        }
+        list.add(after ? at + 1 : at, row);
     }
 
     private static String scriptHeightKey(String id) {
