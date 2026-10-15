@@ -85,7 +85,6 @@ public final class ConfigScreenAccess {
         return true;
     }
 
-    /** Called once per client tick; opens a screen that {@link #open} asked for. */
     /** Client start-up: hooks that only make sense with Cloth present. */
     public static void install() {
         if (isAvailable()) {
@@ -93,6 +92,7 @@ public final class ConfigScreenAccess {
         }
     }
 
+    /** Called once per client tick; opens a screen that {@link #open} asked for. */
     public static void tickPendingOpen() {
         if (pendingTab < 0) {
             return;
